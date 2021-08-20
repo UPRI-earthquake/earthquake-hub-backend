@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
   res.json({'message': 'ok'});
 })
 
-app.use('/stations', stationsRouter)
+app.use('/stationLocations', stationsRouter)
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {

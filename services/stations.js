@@ -2,7 +2,7 @@ const db = require('./db');
 const helper = require('../helper');
 const config = require('../config');
 
-async function getStations(){
+async function getStationLocations(){
   const rows = await db.query(
        'SELECT code, latitude, longitude'
     + ' FROM Station AS table1'
@@ -15,6 +15,6 @@ async function getStations(){
 }
 
 module.exports = {
-  getStations
+  getStationLocations
 }
 
