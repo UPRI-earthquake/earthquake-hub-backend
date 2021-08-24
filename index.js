@@ -1,4 +1,5 @@
 const express = require('express');
+const redis = require("redis")
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
@@ -16,6 +17,7 @@ app.get('/', (req, res) => {
   res.json({'message': 'ok'});
 })
 
+// These are called once in webapp init
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 
@@ -31,4 +33,14 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`)
 });
+
+// Setup Redis pubsub subscriber, and Event Emitter
+const redis_channel = "PICK"
+const redis_host = "172.17.0.2"
+
+const subscriber = redis.createClient({host:redis_host})
+subscriber.on("message", (channel, message) => {
+  console.log(JSON.parse(message));
+});
+subscriber.subscribe(redis_channel)
 
