@@ -17,9 +17,47 @@ app.get('/', (req, res) => {
   res.json({'message': 'ok'});
 })
 
-// These are called once in webapp init
+// ROUTES
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
+
+// Setup Redis pubsub subscriber, and Event Emitter
+const redis_channel = "PICK"
+const redis_host = "172.17.0.2"
+const subscriber = redis.createClient({host:redis_host})
+subscriber.subscribe(redis_channel)
+
+// create helper middleware so we can reuse server-sent events
+const useServerSentEventsMiddleware = (req, res, next) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    const sendEventStreamData = (data) => {
+      const sseFormattedResponse = `data: ${JSON.stringify(data)}\n\n`;
+      res.write(sseFormattedResponse);
+    }
+
+    // we are attaching sendEventStreamData to res, so we can use it later
+    Object.assign(res, {
+      sendEventStreamData
+    });
+
+    next();
+}
+
+app.get('/messaging', useServerSentEventsMiddleware, (req, res) => {
+  subscriber.on("message", (channel, message) => {
+    console.log(JSON.parse(message));
+    res.sendEventStreamData(message)
+  });
+
+  // client close event
+  res.on('close', () => {
+    res.end();
+  });
+});
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
@@ -34,13 +72,4 @@ app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`)
 });
 
-// Setup Redis pubsub subscriber, and Event Emitter
-const redis_channel = "PICK"
-const redis_host = "172.17.0.2"
-
-const subscriber = redis.createClient({host:redis_host})
-subscriber.on("message", (channel, message) => {
-  console.log(JSON.parse(message));
-});
-subscriber.subscribe(redis_channel)
 
