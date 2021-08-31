@@ -34,9 +34,9 @@ const useServerSentEventsMiddleware = (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.flushHeaders();
 
-    const sendEventStreamData = (data) => {
-      const sseFormattedResponse = `data: ${JSON.stringify(data)}\n\n`;
-      res.write(sseFormattedResponse);
+    const sendEventStreamData = (eventName, data) => {
+      res.write(`event: ${eventName}\n`);
+      res.write(`data: ${data}\n\n`);
     }
 
     // we are attaching sendEventStreamData to res, so we can use it later
