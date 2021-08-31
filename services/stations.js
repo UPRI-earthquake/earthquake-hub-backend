@@ -3,7 +3,7 @@ const helper = require('../helper');
 const config = require('../config');
 
 async function getStationLocations(){
-  const rows = await db.query(
+  const [rows, fields] = await db.query(
        'SELECT code, latitude, longitude'
     + ' FROM Station AS table1'
     + ' WHERE start = (SELECT MAX(start)'
