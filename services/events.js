@@ -3,8 +3,8 @@ const helper = require('../helper');
 const config = require('../config');
 
 // get magnitude, coord, time, 
-async function getEventsList(){
-  const rows = await db.query(
+async function getEventsList(startTime, endTime){
+  const [rows, fields] = await db.query(
     `select PEvent.publicID, Origin.time_value as OT, 
         Origin.latitude_value,Origin.longitude_value, Origin.depth_value,
         Magnitude.magnitude_value, Magnitude.type 
@@ -16,8 +16,10 @@ async function getEventsList(){
                 and Origin._oid=POrigin._oid 
                 and Magnitude._oid=PMagnitude._oid 
                 and PMagnitude.publicID=Event.preferredMagnitudeID 
-                and POrigin.publicID=Event.preferredOriginID`        
-  );
+                and POrigin.publicID=Event.preferredOriginID
+                and Origin.time_value >= ?
+                and Origin.time_value <= ?`        
+    , [startTime, endTime]); // automatic escaping when using placeholders
   const data = helper.emptyOrRows(rows);
   return data
 }
@@ -25,4 +27,3 @@ async function getEventsList(){
 module.exports = {
   getEventsList
 }
-
