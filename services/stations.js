@@ -6,9 +6,7 @@ async function getStationLocations(){
   const [rows, fields] = await db.query(
        'SELECT code, latitude, longitude, description'
     + ' FROM Station AS table1'
-    + ' WHERE start = (SELECT MAX(start)'
-    +                ' FROM Station AS table2'
-    +                ' WHERE table2.code = table1.code)'
+    + ' WHERE end IS NULL' // metadata with no end is presently used
   );
   const data = helper.emptyOrRows(rows);
   return data
