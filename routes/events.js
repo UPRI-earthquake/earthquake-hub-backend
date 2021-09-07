@@ -2,15 +2,24 @@ const express = require('express');
 const router = express.Router();
 const events = require('../services/events')
 
-/* GET Events*/
-router.get('/', async function (req, res, next) {
+// query database
+async function eventController(req, res, next) {
   try {
-    res.json(await events.getEventsList(req.query.startTime,
-    req.query.endTime));
+    // get data from db
+    var data = await events.getEventsList(req.query.startTime, 
+                                            req.query.endTime);
+    // append regional data 
+    var updatedData = await events.addPlaces(data)
+
+    res.json(updatedData)
+
   }catch(err){
     console.error('Error while getting events', err.message);
     next(err)
   }
-});
+}
+
+/* GET Events*/
+router.get('/', eventController);
 
 module.exports = router;
