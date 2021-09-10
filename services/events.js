@@ -43,21 +43,25 @@ async function addPlaces(eventsList){
   var updatedData = [];
 
   await Promise.all(eventsList.map(async (event) => {
-    const result = await axios.get(
-      'http://localhost:8080/reverse?format=jsonv2' 
-       +`&lat=${event.latitude_value}&lon=${event.longitude_value}`
-       +'&zoom=10'
-    );
-    let address = '';
-    if (result.data.error){ address = result.data.error }
-    else{
-      address = result.data.address.city+", "
-                + result.data.address.county+", "
-                + result.data.address.state+", "
-                + result.data.address.region
-      address = address
-        .replace(/undefined(, )?/g,'') // remove undefined address levels
-        .replace(/, $/, '') // remove dangling comma-space, if any
+    try{
+      const result = await axios.get(
+        'http://localhost:8080/reverse?format=jsonv2' 
+         +`&lat=${event.latitude_value}&lon=${event.longitude_value}`
+         +'&zoom=10'
+      );
+      let address = '';
+      if (result.data.error){ address = result.data.error }
+      else{
+        address = result.data.address.city+", "
+                  + result.data.address.county+", "
+                  + result.data.address.state+", "
+                  + result.data.address.region
+        address = address
+          .replace(/undefined(, )?/g,'') // remove undefined address levels
+          .replace(/, $/, '') // remove dangling comma-space, if any
+      }
+    }catch(err){
+      var address = 'Nominatim unavailable'
     }
     updatedData.push({
       ...event,
