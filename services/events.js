@@ -49,7 +49,7 @@ async function addPlaces(eventsList){
          +`&lat=${event.latitude_value}&lon=${event.longitude_value}`
          +'&zoom=10'
       );
-      let address = '';
+      var address = '';
       if (result.data.error){ address = result.data.error }
       else{
         address = result.data.address.city+", "
@@ -61,6 +61,7 @@ async function addPlaces(eventsList){
           .replace(/, $/, '') // remove dangling comma-space, if any
       }
     }catch(err){
+      console.log('Catch')
       var address = 'Nominatim unavailable'
     }
     updatedData.push({
