@@ -61,7 +61,7 @@ async function addPlaces(eventsList){
           .replace(/, $/, '') // remove dangling comma-space, if any
       }
     }catch(err){
-      console.log('Catch')
+      console.log('Catch: No nominatim')
       var address = 'Nominatim unavailable'
     }
     updatedData.push({

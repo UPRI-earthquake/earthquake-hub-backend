@@ -1,6 +1,7 @@
 const redis = require('redis');
 const express = require('express');
 const router = express.Router();
+const events = require('../services/events')
 
 // Setup Redis pubsub subscriber, and Event Emitter
 const redis_channel = "SC_*" // SC_PICK or SC_EVENT
@@ -30,10 +31,13 @@ const useServerSentEventsMiddleware = (req, res, next) => {
 
 router.get('/', useServerSentEventsMiddleware, (req, res) => {
   console.log('SSE connection opened:', req.ip)
-  function logAndSend(pattern, channel, message) {
-    console.log(`Sending SSE: ${req.ip}\n`, JSON.parse(message));
-    res.sendEventStreamData(channel,message)
+
+  async function logAndSend(pattern, channel, message) {
+    var updatedEvent = await events.addPlaces([JSON.parse(message)])
+    console.log(`Sending SSE: ${req.ip}\n`, updatedEvent[0]);
+    res.sendEventStreamData(channel, JSON.stringify(updatedEvent[0]))
   }
+
   subscriber.on("pmessage", logAndSend);
 
   res.on('close', () => {
