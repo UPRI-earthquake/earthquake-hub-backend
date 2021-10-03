@@ -46,7 +46,6 @@ const redis_host = "172.17.0.2"
 const subscriber = redis.createClient({host:redis_host})
 subscriber.psubscribe(redis_channel)
 subscriber.on("pmessage", (pattern, channel, event) =>{
-  console.log('channel:',channel)
   eventCache.newEvent(pattern, channel, event)
 });
 
@@ -54,7 +53,6 @@ subscriber.on("pmessage", (pattern, channel, event) =>{
 const useServerSentEventsMiddleware = (req, res, next) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.flushHeaders();
 
@@ -76,10 +74,11 @@ const useServerSentEventsMiddleware = (req, res, next) => {
 }
 
 const useMissedEventsResender = (req, res, next) => {
-  if(req.headers['last-event-id']){
-    const eventId = parseInt(req.headers['last-event-id']);
-    console.log('last-event-id:', eventId)
-    const eventsToReSend = eventCache.cache.filter(e => e.id>eventId)
+  var lastEventId = Number(req.headers['last-event-id']) 
+                    || Number(req.query.lastEventId) 
+  if(lastEventId){
+    console.log('last-event-id:', lastEventId)
+    const eventsToReSend = eventCache.cache.filter(e => e.id > lastEventId)
 
     eventsToReSend.forEach(event => {
       res.sendEventStreamData(
@@ -96,17 +95,25 @@ router.get('/',
   (req, res) => {
     console.log('SSE connection opened:', req.ip)
 
-    function logAndSend(event) {
+    // send new event
+    function sendEvent(event){
       console.log(`Sending SSE: ${req.ip}\n`, event);
       res.sendEventStreamData(
         event.name, JSON.stringify(event.data), event.id
       )
     }
+    eventCache.on("newEvent", sendEvent);
 
-    eventCache.on("newEvent", logAndSend);
+    // send heartbeats every 15 sec (client detects dead connx w/in 45 secs)
+    var heartbeat = setInterval(() => {
+      if(!res.finished) {
+        res.write(': heartbeat\n\n')
+      }
+    }, 15000);
 
     res.on('close', () => {
-      eventCache.removeListener('newEvent', logAndSend)
+      clearInterval(heartbeat);
+      eventCache.removeListener('newEvent', sendEvent);
       res.end();
       console.log('SSE connection closed:', req.ip)
     });
