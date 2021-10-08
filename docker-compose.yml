@@ -1,0 +1,71 @@
+version: '3.9'
+
+services:
+  frontend:
+    container_name: latest-earthquakes-ph-frontend
+    build:
+      context: ../front-end
+      dockerfile: Dockerfile
+    image: "latest-earthquakes-ph-frontend"
+    depends_on:
+      - "backend"
+    ports:
+      - "1337:443"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.2
+    volumes:
+      - type: bind
+        source: ../front-end/certs
+        target: /etc/nginx/certs
+
+  backend:
+    container_name: latest-earthquakes-ph-backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: "latest-earthquakes-ph-backend"
+    depends_on:
+      - "mongodb"
+      - "redis"
+    expose:
+      - "5000"
+    extra_hosts:
+       - "host.docker.internal:host-gateway"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.3
+
+  mongodb:
+    container_name: mongodb
+    image: mongo
+    volumes:
+      - mongodbMount:/data/db
+    expose:
+      - "27017"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.4
+
+  redis:
+    container_name: redis
+    image: redis
+    expose:
+      - "6379"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.5
+      
+volumes:
+  mongodbMount:
+
+networks:
+  app-network:
+    name: latest-earthquakes-ph
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+
+      
+

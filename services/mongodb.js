@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 
-const {DB_CONN, DB_NAME} = process.env;
+const {DB_HOST_MONGO, DB_NAME} = process.env;
 
 const getConnectionUrl = () => {
-  const host = `${DB_CONN || 'mongodb://localhost:27017'}`.replace(/\/$/, '');
+  const host = `${DB_HOST_MONGO || 'mongodb://localhost:27017'}`.replace(/\/$/, '');
   const dbName = DB_NAME || 'latestEarthquakes'
 
   return `${host}/${dbName}`

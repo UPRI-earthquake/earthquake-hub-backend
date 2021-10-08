@@ -30,8 +30,7 @@ router.post('/subscribe', async (req,res) => {
 // redis real-time comms with SC, and broadcasts notifs
 const proxy = () =>{
   const redisChannel = "SC_*" // SC_PICK or SC_EVENT
-  const redisHost = "172.17.0.2"
-  const redisClient = redis.createClient({host:redisHost})
+  const redisClient = redis.createClient({host:process.env.REDIS_HOST, port:6379})
   redisClient.psubscribe(redisChannel)
 
   webpush.setVapidDetails(

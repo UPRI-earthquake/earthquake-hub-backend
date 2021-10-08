@@ -42,8 +42,7 @@ class EventCache extends EventEmitter {
 const eventCache = new EventCache(30) // record last 30 events\
 // Setup Redis pubsub subscriber, and Event Emitter
 const redis_channel = "SC_*" // SC_PICK or SC_EVENT
-const redis_host = "172.17.0.2"
-const subscriber = redis.createClient({host:redis_host})
+const subscriber = redis.createClient({host:process.env.REDIS_HOST, port:6379})
 subscriber.psubscribe(redis_channel)
 subscriber.on("pmessage", (pattern, channel, event) =>{
   eventCache.newEvent(pattern, channel, event)
