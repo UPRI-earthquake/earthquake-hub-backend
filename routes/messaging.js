@@ -4,6 +4,10 @@ const router = express.Router();
 const events = require('../services/events')
 const EventEmitter = require('events')
 
+const redis_host = process.env.NODE_ENV === 'production' 
+                   ? process.env.REDIS_HOST
+                   : 'localhost'
+
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
   constructor(maxEvents) {
@@ -40,9 +44,10 @@ class EventCache extends EventEmitter {
   }
 }
 const eventCache = new EventCache(30) // record last 30 events\
+
 // Setup Redis pubsub subscriber, and Event Emitter
 const redis_channel = "SC_*" // SC_PICK or SC_EVENT
-const subscriber = redis.createClient({host:process.env.REDIS_HOST, port:6379})
+const subscriber = redis.createClient({host:redis_host, port:6379})
 subscriber.psubscribe(redis_channel)
 subscriber.on("pmessage", (pattern, channel, event) =>{
   eventCache.newEvent(pattern, channel, event)
