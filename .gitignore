@@ -2,3 +2,6 @@ config.js
 node_modules/
 node_modules/*
 package-lock.json
+pseudo_tests
+*.pem
+.env

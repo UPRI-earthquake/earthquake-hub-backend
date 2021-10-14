@@ -1,11 +1,8 @@
 const fs = require('fs');
 const https = require('https');
 const express = require('express');
-//const redis = require("redis")
 const bodyParser = require('body-parser');
 const cors = require('cors');
-//const webpush = require('web-push')
-//const events = require('./services/events')
 require('dotenv').config({path: __dirname + '/.env'})
 
 const app = express();
@@ -16,13 +13,16 @@ const eventsRouter = require('./routes/events');
 const messagingRouter = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
-app.use(cors({origin:'*'}))//{origin: 'http://localhost:3000'}))
+app.use(cors({origin : process.env.NODE_ENV === 'production' 
+              ? process.env.DOMAIN_HOST
+              : ['https://localhost:3000', 'https://192.168.1.12:3000']
+}))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // ROUTES
 app.get('/', (req, res) => {
-  res.json({'message': 'ok'});
+  res.json({'version': '1.0'});
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
@@ -34,7 +34,9 @@ notifs.proxy(); // forwards events from redis to web-push
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   console.error(err.message, err.stack);
-  res.status(statusCode).json({'message': err.message});
+  (process.env.NODE_ENV === 'production')
+  ? res.status(statusCode)
+  : res.status(statusCode).json({'message': err.message});
 
   return;
 });
