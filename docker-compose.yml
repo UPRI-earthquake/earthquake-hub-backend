@@ -69,8 +69,8 @@ services:
       - NOMINATIM_PASSWORD=sysop
       - POSTGRES_MAINTENANCE_WORK_MEM=4GB
       - POSTGRES_EFFECTIVE_CACHE_SIZE=8GB
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     networks:
       app-network:
         ipv4_address: 172.22.0.6
