@@ -45,7 +45,7 @@ async function addPlaces(eventsList){
   await Promise.all(eventsList.map(async (event) => {
     try{
       const result = await axios.get(
-        'http://localhost:8080/reverse?format=jsonv2' 
+        'http://nominatim:8080/reverse?format=jsonv2' 
          +`&lat=${event.latitude_value}&lon=${event.longitude_value}`
          +'&zoom=10'
       );
