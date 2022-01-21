@@ -11,6 +11,8 @@ services:
       - "backend"
     ports:
       - "443:443"
+    extra_hosts:
+       - "host.docker.internal:host-gateway"
     networks:
       app-network:
         ipv4_address: 172.22.0.2
