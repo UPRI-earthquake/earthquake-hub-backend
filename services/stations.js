@@ -1,6 +1,5 @@
 const db = require('./mysqldb');
 const helper = require('../helper');
-const config = require('../config');
 
 async function getStationLocations(){
   const [rows, fields] = await db.query(

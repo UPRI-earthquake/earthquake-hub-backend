@@ -4,10 +4,7 @@ const mongodb = require('../services/mongodb')
 const events = require('../services/events')
 const redis = require("redis")
 const webpush = require('web-push')
-
-const redis_host = process.env.NODE_ENV === 'production' 
-                   ? process.env.REDIS_HOST
-                   : 'localhost'
+const config = require('../config')
 
 mongodb.connect();
 
@@ -34,7 +31,7 @@ router.post('/subscribe', async (req,res) => {
 // redis real-time comms with SC, and broadcasts notifs
 const proxy = () =>{
   const redisChannel = "SC_*" // SC_PICK or SC_EVENT
-  const redisClient = redis.createClient({host:redis_host, port:6379})
+  const redisClient = redis.createClient(config.redis)
   redisClient.psubscribe(redisChannel)
 
   webpush.setVapidDetails(

@@ -1,6 +1,7 @@
 const db = require('./mysqldb');
 const helper = require('../helper');
 const axios = require('axios');
+const config =  require('../config')
 
 // get magnitude, coord, time, 
 async function getEventsList(startTime, endTime){
@@ -45,7 +46,8 @@ async function addPlaces(eventsList){
   await Promise.all(eventsList.map(async (event) => {
     try{
       const result = await axios.get(
-        'http://nominatim:8080/reverse?format=jsonv2' 
+        `http://${config.nominatim.host}:${config.nominatim.port}`
+         +'/reverse?format=jsonv2' 
          +`&lat=${event.latitude_value}&lon=${event.longitude_value}`
          +'&zoom=10'
       );

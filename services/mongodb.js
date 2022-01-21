@@ -1,17 +1,13 @@
 const mongoose = require('mongoose');
+const config = require('../config');
 
 const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
 
 const getConnectionUrl = () => {
-  const host = `${NODE_ENV === 'production'
-                  ? DB_HOST_MONGO
-                  : 'mongodb://localhost:27017'}`
+  const host = `mongodb://${config.mongodb.host}:${config.mongodb.port}`
                 .replace(/\/$/, '');
-  const dbName = `${NODE_ENV === 'production'
-                  ? DB_NAME
-                  : 'latestEarthquakes'}`
 
-  return `${host}/${dbName}`
+  return `${host}/${config.mongodb.database}`
 }
 
 const connect = async (opts = {}) => {
