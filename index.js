@@ -1,5 +1,5 @@
 const fs = require('fs');
-const https = require('https');
+const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -14,8 +14,8 @@ const messagingRouter = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production' 
-              ? process.env.DOMAIN_HOST
-              : ['https://localhost:3000', 'https://192.168.1.12:3000']
+  ? 'https://' + process.env.CLIENT_PROD_HOST
+  : [ /*'https://' + process.env.CLIENT_PROD_HOST,*/ 'https://localhost']
 }))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -44,11 +44,18 @@ app.use((err, req, res, next) => {
 // Run server
 var privateKey = fs.readFileSync( './localhost+1-key.pem' );
 var certificate = fs.readFileSync( './localhost+1.pem' );
-https.createServer({
-    key: privateKey,
-    cert: certificate
-}, app).listen(port, () => {
-  console.log(`Example app listening at https://localhost:${port}`)
+http.createServer(app).listen(port, () => {
+  if (process.env.NODE_ENV === 'production'){
+    console.log(
+      'Production backend listening at '
+    + `https://${process.env.BACKEND_PROD_HOST}`
+    )
+  }else{
+    console.log(
+      'Development backend listening at '
+    + `http://${process.env.BACKEND_DEV_HOST}:${port}`
+    )
+  }
 });
 
 
