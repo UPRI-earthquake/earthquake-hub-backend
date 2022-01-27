@@ -42,8 +42,6 @@ app.use((err, req, res, next) => {
 });
 
 // Run server
-var privateKey = fs.readFileSync( './localhost+1-key.pem' );
-var certificate = fs.readFileSync( './localhost+1.pem' );
 http.createServer(app).listen(port, () => {
   if (process.env.NODE_ENV === 'production'){
     console.log(
