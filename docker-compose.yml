@@ -40,7 +40,7 @@ services:
 
   mongodb:
     container_name: mongodb
-    image: mongo
+    image: mongo:4.4.12
     volumes:
       - mongodb-data:/data/db
     expose:
