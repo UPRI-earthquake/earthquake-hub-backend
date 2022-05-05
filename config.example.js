@@ -16,9 +16,9 @@ const config = {
     port: env.NODE_ENV === 'production' ? env.MONGO_DB_PORT: '27017',
     database: env.NODE_ENV === 'production' ? env.MONGO_DB_NAME: 'latestEQs',
   },
-  nominatim: {
-    host: env.NODE_ENV === 'production' ? env.NOMINATIM_HOST: 'localhost',
-    port: env.NODE_ENV === 'production' ? env.NOMINATIM_PORT: '8080',
+  geoserve: {
+    host: env.NODE_ENV === 'production' ? env.GEOSERVE_HOST: 'localhost',
+    port: env.NODE_ENV === 'production' ? env.GEOSERVE_PORT: '80',
   },
 };
 
