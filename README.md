@@ -1,4 +1,5 @@
 This repo contains the backend code for UPRI earthquake monitoring system
+This branch is for development.
 
 Steps to setup
 1. Clone frontend, backend, and sc-api repositories.
