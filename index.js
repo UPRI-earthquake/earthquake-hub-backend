@@ -48,7 +48,7 @@ http.createServer(app).listen(port, () => {
   if (process.env.NODE_ENV === 'production'){
     console.log(
       'Production backend listening at '
-    + `http://backend:${port}`
+    + `http://backend:${port}`)
     console.log(
       'Accessible through nginx at '
     + `https://${process.env.BACKEND_PROD_HOST}`
