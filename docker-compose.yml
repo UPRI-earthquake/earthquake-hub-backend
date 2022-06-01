@@ -10,6 +10,7 @@ services:
     depends_on:
       - "backend"
     ports:
+      - "80:80"
       - "443:443"
     extra_hosts:
        - "host.docker.internal:host-gateway"
@@ -17,9 +18,15 @@ services:
       app-network:
         ipv4_address: 172.22.0.2
     volumes:
-      - type: bind
-        source: ../front-end/certs
-        target: /etc/nginx/certs
+      - ./https_data/nginx:/etc/nginx/conf.d
+      - ./https_data/certbot/conf:/etc/letsencrypt
+      - ./https_data/certbot/www:/var/www/certbot
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./https_data/certbot/conf:/etc/letsencrypt
+      - ./https_data/certbot/www:/var/www/certbot
 
   backend:
     container_name: latest-earthquakes-ph-backend
