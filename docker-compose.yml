@@ -25,8 +25,8 @@ services:
   certbot:
     image: certbot/certbot
     volumes:
-      - ./https_data/certbot/conf:/etc/letsencrypt
-      - ./https_data/certbot/www:/var/www/certbot
+      - ./https_data/certbot/conf:/etc/letsencrypt:rw
+      - ./https_data/certbot/www:/var/www/certbot:rw
 
   backend:
     container_name: latest-earthquakes-ph-backend
