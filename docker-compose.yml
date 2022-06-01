@@ -66,15 +66,15 @@ services:
     environment:
       - DATALOAD_DIR=/tmp/dataload
       - DB_ADMIN_USER=postgres
-      - DB_ADMIN_PASSWORD=postgres
+      - DB_ADMIN_PASSWORD=sysop-admin-postgres
       - DB_LOAD_TYPE=incremental
       - DB_NAME=earthquake
-      - DB_USER=postgres
-      - DB_PASS=postgres
+      - DB_USER=web
+      - DB_PASS=sysop-postgres
       - DB_SCHEMA=geoserve
       - DB_ADMIN_DSN=pgsql:dbname=earthquake
       - PGDATA=/var/lib/postgresqsl/data/pgdata
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=sysop-admin-postgres
     volumes:
       # volume to store downloaded data files
       - ../hazdev-geoserve-ws/data/dataload:/tmp/dataload
@@ -91,8 +91,8 @@ services:
     image: "usgs/hazdev-geoserve-ws:latest"
     environment:
       - DB_DSN=pgsql:host=geoserve-db;port=5432;dbname=earthquake
-      - DB_USER=postgres
-      - DB_PASS=postgres
+      - DB_USER=web
+      - DB_PASS=sysop-postgres
       - DB_SCHEMA=geoserve
     volumes:
       # volumes for local dev
