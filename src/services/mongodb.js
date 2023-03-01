@@ -1,16 +1,16 @@
-const mongoose = require('mongoose');
-const config = require('../config');
+import mongoose from 'mongoose';
+import { config } from '../../config.js';
 
-const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
+const { NODE_ENV, DB_HOST_MONGO, DB_NAME } = process.env;
 
-const getConnectionUrl = () => {
+export const getConnectionUrl = () => {
   const host = `mongodb://${config.mongodb.host}:${config.mongodb.port}`
-                .replace(/\/$/, '');
+    .replace(/\/$/, '');
 
   return `${host}/${config.mongodb.database}`
 }
 
-const connect = async (opts = {}) => {
+export const connectToMongoDb = async (opts = {}) => {
   try {
     const dbUrl = getConnectionUrl();
     await mongoose.connect(dbUrl, {
@@ -24,13 +24,7 @@ const connect = async (opts = {}) => {
   }
 }
 
-const disconnect = async () => {
+export const disconnect = async () => {
   await mongoose.disconnect()
   console.log('Disconnected mongodb')
 }
-
-module.exports = {
-  connect,
-  getConnectionUrl,
-  disconnect
-};

@@ -1,19 +1,22 @@
-const fs = require('fs');
-const http = require('http');
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-require('dotenv').config({path: __dirname + '/.env'})
+
+import fs from 'fs';
+import http from 'http';
+import express from 'express';
+import bodyParser from 'body-parser';
+import cors from 'cors';
+import dotenv from 'dotenv';
+
+import stationsRouter from './routes/stations.js';
+import eventsRouter from './routes/events.js';
+import messagingRouter from './routes/messaging.js';
+import { proxy, notifsRouter } from './routes/notifications.js';
+
+dotenv.config({path: __dirname + '/.env'})
 
 const app = express();
 const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
-
-const stationsRouter = require('./routes/stations');
-const eventsRouter = require('./routes/events');
-const messagingRouter = require('./routes/messaging');
-const notifs  = require('./routes/notifications');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -29,8 +32,8 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messagingRouter)
-app.use('/notifications', notifs.router)
-notifs.proxy(); // forwards events from redis to web-push
+app.use('/notifications', notifsRouter)
+proxy(); // forwards events from redis to web-push
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
