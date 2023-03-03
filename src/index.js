@@ -6,10 +6,13 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
+import './models/index.js';
 import stationsRouter from './routes/stations.js';
 import eventsRouter from './routes/events.js';
+import authRouter from './routes/auth.js';
 import messagingRouter from './routes/messaging.js';
 import { proxy, notifsRouter } from './routes/notifications.js';
+import { connectToMongoDb } from './services/mongodb.js';
 
 dotenv.config({path: __dirname + '/.env'})
 
@@ -34,6 +37,7 @@ app.use('/eventsList', eventsRouter)
 app.use('/messaging', messagingRouter)
 app.use('/notifications', notifsRouter)
 proxy(); // forwards events from redis to web-push
+app.use('/auth', authRouter);
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
@@ -44,6 +48,13 @@ app.use((err, req, res, next) => {
   : res.status(statusCode).json({'message': err.message});
 
   return;
+});
+app.use((req, res, next) => {
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, Content-Type, Accept"
+  );
+  next();
 });
 
 // Run server
@@ -64,4 +75,4 @@ http.createServer(app).listen(port, () => {
   }
 });
 
-
+connectToMongoDb();
