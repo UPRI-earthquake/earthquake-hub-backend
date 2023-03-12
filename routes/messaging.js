@@ -46,13 +46,14 @@ const eventCache = new EventCache(30); // record last 30 events\
 (async () => {
   const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
   const subscriber = redis.createClient(config.redis);
-  await subscriber.on('error', err => console.error({'desc': "Error on messaging.js", 'msg':err}));
-  await subscriber.connect(); // TODO: add reconnect strategy with dev options
+  await subscriber.connect(); // TODO: add reconnect strategy with dev options,
+                              // currently, this will repeatedly retry
   await subscriber.pSubscribe(redis_channel, (message, channel) =>{
     console.log(`messaging.js received: ${message}`);
     eventCache.newEvent(redis_channel, message, channel);
   });
 }) () // declare and call anon async func
+.catch(err => console.trace(`In redis setup...\n ${err}`))
 
 // create helper middleware so we can reuse server-sent events
 const useServerSentEventsMiddleware = (req, res, next) => {
