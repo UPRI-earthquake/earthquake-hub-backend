@@ -1,9 +1,11 @@
 const fs = require('fs');
+const https = require('https');
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 require('dotenv').config({path: __dirname + '/.env'})
+console.log('db-host: ' + process.env.DB_HOST)
 
 const app = express();
 const port = process.env.NODE_ENV === 'production'
@@ -19,6 +21,8 @@ app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
   : 'https://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT
 }))
+console.log('Development client expected at '
+  + 'https://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT);
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -43,22 +47,26 @@ app.use((err, req, res, next) => {
   return;
 });
 
-// Run server
-http.createServer(app).listen(port, () => {
-  if (process.env.NODE_ENV === 'production'){
-    console.log(
-      'Production backend listening at '
-    + `http://backend:${port}`)
-    console.log(
-      'Accessible through nginx at '
-    + `https://${process.env.BACKEND_PROD_HOST}`
-    )
-  }else{
-    console.log(
-      'Development backend listening at '
-    + `http://${process.env.BACKEND_DEV_HOST}:${port}`
-    )
-  }
-});
-
-
+// Run Server
+if (process.env.NODE_ENVV === 'production'){
+  // Run production http server, to be SSL proxied with NGINX
+  http.createServer(app)
+    .listen(port, () => {
+      console.log(
+        'Production backend listening at '
+      + `http://backend:${port}`);
+      console.log(
+        'Accessible through nginx at '
+      + `https://${process.env.BACKEND_PROD_HOST}`);
+    });
+}else{
+  // Run https server (for local development)
+  var privateKey = fs.readFileSync( process.env.HTTPS_PRIVATE_KEY );
+  var cert = fs.readFileSync( process.env.HTTPS_CERT );
+  https.createServer({key: privateKey, cert: cert}, app)
+    .listen(port, () => {
+      console.log(
+        'Development backend listening at '
+      + `https://${process.env.BACKEND_DEV_HOST}:${port}`);
+    });
+}
