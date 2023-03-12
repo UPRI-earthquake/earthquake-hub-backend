@@ -20,7 +20,7 @@ class EventCache extends EventEmitter {
     }
   }
 
-  async newEvent(pattern, channel, event) {
+  async newEvent(pattern, event, channel) {
     var extendedEvent = {
       name: channel,
       id: Date.now() // int timestamp in ms
@@ -37,18 +37,22 @@ class EventCache extends EventEmitter {
     }
 
     this.emit("newEvent", extendedEvent) // emit
-    console.log(this.cache)
+    console.log(this.cache) // log SC_EVENT cache (not picks)
   }
 }
-const eventCache = new EventCache(30) // record last 30 events\
+const eventCache = new EventCache(30); // record last 30 events\
 
 // Setup Redis pubsub subscriber, and Event Emitter
-const redis_channel = "SC_*" // SC_PICK or SC_EVENT
-const subscriber = redis.createClient(config.redis)
-subscriber.psubscribe(redis_channel)
-subscriber.on("pmessage", (pattern, channel, event) =>{
-  eventCache.newEvent(pattern, channel, event)
-});
+(async () => {
+  const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
+  const subscriber = redis.createClient(config.redis);
+  await subscriber.on('error', err => console.error({'desc': "Error on messaging.js", 'msg':err}));
+  await subscriber.connect(); // TODO: add reconnect strategy with dev options
+  await subscriber.pSubscribe(redis_channel, (message, channel) =>{
+    console.log(`messaging.js received: ${message}`);
+    eventCache.newEvent(redis_channel, message, channel);
+  });
+}) () // declare and call anon async func
 
 // create helper middleware so we can reuse server-sent events
 const useServerSentEventsMiddleware = (req, res, next) => {
@@ -75,8 +79,8 @@ const useServerSentEventsMiddleware = (req, res, next) => {
 }
 
 const useMissedEventsResender = (req, res, next) => {
-  var lastEventId = Number(req.headers['last-event-id']) 
-                    || Number(req.query.lastEventId) 
+  var lastEventId = Number(req.headers['last-event-id'])
+                    || Number(req.query.lastEventId)
   if(lastEventId){
     console.log('last-event-id:', lastEventId)
     const eventsToReSend = eventCache.cache.filter(e => e.id > lastEventId)
@@ -90,8 +94,8 @@ const useMissedEventsResender = (req, res, next) => {
   next();
 }
 
-router.get('/', 
-  useServerSentEventsMiddleware, 
+router.get('/',
+  useServerSentEventsMiddleware,
   useMissedEventsResender,
   (req, res) => {
     console.log('SSE connection opened:', req.ip)
