@@ -29,18 +29,18 @@ router.post('/subscribe', async (req,res) => {
 
 
 // redis real-time comms with SC, and broadcasts notifs
-const proxy = () =>{
-  const redisChannel = "SC_*" // SC_PICK or SC_EVENT
-  const redisClient = redis.createClient(config.redis)
-  redisClient.psubscribe(redisChannel)
-
+const proxy = async () =>{
   webpush.setVapidDetails(
     process.env.WEB_PUSH_CONTACT,
     process.env.PUBLIC_VAPID_KEY,
     process.env.PRIVATE_VAPID_KEY,
-  )
-  redisClient.on("pmessage", async (pattern, channel, message) => {
+  );
+  const redisChannel = "SC_*" // SC_PICK or SC_EVENT
+  const redisClient = redis.createClient(config.redis)
+  await redisClient.connect()
+  await redisClient.pSubscribe(redisChannel, async (message, channel) => {
     if(channel === "SC_EVENT"){
+      console.log(`notification.js ${message}`)
       message = JSON.parse(message)
 
       if(message.magnitude_value > 5.5){

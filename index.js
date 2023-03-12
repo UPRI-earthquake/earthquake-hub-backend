@@ -34,7 +34,8 @@ app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messagingRouter)
 app.use('/notifications', notifs.router)
-notifs.proxy(); // forwards events from redis to web-push
+notifs.proxy() // forwards events from redis to web-push
+  .catch(err => console.trace(`In redis setup for notification...\n ${err}`))
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
