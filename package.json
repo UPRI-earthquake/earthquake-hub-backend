@@ -4,7 +4,7 @@
   "description": "This repo contains the backend code for UPRI earthquake monitoring system",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "repository": {
     "type": "git",
@@ -27,5 +27,16 @@
     "nodemon": "^2.0.21",
     "redis": "^4.6.5",
     "web-push": "^3.4.5"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "supertest": "^6.3.3",
+    "testcontainers": "^9.1.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/"
+    ]
   }
 }
