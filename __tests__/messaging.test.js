@@ -41,15 +41,27 @@ describe("Messaging thru Redis Pub/Sub", () => {
     expect(newEventSpy).toHaveBeenCalledTimes(1); // execute after await above
   });
 
-  it("should log channel received", async () => {
+  it("should log channel: SC_PICK received", async () => {
     let msgSent = '{"message": "test"}';
-    let channel = "SC_PICK";
+    let channel = "SC_PICK"; // NOTE: should not be SC_EVENT (doing so will cause logging of cache)
     let logSpy = jest.spyOn(console, 'log');
 
     await redisPublisher.publish(channel, msgSent)
     // delay checking by 10ms to give Redis container some time to relay msg
     await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
     expect(logSpy).toHaveBeenCalledWith(`messaging.js received: ${channel}`); // execute after await above
+  });
+
+  it("should call newEvent event-handler on receipt of message", async () => {
+    let msgSent = '{"message": "test"}';
+    let channel = "SC_PICK";
+    let handler = jest.fn();
+
+    messaging.eventCache.on("newEvent", handler) // assign a mock function as handler of event
+    await redisPublisher.publish(channel, msgSent)
+    // delay checking by 10ms to give Redis container some time to relay msg
+    await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
+    expect(handler).toHaveBeenCalledTimes(1); // execute after await above
   });
 
 });
