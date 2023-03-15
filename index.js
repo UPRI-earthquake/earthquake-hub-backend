@@ -33,6 +33,8 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messaging.router)
+// TODO: await the redisProxy calls...
+// TODO: quit() the redisProxy calls...
 messaging.redisProxy() // forwards events from redis into a JS event
   .catch(err => console.trace(`In redis setup for messaging...\n ${err}`))
 app.use('/notifications', notifs.router)

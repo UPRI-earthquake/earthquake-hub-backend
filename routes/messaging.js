@@ -31,27 +31,31 @@ class EventCache extends EventEmitter {
       let updatedEvent = await events.addPlaces([JSON.parse(event)]) // parse
       extendedEvent.data = updatedEvent[0]
       this.push(extendedEvent) // cache
+      console.log(this.cache) // log SC_EVENT cache (not picks)
     }
     else if (channel === 'SC_PICK'){
       extendedEvent.data = JSON.parse(event)
     }
 
     this.emit("newEvent", extendedEvent) // emit
-    console.log(this.cache) // log SC_EVENT cache (not picks)
   }
 }
 const eventCache = new EventCache(30); // record last 30 events\
 
 // Setup Redis pubsub subscriber, and Event Emitter (emits events per SC msg)
-const redisProxy = async () =>{
+var subscriber;
+const redisProxy = async (new_config) =>{
   const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
-  const subscriber = redis.createClient(config.redis);
+  subscriber = redis.createClient(new_config ? new_config : config.redis);
   await subscriber.connect(); // TODO: add reconnect strategy with dev options,
                               // currently, this will repeatedly retry (albeit silently)
-  await subscriber.pSubscribe(redis_channel, (message, channel) =>{
-    console.log(`messaging.js received an ${channel}`);
+  await subscriber.pSubscribe(redis_channel,  (message, channel) =>{
+    console.log(`messaging.js received: ${channel}`);
     eventCache.newEvent(redis_channel, message, channel);
   });
+}
+const quitRedisProxy = async () => {
+  subscriber && (await subscriber.quit())
 }
 
 // create helper middleware so we can reuse server-sent events
@@ -124,4 +128,4 @@ router.get('/',
     });
 });
 
-module.exports = {router, redisProxy}
+module.exports = {router, redisProxy, quitRedisProxy, eventCache}

@@ -1,11 +1,10 @@
 const redis = require('redis');
 const { GenericContainer } = require("testcontainers");
+const messaging = require('../routes/messaging');
 
 describe("Messaging thru Redis Pub/Sub", () => {
   let container;
-  let redisClient;
   let redisPublisher;
-  let redisSubscriber;
 
 
   beforeAll(async () => {
@@ -13,27 +12,33 @@ describe("Messaging thru Redis Pub/Sub", () => {
       .withExposedPorts(6379)                       // expose internal port to host
       .start();
 
-    redisClient = redis.createClient({
+    // setup publisher
+    redisPublisher = redis.createClient({
       url:`redis://${container.getHost()}:${container.getMappedPort(6379)}`
     });
-    redisPublisher = redisClient.duplicate();
-    redisSubscriber = redisClient.duplicate();
     await redisPublisher.connect();
-    await redisSubscriber.connect();
+
+    // setup messaging subscriber
+    await messaging.redisProxy({
+      url:`redis://${container.getHost()}:${container.getMappedPort(6379)}`
+    });
   });
 
   afterAll(async () => {
     redisPublisher && (await redisPublisher.quit()); // use quit instead of disconnect!!
-    redisSubscriber && (await redisSubscriber.quit());
+    messaging.quitRedisProxy();
     container && (await container.stop());
   });
 
-  it("should read published objects to Redis", async () => {
-    let msgSent = "TEST MESSAGE";
-    let redisChannel = "SC_*";
-    await redisSubscriber.pSubscribe(redisChannel, (msgRcvd) =>{
-      expect(msgRcvd).toBe(msgSent); // run here because of async race condition
-    });
-    await redisPublisher.publish("SC_*", msgSent)
-  });
+  it("should call newEvent method on receipt of message", async () => {
+    let msgSent = '{"message": "test"}';
+    let channel = "SC_PICK";
+
+    await redisPublisher.publish(channel, msgSent)
+    let newEventSpy = jest.spyOn(messaging.eventCache, 'newEvent');
+    // delay checking by 10ms to give Redis container some time to relay msg
+    await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
+    expect(newEventSpy).toHaveBeenCalledTimes(1); // execute after await above
+  }, 15000);
+
 });
