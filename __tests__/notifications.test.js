@@ -46,7 +46,7 @@ describe("Notification messages thru Redis Pub/Sub", () => {
     container && (await container.stop());
   });
 
-  it("should call newEvent method on receipt of SC_EVENT", async () => {
+  it("should call addPlaces method on receipt of SC_EVENT", async () => {
     let channel = "SC_EVENT";
     let addPlacesSpy = jest.spyOn(events, 'addPlaces');
 
@@ -69,29 +69,24 @@ describe("Notification messages thru Redis Pub/Sub", () => {
     logSpy.mockClear();
   });
 
-  it("should call Subscription.find() with event.mag > 5.5", async () => {
+  it("should not call Subscription.find() when MongoDB not connected", async () => {
     let channel = "SC_EVENT";
     let findSpy = jest.spyOn(Subscription, 'find');
 
     await redisPublisher.publish(channel, mag5_6_event)
     await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
-    expect(findSpy).toHaveBeenCalled(); // execute after await above
+    expect(findSpy).not.toHaveBeenCalled(); // execute after await above
     findSpy.mockClear();
   });
 
-
-  // NOTE: Jest execution of notifications.js hangs on Subscription.find.
-  /*
-  it("should NOT call sendNotification when no MongoDB connection", async () => {
+  it("should NOT call sendNotification when MongoDB not connected", async () => {
     let channel = "SC_EVENT";
     let sendNotificationSpy = jest.spyOn(webpush, 'sendNotification');
 
     await redisPublisher.publish(channel, mag5_6_event)
     // delay checking by 10ms to give Redis container some time to relay msg
-    //await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
-    await new Promise(process.nextTick);
-    //expect(sendNotificationSpy).not.toHaveBeenCalled(); // execute after await above
+    await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
+    expect(sendNotificationSpy).not.toHaveBeenCalled(); // execute after await above
   });
-  */
 
 }, 10000);

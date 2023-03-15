@@ -1,6 +1,7 @@
 const express = require('express');
 const Subscription = require('../models/subscription');
 const events = require('../services/events')
+const mongoose = require('mongoose');
 const redis = require("redis")
 const webpush = require('web-push')
 const config = require('../config')
@@ -57,23 +58,27 @@ const redisProxy = async (new_config) =>{
           body: `Magnitude ${updatedEvent.magnitude_value} in ${address}`,
         })
 
-        const subscribers = await Subscription.find({});
-        subscribers.forEach(subscriber => {
-          webpush.sendNotification(subscriber, payload)
-            .then(console.log(`Sent notif to ${subscriber._id}`))
-            .catch(response => {
-              switch(response.statusCode){
-                case 400:
-                case 410:
-                  console.log(`Subscription gone for ${subscriber._id}`)
-                  Subscription.deleteOne(subscriber)
-                  .then(console.log(`Deleted ${subscriber.id}`))
-                  break;
-                default:
-                  console.log(JSON.parse(e.body))
-              }
-            })
-        })
+        if(mongoose.connection.readyState === 1) { // connected to MongoDB
+          const subscribers = await Subscription.find({});
+          subscribers.forEach(subscriber => {
+            webpush.sendNotification(subscriber, payload)
+              .then(console.log(`Sent notif to ${subscriber._id}`))
+              .catch(response => {
+                switch(response.statusCode){
+                  case 400:
+                  case 410:
+                    console.log(`Subscription gone for ${subscriber._id}`)
+                    Subscription.deleteOne(subscriber)
+                    .then(console.log(`Deleted ${subscriber.id}`))
+                    break;
+                  default:
+                    console.log(JSON.parse(e.body))
+                }
+              })
+          })
+        }else{
+          console.warn("Can't access subscriptions, MongoDB not connected");
+        }
       }
     });
   } catch (err) {
