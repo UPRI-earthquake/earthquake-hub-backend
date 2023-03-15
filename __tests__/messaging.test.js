@@ -39,6 +39,7 @@ describe("Messaging thru Redis Pub/Sub", () => {
     // delay checking by 10ms to give Redis container some time to relay msg
     await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
     expect(newEventSpy).toHaveBeenCalledTimes(1); // execute after await above
+    newEventSpy.mockClear();
   });
 
   it("should log channel: SC_PICK received", async () => {
@@ -50,6 +51,7 @@ describe("Messaging thru Redis Pub/Sub", () => {
     // delay checking by 10ms to give Redis container some time to relay msg
     await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
     expect(logSpy).toHaveBeenCalledWith(`messaging.js received: ${channel}`); // execute after await above
+    logSpy.mockClear();
   });
 
   it("should call newEvent event-handler on receipt of message", async () => {
@@ -62,6 +64,7 @@ describe("Messaging thru Redis Pub/Sub", () => {
     // delay checking by 10ms to give Redis container some time to relay msg
     await new Promise(resolve => setTimeout(resolve, 10)); // resolves after 10ms
     expect(handler).toHaveBeenCalledTimes(1); // execute after await above
+    handler.mockClear();
   });
 
 });
