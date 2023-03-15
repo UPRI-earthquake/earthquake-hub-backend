@@ -22,7 +22,7 @@ describe("Messaging thru Redis Pub/Sub", () => {
     await messaging.redisProxy({
       url:`redis://${container.getHost()}:${container.getMappedPort(6379)}`
     });
-  });
+  }, 10000);
 
   afterAll(async () => {
     redisPublisher && (await redisPublisher.quit()); // use quit instead of disconnect!!
