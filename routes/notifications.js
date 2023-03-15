@@ -10,25 +10,24 @@ require('dotenv').config({path: __dirname + '/../.env'})
 
 const router = express.Router();
 router.post('/subscribe', async (req,res) => {
-  const subscriptionRequest = req.body // TODO: Validate request body
-  const subExists = await Subscription.exists(
-    {endpoint: subscriptionRequest.endpoint}
-  )
-  if(subExists){
-    console.log('Old subscription found')
-  }else{
-    console.log(subExists)
-    const subscription = new Subscription(subscriptionRequest);
-    if(mongoose.connection.readyState === 1) { // connected to MongoDB
-      const savedSubscription = await subscription.save();
-      console.log('New subscription created')
+  if(mongoose.connection.readyState === 1) { // connected to MongoDB
+    const subscriptionRequest = req.body // TODO: Validate request body
+    const subExists = await Subscription.exists(
+      {endpoint: subscriptionRequest.endpoint}
+    )
+    if(subExists){
+      console.log('Old subscription found')
     }else{
-      console.warn("Can't create new subscription, MongoDB not connected");
+      console.log(subExists)
+      const subscription = new Subscription(subscriptionRequest);
+        const savedSubscription = await subscription.save();
+        console.log('New subscription created')
+        res.status(201).json({'success': true}) // send 201 - resource created
     }
+  }else{
+    console.warn("Can't create new subscription, MongoDB not connected");
+    res.status(500).json({'success': false}) // send 500 - resource not created
   }
-
-  // send 201 - resource created
-  res.status(201).json({'success': true})
 })
 
 
