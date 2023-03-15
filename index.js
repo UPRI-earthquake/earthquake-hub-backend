@@ -36,10 +36,8 @@ app.use('/messaging', messaging.router)
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
 messaging.redisProxy() // forwards events from redis into a JS event
-  .catch(err => console.trace(`In redis setup for messaging...\n ${err}`))
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
-  .catch(err => console.trace(`In redis setup for notification...\n ${err}`))
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {

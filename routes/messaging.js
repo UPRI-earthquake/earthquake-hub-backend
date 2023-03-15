@@ -45,14 +45,19 @@ const eventCache = new EventCache(30); // record last 30 events\
 // Setup Redis pubsub subscriber, and Event Emitter (emits events per SC msg)
 var subscriber;
 const redisProxy = async (new_config) =>{
-  const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
-  subscriber = redis.createClient(new_config ? new_config : config.redis);
-  await subscriber.connect(); // TODO: add reconnect strategy with dev options,
-                              // currently, this will repeatedly retry (albeit silently)
-  await subscriber.pSubscribe(redis_channel,  (message, channel) =>{
-    console.log(`messaging.js received: ${channel}`);
-    eventCache.newEvent(redis_channel, message, channel);
-  });
+  try {
+    const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
+    subscriber = redis.createClient(new_config ? new_config : config.redis);
+    await subscriber.connect(); // TODO: add reconnect strategy with dev options,
+                                // currently, this will repeatedly retry (albeit silently)
+    await subscriber.pSubscribe(redis_channel,  (message, channel) =>{
+      console.log(`messaging.js received: ${channel}`);
+      eventCache.newEvent(redis_channel, message, channel);
+    });
+  } catch (err) {
+    console.trace(`In Redis setup...\n ${err}`)
+    //TODO: properly handle this scenario
+  }
 }
 const quitRedisProxy = async () => {
   subscriber && (await subscriber.quit())
