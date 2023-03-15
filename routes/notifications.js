@@ -18,9 +18,13 @@ router.post('/subscribe', async (req,res) => {
     console.log('Old subscription found')
   }else{
     console.log(subExists)
-    console.log('New subscription created')
     const subscription = new Subscription(subscriptionRequest);
-    const savedSubscription = await subscription.save();
+    if(mongoose.connection.readyState === 1) { // connected to MongoDB
+      const savedSubscription = await subscription.save();
+      console.log('New subscription created')
+    }else{
+      console.warn("Can't create new subscription, MongoDB not connected");
+    }
   }
 
   // send 201 - resource created
