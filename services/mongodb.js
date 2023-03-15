@@ -18,9 +18,9 @@ const connect = async (opts = {}) => {
       useUnifiedTopology: true,
       ...opts
     });
-  } catch (e) {
-    console.error(`Couldn't connect to mongodb: ${e}`)
-    //process.exit(1);
+  } catch (err) {
+    console.trace(`In MongoDB setup...\n ${err}`)
+    //TODO: properly handle this scenario
   }
 }
 

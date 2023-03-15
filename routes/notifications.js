@@ -1,12 +1,11 @@
 const express = require('express');
 const Subscription = require('../models/subscription');
-const mongodb = require('../services/mongodb')
 const events = require('../services/events')
 const redis = require("redis")
 const webpush = require('web-push')
 const config = require('../config')
+require('dotenv').config({path: __dirname + '/../.env'})
 
-mongodb.connect();
 
 const router = express.Router();
 router.post('/subscribe', async (req,res) => {
@@ -19,7 +18,7 @@ router.post('/subscribe', async (req,res) => {
   }else{
     console.log(subExists)
     console.log('New subscription created')
-    const subscription = new Subscription(subscriptionRequest); 
+    const subscription = new Subscription(subscriptionRequest);
     const savedSubscription = await subscription.save();
   }
 
@@ -29,18 +28,19 @@ router.post('/subscribe', async (req,res) => {
 
 
 // redis real-time comms with SC, and broadcasts notifs
-const redisProxy = async () =>{
+var subscriber;
+const redisProxy = async (new_config) =>{
   webpush.setVapidDetails(
     process.env.WEB_PUSH_CONTACT,
     process.env.PUBLIC_VAPID_KEY,
     process.env.PRIVATE_VAPID_KEY,
   );
-  const redisChannel = "SC_*" // SC_PICK or SC_EVENT
-  const redisClient = redis.createClient(config.redis)
-  await redisClient.connect()
-  await redisClient.pSubscribe(redisChannel, async (message, channel) => {
-    if(channel === "SC_EVENT"){
-      //console.log(`notification.js ${message}`)
+
+  try {
+    subscriber = redis.createClient(new_config ? new_config : config.redis);
+    await subscriber.connect()
+    await subscriber.pSubscribe("SC_EVENT", async (message, channel) => {
+      console.log(`notifications.js received: ${channel}`)
       message = JSON.parse(message)
 
       if(message.magnitude_value > 5.5){
@@ -75,8 +75,14 @@ const redisProxy = async () =>{
             })
         })
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.trace(`In Redis setup...\n ${err}`)
+    //TODO: properly handle this scenario
+  }
+}
+const quitRedisProxy = async () => {
+  subscriber && (await subscriber.quit())
 }
 
-module.exports = {router, redisProxy}
+module.exports = {router, redisProxy, quitRedisProxy}
