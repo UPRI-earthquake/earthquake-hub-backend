@@ -14,7 +14,7 @@ const port = process.env.NODE_ENV === 'production'
 
 const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
-const messagingRouter = require('./routes/messaging');
+const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
@@ -32,9 +32,11 @@ app.get('/', (req, res) => {
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
-app.use('/messaging', messagingRouter)
+app.use('/messaging', messaging.router)
+messaging.redisProxy() // forwards events from redis into a JS event
+  .catch(err => console.trace(`In redis setup for messaging...\n ${err}`))
 app.use('/notifications', notifs.router)
-notifs.proxy() // forwards events from redis to web-push
+notifs.redisProxy() // forwards events from redis to web-push
   .catch(err => console.trace(`In redis setup for notification...\n ${err}`))
 
 /* Error handler middleware */

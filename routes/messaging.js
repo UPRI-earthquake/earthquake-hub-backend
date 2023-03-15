@@ -42,41 +42,40 @@ class EventCache extends EventEmitter {
 }
 const eventCache = new EventCache(30); // record last 30 events\
 
-// Setup Redis pubsub subscriber, and Event Emitter
-(async () => {
+// Setup Redis pubsub subscriber, and Event Emitter (emits events per SC msg)
+const redisProxy = async () =>{
   const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
   const subscriber = redis.createClient(config.redis);
   await subscriber.connect(); // TODO: add reconnect strategy with dev options,
-                              // currently, this will repeatedly retry
+                              // currently, this will repeatedly retry (albeit silently)
   await subscriber.pSubscribe(redis_channel, (message, channel) =>{
-    console.log(`messaging.js received: ${message}`);
+    console.log(`messaging.js received an ${channel}`);
     eventCache.newEvent(redis_channel, message, channel);
   });
-}) () // declare and call anon async func
-.catch(err => console.trace(`In redis setup...\n ${err}`))
+}
 
 // create helper middleware so we can reuse server-sent events
 const useServerSentEventsMiddleware = (req, res, next) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.flushHeaders();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
 
-    const sendEventStreamData = (eventName, data, id) => {
-      if(!res.finished){
-        res.write(`event: ${eventName}\n`);
-        res.write(`data: ${data}\n`);
-        res.write(`id: ${id}\n`);
-        res.write(`\n\n`);
-      }
+  const sendEventStreamData = (eventName, data, id) => {
+    if(!res.finished){
+      res.write(`event: ${eventName}\n`);
+      res.write(`data: ${data}\n`);
+      res.write(`id: ${id}\n`);
+      res.write(`\n\n`);
     }
+  }
 
-    // we are attaching sendEventStreamData to res, so we can use it later
-    Object.assign(res, {
-      sendEventStreamData
-    });
+  // we are attaching sendEventStreamData to res, so we can use it later
+  Object.assign(res, {
+    sendEventStreamData
+  });
 
-    next();
+  next();
 }
 
 const useMissedEventsResender = (req, res, next) => {
@@ -125,4 +124,4 @@ router.get('/',
     });
 });
 
-module.exports = router
+module.exports = {router, redisProxy}
