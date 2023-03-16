@@ -4,7 +4,6 @@ const events = require('../services/events')
 const mongoose = require('mongoose');
 const redis = require("redis")
 const webpush = require('web-push')
-const config = require('../config')
 require('dotenv').config({path: __dirname + '/../.env'})
 
 

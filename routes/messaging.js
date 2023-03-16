@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const EventEmitter = require('events')
 const events = require('../services/events')
-const config = require('../config')
+require('dotenv').config({path: __dirname + '/../.env'})
 
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
