@@ -1,7 +1,7 @@
 const db = require('./mysqldb');
 const helper = require('../helper');
 const axios = require('axios');
-const config =  require('../config');
+require('dotenv').config({path: __dirname + '/../.env'})
 
 // get magnitude, coord, time,
 async function getEventsList(startTime, endTime){
@@ -76,7 +76,7 @@ async function addPlaces(eventsList){
   await Promise.all(eventsList.map(async (event) => {
     try{
       const result = await axios.get(
-        `http://${config.geoserve.host}:${config.geoserve.port}`
+        `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
         //`http://localhost:8080`
          +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
          +`&latitude=${event.latitude_value}&longitude=${event.longitude_value}`
