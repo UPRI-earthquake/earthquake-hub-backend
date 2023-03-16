@@ -46,10 +46,13 @@ notifs.redisProxy() // forwards events from redis to web-push
 /* Error handler middleware */
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
-  console.error(err.message, err.stack);
-  (process.env.NODE_ENV === 'production')
-  ? res.status(statusCode)
-  : res.status(statusCode).json({'message': err.message});
+  //console.trace(`Express error handler captured the following...\n ${err}`);
+  (process.env.NODE_ENV === 'production') // Provide different error response on prod and dev
+  ? res.status(statusCode).send("Server error occured, try again later.") // TODO: make a standard api message for error
+  : res.status(statusCode).json({
+    'status': "Express error handler caught an error",
+    'err': err.stack,
+    'note': 'This error will only appear on non-production env'});
 
   return;
 });
