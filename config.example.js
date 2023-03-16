@@ -1,24 +1,26 @@
+// change value based on deployment
+
 const env = process.env
 
 const config = {
   db: {
-    host: env.NODE_ENV === 'production' ? env.DB_HOST : 'localhost',
-    user: env.NODE_ENV === 'production' ? env.DB_USER : 'username',
-    password: env.NODE_ENV === 'production' ? env.DB_PASSWORD: 'password',
-    database: env.NODE_ENV === 'production' ? env.DB_NAME: 'seiscomp',
+    host: env.DB_HOST,
+    user: env.DB_USER,
+    password: env.DB_PASSWORD,
+    database: env.DB_NAME,
   },
   redis: {
-    host: env.NODE_ENV === 'production' ? env.REDIS_HOST : 'localhost',
+    host: env.REDIS_HOST,
     port: env.REDIS_PORT,
   },
   mongodb: {
-    host: env.NODE_ENV === 'production' ? env.MONGO_DB_HOST: 'localhost',
-    port: env.NODE_ENV === 'production' ? env.MONGO_DB_PORT: '27017',
-    database: env.NODE_ENV === 'production' ? env.MONGO_DB_NAME: 'latestEQs',
+    host: env.MONGO_DB_HOST,
+    port:  env.MONGO_DB_PORT,
+    database: env.MONGO_DB_NAME,
   },
   geoserve: {
-    host: env.NODE_ENV === 'production' ? env.GEOSERVE_HOST: 'localhost',
-    port: env.NODE_ENV === 'production' ? env.GEOSERVE_PORT: '80',
+    host: env.GEOSERVE_HOST,
+    port: env.GEOSERVE_PORT,
   },
 };
 

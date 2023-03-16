@@ -41,7 +41,9 @@ const redisProxy = async (new_config) =>{
   );
 
   try {
-    subscriber = redis.createClient(new_config ? new_config : config.redis);
+    subscriber = redis.createClient(new_config ? new_config : {
+      url:`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
+    });
     await subscriber.connect()
     await subscriber.pSubscribe("SC_EVENT", async (message, channel) => {
       console.log(`notifications.js received: ${channel}`)

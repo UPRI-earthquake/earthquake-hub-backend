@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  backend:
+    container_name: latest-earthquakes-ph-backend-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: "latest-earthquakes-ph-backend-dev:latest"
+    volumes:
+      # bind local dir to reflect changes in container
+      - ./:/app
+    depends_on:
+      - "mongodb"
+      - "redis"
+    expose:
+      - "5000"
+    extra_hosts:
+       - "host.docker.internal:host-gateway"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.3
+    # override default Dockerfile CMD with package.json script startDev
+    command: npm run startDev
+
+  mongodb:
+    container_name: mongodb
+    image: "mongo:4.4.12"
+    volumes:
+      - mongodb-data:/data/db
+    expose:
+      - "27017"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.4
+    command: --quiet # reduce logs
+
+  redis:
+    container_name: redis
+    image: "redis:6.2.5"
+    expose:
+      - "6379"
+    networks:
+      app-network:
+        ipv4_address: 172.22.0.5
+
+
+volumes:
+  mongodb-data:
+
+networks:
+  app-network:
+    name: latest-earthquakes-ph
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+
+

@@ -47,7 +47,9 @@ var subscriber;
 const redisProxy = async (new_config) =>{
   try {
     const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
-    subscriber = redis.createClient(new_config ? new_config : config.redis);
+    subscriber = redis.createClient(new_config ? new_config : {
+      url:`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
+    });
     await subscriber.connect(); // TODO: add reconnect strategy with dev options,
                                 // currently, this will repeatedly retry (albeit silently)
     await subscriber.pSubscribe(redis_channel,  (message, channel) =>{

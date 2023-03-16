@@ -1,0 +1,27 @@
+FROM node:14-alpine
+
+LABEL version="1.0"
+LABEL description="Base docker image for LatestEarthquakesPH back-end"
+LABEL maintainer=["cpsanchez@science.upd.edu.ph"]
+
+RUN apk add dumb-init
+
+# --build-arg NODE_ENV set to "development" by default
+# other value can be "production"
+ARG NODE_ENV=development
+ENV NODE_ENV ${NODE_ENV}
+
+WORKDIR /app
+COPY --chown=node:node package*.json ./
+RUN npm ci --loglevel verbose
+#RUN npm clean-install
+COPY --chown=node:node . ./
+
+EXPOSE 5000
+
+USER node
+CMD ["dumb-init", "node", "index.js"]
+
+
+
+
