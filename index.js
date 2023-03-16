@@ -1,3 +1,5 @@
+const dns = require('dns');
+const os = require('os');
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
@@ -62,9 +64,11 @@ if (process.env.NODE_ENVV === 'production'){
   // Run production http server, to be SSL proxied with NGINX
   http.createServer(app)
     .listen(port, () => {
-      console.log(
-        'Production backend listening at '
-      + `http://backend:${port}`);
+      dns.lookup(os.hostname(), function (err, IP, fam) {
+        console.log(
+          'Production backend listening at '
+        + `http://${IP}:${port}`);
+      })
       console.log(
         'Accessible through nginx at '
       + `https://${process.env.BACKEND_PROD_HOST}`);
@@ -75,8 +79,10 @@ if (process.env.NODE_ENVV === 'production'){
   var cert = fs.readFileSync( process.env.HTTPS_CERT );
   https.createServer({key: privateKey, cert: cert}, app)
     .listen(port, () => {
-      console.log(
-        'Development backend listening at '
-      + `https://${process.env.BACKEND_DEV_HOST}:${port}`);
+      dns.lookup(os.hostname(), function (err, IP, fam) {
+        console.log(
+          'Development backend listening at '
+        + `https://${IP}:${port}`);
+      })
     });
 }
