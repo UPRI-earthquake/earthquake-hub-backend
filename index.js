@@ -60,7 +60,7 @@ app.use((err, req, res, next) => {
 });
 
 // Run Server
-if (process.env.NODE_ENVV === 'production'){
+if (process.env.NODE_ENV === 'production'){
   // Run production http server, to be SSL proxied with NGINX
   http.createServer(app)
     .listen(port, () => {
