@@ -75,14 +75,17 @@ if (process.env.NODE_ENV === 'production'){
     });
 }else{
   // Run https server (for local development)
+  /* Remove for now ...
   var privateKey = fs.readFileSync( process.env.HTTPS_PRIVATE_KEY );
   var cert = fs.readFileSync( process.env.HTTPS_CERT );
   https.createServer({key: privateKey, cert: cert}, app)
+  */
+  http.createServer(app)
     .listen(port, () => {
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Development backend listening at '
-        + `https://${IP}:${port}`);
+        + `http://${IP}:${port}`);
       })
     });
 }
