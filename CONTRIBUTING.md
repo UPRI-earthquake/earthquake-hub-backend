@@ -18,7 +18,7 @@
     > 
     
     ```bash
-    docker compose -f docker-compose.backend-dev.yml up --build
+    docker compose up --build
     ```
     
     The above command shall show the logs of all the containers (see the `docker-compose.backend-dev.yml` file to check the container names) spun up by `docker compose`. Wait for the `latest-earthquakes-ph-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
@@ -26,9 +26,9 @@
     Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers
     
     > ℹ️ Some useful docker recipes
-    1. Start and run the containers in background: `docker compose -f <yml-file> up -d`
+    1. Start the (pre-built) containers in background: `docker compose start`
     2. See the logs of the services: `docker compose logs -f [backend, redis, etc]`
-    3. Stop the containers `docker compose -f <yml-file> down`
+    3. Stop the containers `docker compose stop`
     > 
 
 ## Pull Request Process

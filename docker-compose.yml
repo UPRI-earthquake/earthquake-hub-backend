@@ -6,6 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      target: "base" # select dockerfile stage to use
     image: "latest-earthquakes-ph-backend-dev:latest"
     volumes:
       # bind local dir to reflect changes in container
@@ -21,8 +22,9 @@ services:
     networks:
       app-network:
         ipv4_address: 172.22.0.3
-    # override default Dockerfile CMD with package.json script startDev
-    command: npm run startDev
+    # set command to only install node_modules if not present, then startDev
+    command: sh -c '[ -d "node_modules" ] && npm run startDev
+                    || npm ci && npm run startDev'
 
   mongodb:
     container_name: mongodb

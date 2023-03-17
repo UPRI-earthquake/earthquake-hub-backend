@@ -1,23 +1,31 @@
-FROM node:14-alpine
+# Stage 1: base, minimal setup for dev, shall contain non-js deps.
+#          To be bind-mounted to local dev files (includint node_modules)
+FROM node:14-alpine as base
 
 LABEL version="1.0"
 LABEL description="Base docker image for LatestEarthquakesPH back-end"
 LABEL maintainer=["cpsanchez@science.upd.edu.ph"]
 
-RUN apk add dumb-init
-
-# --build-arg NODE_ENV set to "development" by default
-# other value can be "production"
-ARG NODE_ENV=development
-ENV NODE_ENV ${NODE_ENV}
+EXPOSE 5000
 
 WORKDIR /app
+
+# add non-js deps (for deps other than node_modules)
+RUN apk add --no-cache python make g++
+
+# Stage 2: prod, inherits base, adds src code, pre-installs js deps
+# TODO: Test for production build
+FROM base as prod
+
+RUN apk add dumb-init
+
+# install node modules
 COPY --chown=node:node package*.json ./
 RUN npm ci --loglevel verbose
-#RUN npm clean-install
+
+# copy codebase
 COPY --chown=node:node . ./
 
-EXPOSE 5000
 
 USER node
 CMD ["dumb-init", "node", "index.js"]
