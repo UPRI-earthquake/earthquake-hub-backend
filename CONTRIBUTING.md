@@ -25,10 +25,16 @@
     
     Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers
     
-    > ℹ️ Some useful docker recipes
+    > ℹ️ Useful docker recipes
     1. Start the (pre-built) containers in background: `docker compose start`
     2. See the logs of the services: `docker compose logs -f [backend, redis, etc]`
     3. Stop the containers `docker compose stop`
+    4. Add or remove npm packages (⚠️ Don't use npm command locally to avoid package-lock.json issues, use it inside docker like in the following command)
+        ```bash
+        # Example, installing jest as a dependency
+        docker exec latest-earthquakes-ph-backend-dev npm install --save-dev jest
+        # edit the npm command as needed
+        ```
     > 
 
 ## Pull Request Process
