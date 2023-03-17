@@ -35,6 +35,10 @@
         docker exec latest-earthquakes-ph-backend-dev npm install --save-dev jest
         # edit the npm command as needed
         ```
+    5. Remove node_modules via docker exec as well
+        ```bash
+        docker exec latest-earthquakes-ph-backend-dev rm -rf node_modules
+        ```
     > 
 
 ## Pull Request Process
