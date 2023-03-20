@@ -1,7 +1,11 @@
 # Detailed Description
 
 ### Summary
-<!--- Please include a detailed summary of the changes and the related issue. --> 
+<!--- Please link the related issue/task --> 
+> This PR fixes: [SEISMO #### - Title](issue-link)
+
+<!--- Please include a detailed summary of the changes --> 
+ 
 ### Motivation & Context
 <!--- Why is this change required? What problem does it solve? -->
 <!--- If it fixes an open issue, please link to the issue here. -->
