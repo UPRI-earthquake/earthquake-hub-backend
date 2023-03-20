@@ -11,7 +11,7 @@ EXPOSE 5000
 WORKDIR /app
 
 # add non-js deps (for deps other than node_modules)
-RUN apk add --no-cache python make g++
+RUN apk add --no-cache python3 make g++
 
 # Stage 2: prod, inherits base, adds src code, pre-installs js deps
 # TODO: Test for production build
