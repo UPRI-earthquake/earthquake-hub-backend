@@ -25,10 +25,8 @@ const notifs  = require('./routes/notifications');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
-  : 'https://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT
+  : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT
 }))
-console.log('Development client expected at '
-  + 'https://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT);
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -82,6 +80,9 @@ if (process.env.NODE_ENV === 'production'){
   */
   http.createServer(app)
     .listen(port, () => {
+      console.log(
+        'Development client expected at '
+      + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Development backend listening at '
