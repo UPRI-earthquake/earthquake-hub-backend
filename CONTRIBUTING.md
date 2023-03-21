@@ -40,11 +40,29 @@
         docker exec latest-earthquakes-ph-backend-dev rm -rf node_modules
         ```
     > 
+## Git Practices
+1. It is encouraged to use atomic commits on your branches. 
+2. Follow these for your commit messages:
+    1. `feat`: The new feature you're adding to a particular application
+    2. `fix`: A bug fix
+    3. `style`: Feature and updates related to styling
+    4. `refactor`: Refactoring a specific section of the codebase
+    5. `test`: Everything related to testing
+    6. `docs`: Everything related to documentation
+    7. `chore`: Regular code maintenance.
+ 
 
 ## Pull Request Process
 
 1. PR your branch into `dev`
-2. Follow the PR document template
+2. Follow the PR document template. Be as detailed as possible. Minimize the need for the reviewers to ask further questions.
+3. Use the this format for the PR Title: `type: [TASK ID] SHORTENED TASK TITLE`
+4. PR types:
+    1. `draft`: to be completed PR
+    2. `feat`: new feature
+    3. `fix`: bug fixes
+    4. `test`: unit or integration tests
+    5. `chore`: (aka housekeeping) cleaning/styling/refactor code, documentations, adding comments
 
 ## Miscellaneous Notes
 
