@@ -29,7 +29,9 @@ services:
     container_name: mongodb
     image: "mongo:4.4.12"
     volumes:
-      - mongodb-data:/data/db
+      - ./dev/init-mongodb:/docker-entrypoint-initdb.d
+      - ./dev/init-mongodb/data:/tmp/data
+      # - mongodb-data:/data/db
     expose:
       - "27017"
     networks:
