@@ -14,7 +14,7 @@ async function eventController(req, res, next) {
     res.json(updatedData)
 
   }catch(err){
-    console.error('Error while getting events', err.message);
+    console.trace(`While getting events from mysql...\n ${err}`);
     next(err)
   }
 }

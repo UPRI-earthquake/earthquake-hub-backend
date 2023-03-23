@@ -1,35 +1,20 @@
 version: '3.9'
 
 services:
-  frontend:
-    container_name: latest-earthquakes-ph-frontend
-    build:
-      context: ../front-end
-      dockerfile: Dockerfile
-    image: "latest-earthquakes-ph-frontend:latest"
-    depends_on:
-      - "backend"
-    ports:
-      - "443:443"
-    extra_hosts:
-       - "host.docker.internal:host-gateway"
-    networks:
-      app-network:
-        ipv4_address: 172.22.0.2
-    volumes:
-      - type: bind
-        source: ../front-end/certs
-        target: /etc/nginx/certs
-
   backend:
-    container_name: latest-earthquakes-ph-backend
+    container_name: latest-earthquakes-ph-backend-dev
     build:
       context: .
-      dockerfile: Dockerfile
-    image: "latest-earthquakes-ph-backend:latest"
+      dockerfile: Dockerfile.dev
+      target: "base" # select dockerfile stage to use
+    image: "latest-earthquakes-ph-backend-dev:latest"
+    volumes:
+      # bind local dir to reflect changes in container
+      - ./:/app
     depends_on:
       - "mongodb"
       - "redis"
+      - "mysql"
     expose:
       - "5000"
     extra_hosts:
@@ -37,6 +22,8 @@ services:
     networks:
       app-network:
         ipv4_address: 172.22.0.3
+    # set command to only install node_modules if not present, then startDev
+    command: /bin/sh dev-entrypoint.sh
 
   mongodb:
     container_name: mongodb
@@ -48,61 +35,32 @@ services:
     networks:
       app-network:
         ipv4_address: 172.22.0.4
+    command: --quiet # reduce logs
 
   redis:
     container_name: redis
-    image: "redis:latest"
+    image: "redis:6.2.5"
     expose:
       - "6379"
     networks:
       app-network:
         ipv4_address: 172.22.0.5
 
-  geoserve-db:
-    build:
-      context: ../hazdev-geoserve-ws
-      dockerfile: Dockerfile-db
-    image: "usgs/hazdev-geoserve-db:latest"
+  mysql:
+    container_name: mysql
+    image: "mysql:8.0.32"
+    command: --default-authentication-plugin=mysql_native_password
     environment:
-      - DATALOAD_DIR=/tmp/dataload
-      - DB_ADMIN_USER=postgres
-      - DB_ADMIN_PASSWORD=postgres
-      - DB_LOAD_TYPE=incremental
-      - DB_NAME=earthquake
-      - DB_USER=postgres
-      - DB_PASS=postgres
-      - DB_SCHEMA=geoserve
-      - DB_ADMIN_DSN=pgsql:dbname=earthquake
-      - PGDATA=/var/lib/postgresqsl/data/pgdata
-      - POSTGRES_PASSWORD=postgres
+      MYSQL_RANDOM_ROOT_PASSWORD: yes
+      MYSQL_USER: ${DB_USER} # will automatically be replaced by values in .env in the same dir
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
     volumes:
-      # volume to store downloaded data files
-      - ../hazdev-geoserve-ws/data/dataload:/tmp/dataload
-      # volume to store database data files
-      - ../hazdev-geoserve-ws/data/pgdata:/var/lib/postgresqsl/data/pgdata
-    networks:
-      app-network:
-        ipv4_address: 172.22.0.6
-
-  geoserve-ws:
-    build:
-      context: ../hazdev-geoserve-ws
-      dockerfile: Dockerfile-ws
-    image: "usgs/hazdev-geoserve-ws:latest"
-    environment:
-      - DB_DSN=pgsql:host=geoserve-db;port=5432;dbname=earthquake
-      - DB_USER=postgres
-      - DB_PASS=postgres
-      - DB_SCHEMA=geoserve
-    volumes:
-      # volumes for local dev
-      - ../hazdev-geoserve-ws/src/htdocs:/var/www/apps/hazdev-geoserve-ws/htdocs
-      - ../hazdev-geoserve-ws/src/lib:/var/www/apps/hazdev-geoserve-ws/lib
-    expose:
-      - "80"
-    networks:
-      app-network:
-        ipv4_address: 172.22.0.7
+      # init db contents by binding sample seiscomp data from host into docker-entrypoint-initdb.d
+      - ./dev/sample_data/seiscompDB.sql:/docker-entrypoint-initdb.d/seiscompDB.sql
+    ports:
+      - "3306:3306" # like in production, mysql should be connectable through "host.docker.internal:host-gateway"
+                    # this mirrors a mysql service running locally on host machine
 
 volumes:
   mongodb-data:

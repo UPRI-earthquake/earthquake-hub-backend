@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
-const config = require('../config');
+require('dotenv').config({path: __dirname + '/../.env'})
 
 const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
 
 const getConnectionUrl = () => {
-  const host = `mongodb://${config.mongodb.host}:${config.mongodb.port}`
+  const host = `mongodb://${process.env.MONGO_DB_HOST}:${process.env.MONGO_DB_PORT}`
                 .replace(/\/$/, '');
 
-  return `${host}/${config.mongodb.database}`
+  return `${host}/${process.env.MONGO_DB_NAME}`
 }
 
 const connect = async (opts = {}) => {
@@ -18,9 +18,9 @@ const connect = async (opts = {}) => {
       useUnifiedTopology: true,
       ...opts
     });
-  } catch (e) {
-    console.error(`Couldn't connect to mongodb: ${e}`)
-    //process.exit(1);
+  } catch (err) {
+    console.trace(`In MongoDB setup...\n ${err}`)
+    //TODO: properly handle this scenario
   }
 }
 

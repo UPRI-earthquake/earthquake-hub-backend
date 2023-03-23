@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const EventEmitter = require('events')
 const events = require('../services/events')
-const config = require('../config')
+require('dotenv').config({path: __dirname + '/../.env'})
 
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
@@ -20,7 +20,7 @@ class EventCache extends EventEmitter {
     }
   }
 
-  async newEvent(pattern, channel, event) {
+  async newEvent(pattern, event, channel) {
     var extendedEvent = {
       name: channel,
       id: Date.now() // int timestamp in ms
@@ -31,52 +31,67 @@ class EventCache extends EventEmitter {
       let updatedEvent = await events.addPlaces([JSON.parse(event)]) // parse
       extendedEvent.data = updatedEvent[0]
       this.push(extendedEvent) // cache
+      console.log(this.cache) // log SC_EVENT cache (not picks)
     }
     else if (channel === 'SC_PICK'){
       extendedEvent.data = JSON.parse(event)
     }
 
     this.emit("newEvent", extendedEvent) // emit
-    console.log(this.cache)
   }
 }
-const eventCache = new EventCache(30) // record last 30 events\
+const eventCache = new EventCache(30); // record last 30 events\
 
-// Setup Redis pubsub subscriber, and Event Emitter
-const redis_channel = "SC_*" // SC_PICK or SC_EVENT
-const subscriber = redis.createClient(config.redis)
-subscriber.psubscribe(redis_channel)
-subscriber.on("pmessage", (pattern, channel, event) =>{
-  eventCache.newEvent(pattern, channel, event)
-});
+// Setup Redis pubsub subscriber, and Event Emitter (emits events per SC msg)
+var subscriber;
+const redisProxy = async (new_config) =>{
+  try {
+    const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
+    subscriber = redis.createClient(new_config ? new_config : {
+      url:`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
+    });
+    await subscriber.connect(); // TODO: add reconnect strategy with dev options,
+                                // currently, this will repeatedly retry (albeit silently)
+    await subscriber.pSubscribe(redis_channel,  (message, channel) =>{
+      console.log(`messaging.js received: ${channel}`);
+      eventCache.newEvent(redis_channel, message, channel);
+    });
+  } catch (err) {
+    console.trace(`In Redis setup...\n ${err}`)
+    //TODO: properly handle this scenario
+  }
+}
+const quitRedisProxy = async () => {
+  subscriber && (await subscriber.quit())
+}
 
 // create helper middleware so we can reuse server-sent events
 const useServerSentEventsMiddleware = (req, res, next) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.flushHeaders();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
 
-    const sendEventStreamData = (eventName, data, id) => {
-      if(!res.finished){
-        res.write(`event: ${eventName}\n`);
-        res.write(`data: ${data}\n`);
-        res.write(`id: ${id}\n`);
-        res.write(`\n\n`);
-      }
+  const sendEventStreamData = (eventName, data, id) => {
+    if(!res.finished){
+      res.write(`event: ${eventName}\n`);
+      res.write(`data: ${data}\n`);
+      res.write(`id: ${id}\n`);
+      res.write(`\n\n`);
     }
+  }
 
-    // we are attaching sendEventStreamData to res, so we can use it later
-    Object.assign(res, {
-      sendEventStreamData
-    });
+  // we are attaching sendEventStreamData to res, so we can use it later
+  Object.assign(res, {
+    sendEventStreamData
+  });
 
-    next();
+  next();
 }
 
 const useMissedEventsResender = (req, res, next) => {
-  var lastEventId = Number(req.headers['last-event-id']) 
-                    || Number(req.query.lastEventId) 
+  var lastEventId = Number(req.headers['last-event-id'])
+                    || Number(req.query.lastEventId)
   if(lastEventId){
     console.log('last-event-id:', lastEventId)
     const eventsToReSend = eventCache.cache.filter(e => e.id > lastEventId)
@@ -90,8 +105,8 @@ const useMissedEventsResender = (req, res, next) => {
   next();
 }
 
-router.get('/', 
-  useServerSentEventsMiddleware, 
+router.get('/',
+  useServerSentEventsMiddleware,
   useMissedEventsResender,
   (req, res) => {
     console.log('SSE connection opened:', req.ip)
@@ -120,4 +135,4 @@ router.get('/',
     });
 });
 
-module.exports = router
+module.exports = {router, redisProxy, quitRedisProxy, eventCache}
