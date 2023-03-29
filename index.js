@@ -20,6 +20,7 @@ mongodb.connect(); // Required by notifs router
 
 const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
+const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
@@ -36,6 +37,7 @@ app.get('/', (req, res) => {
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
+app.use('/deviceLinkHandler', deviceLinkRouter)
 app.use('/messaging', messaging.router)
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
