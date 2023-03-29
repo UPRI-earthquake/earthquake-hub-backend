@@ -33,13 +33,13 @@ router.post('/subscribe', async (req,res) => {
 // redis real-time comms with SC, and broadcasts notifs
 var subscriber;
 const redisProxy = async (new_config) =>{
-  webpush.setVapidDetails(
-    process.env.WEB_PUSH_CONTACT,
-    process.env.PUBLIC_VAPID_KEY,
-    process.env.PRIVATE_VAPID_KEY,
-  );
-
   try {
+    webpush.setVapidDetails(
+      process.env.WEB_PUSH_CONTACT,
+      process.env.PUBLIC_VAPID_KEY,
+      process.env.PRIVATE_VAPID_KEY,
+    );
+
     subscriber = redis.createClient(new_config ? new_config : {
       url:`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
     });
