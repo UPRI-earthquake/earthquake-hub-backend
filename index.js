@@ -62,14 +62,17 @@ if (process.env.NODE_ENV === 'production'){
   // Run production http server, to be SSL proxied with NGINX
   http.createServer(app)
     .listen(port, () => {
+      console.log(
+        'Accessible through nginx at '
+      + `https://${process.env.BACKEND_PROD_HOST}`);
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Production backend listening at '
         + `http://${IP}:${port}`);
-      })
+      });
       console.log(
-        'Accessible through nginx at '
-      + `https://${process.env.BACKEND_PROD_HOST}`);
+        'Production client expected (by CORS) at '
+      + `https://${process.env.CLIENT_PROD_HOST}`);
     });
 }else{
   // Run https server (for local development)
@@ -80,13 +83,13 @@ if (process.env.NODE_ENV === 'production'){
   */
   http.createServer(app)
     .listen(port, () => {
-      console.log(
-        'Development client expected at '
-      + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Development backend listening at '
         + `http://${IP}:${port}`);
+      console.log(
+        'Development client expected (by CORS) at '
+      + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       })
     });
 }
