@@ -2,12 +2,12 @@ version: '3.9'
 
 services:
   backend:
-    container_name: latest-earthquakes-ph-backend-dev
+    container_name: earthquake-hub-backend-dev
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
       target: "base" # select dockerfile stage to use
-    image: "latest-earthquakes-ph-backend-dev:2.0"
+    image: "earthquake-hub-backend-dev:1.0.0"
     volumes:
       # bind local dir to reflect changes in container
       - ./:/app
