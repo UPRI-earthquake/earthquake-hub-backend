@@ -2,10 +2,6 @@
 #          To be bind-mounted to local dev files (includint node_modules)
 FROM node:18-alpine as base
 
-LABEL org.opencontainers.image.source=https://github.com/prokorpio/earthquake-hub-backend
-LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
-LABEL maintainer=["earthquake@science.upd.edu.ph"]
-
 EXPOSE 5000
 
 WORKDIR /app
@@ -27,10 +23,11 @@ RUN npm ci --only=production --loglevel=verbose
 # copy codebase
 COPY --chown=node:node . ./
 
-
 USER node
 CMD ["dumb-init", "node", "index.js"]
 
-
+LABEL org.opencontainers.image.source="https://github.com/prokorpio/earthquake-hub-backend"
+LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
+LABEL org.opencontainers.image.authors="earthquake@science.upd.edu.ph"
 
 
