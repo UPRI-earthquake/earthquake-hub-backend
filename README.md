@@ -1,3 +1,6 @@
+# earthquake-hub-backend
+Backend code for the EarthquakeHub web app
+
 ## Publishing container image
 1. Make sure that any changes from the env-file are also reflected in the commons repository docker-compose (TODO: predefine the env vars in the Dockerfile itself, instead of only on the env-file). This will ensure that when the commons uses this repository, it is using the env-vars that are expected by the image.
 2. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
@@ -12,7 +15,7 @@
     ```
 
 
------ The following info is outdated -----
+## ----- The following info is outdated -----
 
 This repo contains the backend code for UPRI earthquake monitoring system
 This branch is for development.
