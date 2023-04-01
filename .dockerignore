@@ -1,5 +1,8 @@
 node_modules
 .dockerignore
+.gitignore
 Dockerfile
+docker-compose*
 .env
 .git
+*.swp
