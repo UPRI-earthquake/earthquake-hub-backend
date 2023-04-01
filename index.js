@@ -7,7 +7,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 require('dotenv').config({path: __dirname + '/.env'})
-console.log('db-host: ' + process.env.DB_HOST)
+console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();
 const port = process.env.NODE_ENV === 'production'
