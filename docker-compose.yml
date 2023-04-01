@@ -10,6 +10,7 @@ services:
     image: "earthquake-hub-backend-dev:1.0.0"
     volumes:
       # bind local dir to reflect changes in container
+      # NOTE: includes everything, including all those in .dockerignore, specifically .env
       - ./:/app
     depends_on:
       - "mongodb"

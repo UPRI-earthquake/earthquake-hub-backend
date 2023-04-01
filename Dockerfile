@@ -24,7 +24,7 @@ RUN npm ci --only=production --loglevel=verbose
 COPY --chown=node:node . ./
 
 USER node
-CMD ["dumb-init", "node", "index.js"]
+CMD ["dumb-init", "npm", "run", "start"]
 
 LABEL org.opencontainers.image.source="https://github.com/prokorpio/earthquake-hub-backend"
 LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
