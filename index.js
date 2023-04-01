@@ -5,14 +5,6 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
-if (process.env.NODE_ENV === 'production'){
-  // During production, env-vars shall be provided within the
-  // runtime environment, usually via docker-compose environment arg
-  console.log("Using only runtime environment variables");
-} else {
-  require('dotenv').config({path: __dirname + '/.env'})
-  console.log("Using both .env and runtime environment variables");
-}
 console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();

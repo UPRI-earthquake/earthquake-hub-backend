@@ -4,7 +4,6 @@ const events = require('../services/events')
 const mongoose = require('mongoose');
 const redis = require("redis")
 const webpush = require('web-push')
-require('dotenv').config({path: __dirname + '/../.env'})
 
 
 const router = express.Router();
@@ -28,7 +27,6 @@ router.post('/subscribe', async (req,res) => {
     res.status(500).json({'success': false}) // send 500 - resource not created
   }
 })
-
 
 // redis real-time comms with SC, and broadcasts notifs
 var subscriber;

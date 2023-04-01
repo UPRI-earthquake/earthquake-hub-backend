@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-require('dotenv').config({path: __dirname + '/../.env'})
 
 const getConnectionUrl = () => {
   const host = `mongodb://${process.env.MONGO_HOST}:${process.env.MONGO_PORT}`

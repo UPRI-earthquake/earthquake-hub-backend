@@ -1,7 +1,6 @@
 const db = require('./mysqldb');
 const helper = require('../helper');
 const axios = require('axios');
-require('dotenv').config({path: __dirname + '/../.env'})
 
 // get magnitude, coord, time,
 async function getEventsList(startTime, endTime){
