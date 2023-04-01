@@ -1,7 +1,5 @@
 const dns = require('dns');
 const os = require('os');
-const fs = require('fs');
-const https = require('https');
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -83,12 +81,7 @@ if (process.env.NODE_ENV === 'production'){
       + `https://${process.env.CLIENT_PROD_HOST}`);
     });
 }else{
-  // Run https server (for local development)
-  /* Remove for now ...
-  var privateKey = fs.readFileSync( process.env.HTTPS_PRIVATE_KEY );
-  var cert = fs.readFileSync( process.env.HTTPS_CERT );
-  https.createServer({key: privateKey, cert: cert}, app)
-  */
+  // Run http server (for local development)
   http.createServer(app)
     .listen(port, () => {
       dns.lookup(os.hostname(), function (err, IP, fam) {
