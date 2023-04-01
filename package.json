@@ -4,14 +4,14 @@
   "description": "This repo contains the backend code for UPRI earthquake monitoring system",
   "main": "index.js",
   "scripts": {
-    "start:dev": "nodemon index.js",
-    "start:dev:help": "echo 'Runs nodemon on index.js. To be used inside docker...",
+    "start": "node index.js",
+    "start:help": "echo 'Runs node server index.js, and expects process.env to be runtime-export-ed in the environment'",
 
-    "test:locally": "jest --setupFiles dotenv/config",
-    "test:locally:help": "echo 'Runs tests against Jest, and expects env-vars to come from a local .env file. To be used locally...'",
+    "start:dev": "nodemon -r dotenv/config index.js",
+    "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
 
-    "start:dev:locally": "nodemon -r dotenv/config index.js",
-    "start:dev:locally:help": "echo 'Runs nodemon on index.js, and expects env-vars to come from a local .env file. To be used locally...'"
+    "test": "jest --setupFiles dotenv/config",
+    "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'"
   },
   "repository": {
     "type": "git",
