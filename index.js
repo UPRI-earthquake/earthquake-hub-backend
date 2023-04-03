@@ -8,6 +8,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 require('dotenv').config({path: __dirname + '/.env'})
 console.log('db-host: ' + process.env.DB_HOST)
+require('./models/index');
 
 const app = express();
 const port = process.env.NODE_ENV === 'production'
@@ -22,6 +23,7 @@ const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
+const authRouter = require('./routes/auth');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -37,11 +39,20 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messaging.router)
+app.use('/auth', authRouter);
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
 messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
+
+app.use((req, res, next) => {
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, Content-Type, Accept"
+  );
+  next();
+});
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
