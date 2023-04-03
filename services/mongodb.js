@@ -4,10 +4,18 @@ require('dotenv').config({path: __dirname + '/../.env'})
 const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
 
 const getConnectionUrl = () => {
-  const host = `mongodb://${process.env.MONGO_DB_HOST}:${process.env.MONGO_DB_PORT}`
-                .replace(/\/$/, '');
+  var host, connxUrl;
 
-  return `${host}/${process.env.MONGO_DB_NAME}`
+  if (process.env.NODE_ENV === 'production') {
+    host = `mongodb://${process.env.MONGO_DB_HOST}:${process.env.MONGO_DB_PORT}`
+      .replace(/\/$/, '');
+
+    connxUrl = `${host}/${process.env.MONGO_DB_NAME}`;
+  } else {
+    connxUrl = process.env.MONGO_DB_DEV_CONNX_STR;
+  }
+
+  return connxUrl;
 }
 
 const connect = async (opts = {}) => {
