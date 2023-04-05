@@ -27,7 +27,7 @@ router.post('/', async(req, res) => {
                 res.status(400).json({ message: 'Device is Already Linked to an Existing Account' }) // send 400 - resource exists
             } else { // device is not yet used
                 // TODO: Authenticate user input. For now, chineck ko lang kung existing yung input username
-                const username = req.body.accountName;
+                const username = req.body.username;
                 const userExists = await Accounts.exists({
                     username: username
                 })
