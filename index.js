@@ -40,6 +40,7 @@ app.use('/messaging', messaging.router)
 messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
+app.use('/accounts', require('./routes/accounts.route'))
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
