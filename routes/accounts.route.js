@@ -200,6 +200,7 @@ router.route('/verifySensorToken').post(
         return;
       }
 
+      // TODO: Update BRGY table
       res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
     }) //end of jwt.verify()
   }
