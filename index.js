@@ -3,6 +3,7 @@ const os = require('os');
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 
 console.log('mysql-host: ' + process.env.MYSQL_HOST)
@@ -27,6 +28,7 @@ app.use(cors({origin : process.env.NODE_ENV === 'production'
 }))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ROUTES
 app.get('/', (req, res) => {
