@@ -1,6 +1,5 @@
 const bcrypt = require('bcryptjs');
 const Account = require('../models/account');
-const AccountDetail = require('../models/accountDetail');
 
 const registerAccount = async (req, res) => {
   const hashedPassword = bcrypt.hashSync(req.body.password, 10);
@@ -10,18 +9,11 @@ const registerAccount = async (req, res) => {
   try {
     const newAccount = new Account({
       username: req.body.username,
-      firstName: req.body.firstName,
-      lastName: req.body.lastName,
       email: req.body.email,
-      password: hashedPassword
+      password: hashedPassword,
     });
     await newAccount.save();
 
-    const newAccountDetail = new AccountDetail({
-      account: newAccount._id,
-    });
-
-    await newAccountDetail.save();
 
     console.log(`Create account successful`);
     return res.status(200).json({ status: 200, message: "Succesfully Created Account" });
