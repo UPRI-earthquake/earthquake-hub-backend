@@ -23,6 +23,7 @@ const eventsRouter = require('./routes/events');
 const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
+const deviceRouter = require('./routes/devices');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -38,6 +39,7 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/deviceLinkHandler', deviceLinkRouter)
+app.use('/device', deviceRouter)
 app.use('/messaging', messaging.router)
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
