@@ -46,13 +46,14 @@ messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
 
-app.use((req, res, next) => {
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, Content-Type, Accept"
-  );
-  next();
-});
+// TODO: Test for multiple origin 
+// app.use((req, res, next) => {
+//   res.header(
+//     "Access-Control-Allow-Headers",
+//     "Origin, Content-Type, Accept"
+//   );
+//   next();
+// });
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
