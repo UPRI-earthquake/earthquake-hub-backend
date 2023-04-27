@@ -1,15 +1,15 @@
 const mongoose = require('mongoose');
 
-const { MONGO_DB_TYPE, MONGO_DB_HOST, MONGO_DB_NAME, MONGO_HOST, MONGO_PORT, MONGO_NAME } = process.env;
+const { MONGO_CONNX_TYPE, MONGO_HOST, MONGO_PORT, MONGO_NAME } = process.env;
 
 const getConnectionUrl = () => {
-  if (MONGO_DB_TYPE == 'docker') {
+  if (MONGO_CONNX_TYPE == 'docker') {
     const host = `mongodb://${MONGO_HOST}:${MONGO_PORT}`
     .replace(/\/$/, '');
 
   return `${host}/${MONGO_NAME}`
-  } else if (MONGO_DB_TYPE == 'cloud') {
-    return `mongodb+srv://${MONGO_DB_HOST}/${MONGO_DB_NAME}`;
+  } else if (MONGO_CONNX_TYPE == 'cloud') {
+    return `mongodb+srv://${MONGO_HOST}/${MONGO_NAME}`;
   } else {
     console.trace('Expected mongo db type is either docker or cloud only');
   }
