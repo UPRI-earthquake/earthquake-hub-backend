@@ -1,13 +1,21 @@
 const mongoose = require('mongoose');
 require('dotenv').config({path: __dirname + '/../.env'})
 
-const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
+const { MONGO_DB_TYPE, MONGO_DB_CLOUD, MONGO_DB_HOST, MONGO_DB_PORT, MONGO_DB_NAME } = process.env;
 
 const getConnectionUrl = () => {
-  const host = `mongodb://${process.env.MONGO_DB_HOST}:${process.env.MONGO_DB_PORT}`
-                .replace(/\/$/, '');
+  var host, connxUrl;
 
-  return `${host}/${process.env.MONGO_DB_NAME}`
+  if (MONGO_DB_TYPE != 'cloud') {
+    host = `mongodb://${MONGO_DB_HOST}:${MONGO_DB_PORT}`
+      .replace(/\/$/, '');
+
+    connxUrl = `${host}/${MONGO_DB_NAME}`;
+  } else {
+    connxUrl = MONGO_DB_CLOUD;
+  }
+
+  return connxUrl;
 }
 
 const connect = async (opts = {}) => {
