@@ -4,8 +4,14 @@
   "description": "This repo contains the backend code for UPRI earthquake monitoring system",
   "main": "index.js",
   "scripts": {
-    "test": "jest",
-    "startDev": "nodemon index.js"
+    "start": "node index.js",
+    "start:help": "echo 'Runs node server index.js, and expects process.env to be runtime-export-ed in the environment'",
+
+    "start:dev": "nodemon -r dotenv/config index.js",
+    "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
+
+    "test": "jest --setupFiles dotenv/config",
+    "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'"
   },
   "repository": {
     "type": "git",
@@ -21,7 +27,6 @@
   "dependencies": {
     "axios": "^1.0.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.0",
     "express": "^4.17.1",
     "mongoose": "^7.0.0",
     "mysql2": "^3.2.0",
@@ -31,6 +36,7 @@
   "devDependencies": {
     "jest": "^29.5.0",
     "nodemon": "^2.0.21",
+    "dotenv": "^16.0.0",
     "supertest": "^6.3.3",
     "testcontainers": "^9.1.3"
   },

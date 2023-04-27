@@ -21,7 +21,7 @@
     docker compose up --build
     ```
     
-    The above command shall show the logs of all the containers (see the `docker-compose.backend-dev.yml` file to check the container names) spun up by `docker compose`. Wait for the `latest-earthquakes-ph-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
+    The above command shall show the logs of all the containers (see the `docker-compose.yml` file to check the container names) spun up by `docker compose`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
     
     Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers
     
@@ -32,12 +32,12 @@
     4. Add or remove npm packages (⚠️ Don't use npm command locally to avoid package-lock.json issues, use it inside docker like in the following command)
         ```bash
         # Example, installing jest as a dependency
-        docker exec latest-earthquakes-ph-backend-dev npm install --save-dev jest
+        docker exec earthquake-hub-backend-dev npm install --save-dev jest
         # edit the npm command as needed
         ```
     5. Remove node_modules via docker exec as well
         ```bash
-        docker exec latest-earthquakes-ph-backend-dev rm -rf node_modules
+        docker exec earthquake-hub-backend-dev rm -rf node_modules
         ```
     > 
 ## Git Practices
