@@ -5,6 +5,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
+console.log('db-host: ' + process.env.MONGO_HOST)
+require('./models/index');
+
 console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();
@@ -22,6 +25,7 @@ const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 const deviceRouter = require('./routes/devices');
+const authRouter = require('./routes/auth');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -39,11 +43,21 @@ app.use('/eventsList', eventsRouter)
 app.use('/deviceLinkHandler', deviceLinkRouter)
 app.use('/device', deviceRouter)
 app.use('/messaging', messaging.router)
+app.use('/auth', authRouter);
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
 messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
+
+// TODO: Test for multiple origin 
+// app.use((req, res, next) => {
+//   res.header(
+//     "Access-Control-Allow-Headers",
+//     "Origin, Content-Type, Accept"
+//   );
+//   next();
+// });
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
