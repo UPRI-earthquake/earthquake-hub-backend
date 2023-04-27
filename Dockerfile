@@ -26,7 +26,7 @@ COPY --chown=node:node . ./
 USER node
 CMD ["dumb-init", "npm", "run", "start"]
 
-LABEL org.opencontainers.image.source="https://github.com/prokorpio/earthquake-hub-backend"
+LABEL org.opencontainers.image.source="https://github.com/UPRI-earthquake/earthquake-hub-backend"
 LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
 LABEL org.opencontainers.image.authors="earthquake@science.upd.edu.ph"
 
