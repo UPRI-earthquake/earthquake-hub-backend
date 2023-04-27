@@ -17,4 +17,4 @@ elif new_deps_present ;then
     npm install
 fi
 
-npm run startDev
+npm run start:dev

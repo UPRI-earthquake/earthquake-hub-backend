@@ -1,7 +1,5 @@
 const dns = require('dns');
 const os = require('os');
-const fs = require('fs');
-const https = require('https');
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -9,6 +7,8 @@ const cors = require('cors');
 require('dotenv').config({path: __dirname + '/.env'})
 console.log('db-host: ' + process.env.DB_HOST)
 require('./models/index');
+
+console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();
 const port = process.env.NODE_ENV === 'production'
@@ -21,6 +21,7 @@ mongodb.connect(); // Required by notifs router
 
 const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
+const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 const authRouter = require('./routes/auth');
@@ -38,6 +39,7 @@ app.get('/', (req, res) => {
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
+app.use('/deviceLinkHandler', deviceLinkRouter)
 app.use('/messaging', messaging.router)
 app.use('/auth', authRouter);
 // TODO: await the redisProxy calls...
@@ -74,31 +76,29 @@ if (process.env.NODE_ENV === 'production'){
   // Run production http server, to be SSL proxied with NGINX
   http.createServer(app)
     .listen(port, () => {
+      console.log(
+        'Accessible through nginx at '
+      + `https://${process.env.BACKEND_PROD_HOST}`);
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Production backend listening at '
         + `http://${IP}:${port}`);
-      })
+      });
       console.log(
-        'Accessible through nginx at '
-      + `https://${process.env.BACKEND_PROD_HOST}`);
+        'Production client expected (by CORS) at '
+      + `https://${process.env.CLIENT_PROD_HOST}`);
     });
 }else{
-  // Run https server (for local development)
-  /* Remove for now ...
-  var privateKey = fs.readFileSync( process.env.HTTPS_PRIVATE_KEY );
-  var cert = fs.readFileSync( process.env.HTTPS_CERT );
-  https.createServer({key: privateKey, cert: cert}, app)
-  */
+  // Run http server (for local development)
   http.createServer(app)
     .listen(port, () => {
-      console.log(
-        'Development client expected at '
-      + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       dns.lookup(os.hostname(), function (err, IP, fam) {
         console.log(
           'Development backend listening at '
         + `http://${IP}:${port}`);
+      console.log(
+        'Development client expected (by CORS) at '
+      + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       })
     });
 }

@@ -1,9 +1,11 @@
 config.js
+.gitignore
 node_modules/
 node_modules/*
 pseudo_tests
 *.pem
 .env
+*.swp
 https_data/certbot/conf/*
 !https_data/certbot/conf/options-ssl-nginx.conf
 !https_data/certbot/conf/ssl-dhparams.pem
