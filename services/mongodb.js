@@ -1,13 +1,10 @@
 const mongoose = require('mongoose');
-require('dotenv').config({path: __dirname + '/../.env'})
-
-const {NODE_ENV, DB_HOST_MONGO, DB_NAME} = process.env;
 
 const getConnectionUrl = () => {
-  const host = `mongodb://${process.env.MONGO_DB_HOST}:${process.env.MONGO_DB_PORT}`
+  const host = `mongodb://${process.env.MONGO_HOST}:${process.env.MONGO_PORT}`
                 .replace(/\/$/, '');
 
-  return `${host}/${process.env.MONGO_DB_NAME}`
+  return `${host}/${process.env.MONGO_NAME}`
 }
 
 const connect = async (opts = {}) => {

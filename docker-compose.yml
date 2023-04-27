@@ -2,14 +2,15 @@ version: '3.9'
 
 services:
   backend:
-    container_name: latest-earthquakes-ph-backend-dev
+    container_name: earthquake-hub-backend-dev
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
       target: "base" # select dockerfile stage to use
-    image: "latest-earthquakes-ph-backend-dev:2.0"
+    image: "earthquake-hub-backend-dev:1.0.0"
     volumes:
       # bind local dir to reflect changes in container
+      # NOTE: includes everything, including all those in .dockerignore, specifically .env
       - ./:/app
     depends_on:
       - "mongodb"
@@ -52,9 +53,9 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_RANDOM_ROOT_PASSWORD: yes
-      MYSQL_USER: ${DB_USER} # will automatically be replaced by values in .env in the same dir
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${MYSQL_USER} # will automatically be replaced by values in .env in the same dir
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_NAME}
     volumes:
       # init db contents by binding sample seiscomp data from host into docker-entrypoint-initdb.d
       - ./dev/sample_data/seiscompDB.sql:/docker-entrypoint-initdb.d/seiscompDB.sql
