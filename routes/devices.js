@@ -5,4 +5,4 @@ const deviceRouter = express.Router();
 
 deviceRouter.post('/add', addDevice);
 
-module.exports = addDevice;
+module.exports = deviceRouter;
