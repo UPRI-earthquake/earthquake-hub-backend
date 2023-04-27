@@ -20,7 +20,8 @@ const addDevice = async (req, res) => {
     await newDevice.save();
 
     await Account.findOneAndUpdate({ username }, {
-      $push: { devices: newDevice._id}
+      $inc: { devicesCount: 1 },
+      $push: { devices: newDevice._id }
     });
     
     console.log(`Add device successful`);
