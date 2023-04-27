@@ -4,7 +4,7 @@ const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-require('dotenv').config({path: __dirname + '/.env'})
+
 console.log('db-host: ' + process.env.MONGO_HOST)
 require('./models/index');
 
