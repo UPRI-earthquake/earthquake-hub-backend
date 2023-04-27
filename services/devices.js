@@ -7,6 +7,12 @@ const addDevice = async (req, res) => {
   const username = req.body.username;
 
   try {
+    const currentAccount = await Account.findOne({ username }); 
+
+    if(!currentAccount) {
+      throw Error('Username does not exist');
+    }
+
     const newDevice = new Device({
       streamId: req.body.streamId,
       network: req.body.network,
@@ -19,7 +25,7 @@ const addDevice = async (req, res) => {
 
     await newDevice.save();
 
-    await Account.findOneAndUpdate({ username }, {
+    await currentAccount.updateOne({
       $inc: { devicesCount: 1 },
       $push: { devices: newDevice._id }
     });
