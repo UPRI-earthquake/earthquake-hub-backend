@@ -3,6 +3,6 @@ const { addDevice } = require('../services/devices');
 
 const deviceRouter = express.Router();
 
-deviceRouter.post('/', addDevice);
+deviceRouter.post('/add', addDevice);
 
 module.exports = addDevice;
