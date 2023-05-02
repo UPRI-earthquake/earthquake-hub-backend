@@ -1,3 +1,15 @@
+<!--- Add title with the following format,
+
+type: [SEISMO-XXXX] SHORTENED TASK TITLE
+
+where type is:
+1. draft - to be completed PR
+2. feat - new feature
+3. fix - bug fixes
+4. test - unit tests
+5. chore - (aka housekeeping) cleaning/styling/refactor code, documentations, adding comments
+--> 
+
 # Detailed Description
 
 ### Summary
