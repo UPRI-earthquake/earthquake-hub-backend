@@ -3,7 +3,7 @@ const router = express.Router();
 const bodyParser = require('body-parser')
 const mongoose = require('mongoose');
 const Devices = require('../models/devices');
-const Accounts = require('../models/accounts');
+const Accounts = require('../models/account.model');
 const AccountDetails = require('../models/accountDetails');
 
 router.use(bodyParser.json())

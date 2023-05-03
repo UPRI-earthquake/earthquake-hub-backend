@@ -1,11 +1,18 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
 const AccountSchema = new mongoose.Schema({
   email: String,
   username: String,
   password: String,
-  roles: [String] // sensor, citizen, brgy
+  roles: [String], // sensor, citizen, brgy, admin
+  accountStatus: {
+    type: String,
+    default: 'Inactive'
+  },
+  devices: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Device'
+  },],
 }, {
 
   timestamps: { //Mongoose automatic timestamps

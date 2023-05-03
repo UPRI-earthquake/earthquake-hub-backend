@@ -1,5 +1,5 @@
 const Device = require('../models/device');
-const Account = require('../models/account');
+const Account = require('../models/account.model');
 
 const addDevice = async (req, res) => {
   console.log("Add device requested");
