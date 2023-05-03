@@ -19,6 +19,7 @@ const DeviceSchema = new Schema({
     required: true
   },
   elevation: String,
+  madAddress: String,
   activity: {
     type: String,
     default: "Inactive"
