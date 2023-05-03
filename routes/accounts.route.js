@@ -90,9 +90,15 @@ router.route('/authenticate').post( async (req, res, next) => {
           .json({ status: 200, message: "Authentication successful" });
         break;
       case 'brgy':
+        // check if brgy account has devices (of their own, or that forwards to them)
+        // that they can in turn forward to UP (main receiver)
+        if (user.devices.length === 0) {
+          res.status(400).json({ status: 400, message: 'Brgy has no forwardable devices'});
+          return;
+       }
+
         // return access token in json format, with streamids of SENSORs it can forward
-        const brgyStreamIds = 'AM_RE722_00_EHZ,AM_R3B2D_00_EHZ' // TODO: get this from brgy table
-        // TODO: Can we do away with brgyStreamIds? Just tell brgy in token-verification endpoint if they should accept connx request or not?
+        const brgyStreamIds = user.devices.map(device => device.streamId).join(',');
         res.status(200).json({
           status: 200,
           message: 'Login successful',
