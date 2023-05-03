@@ -216,10 +216,13 @@ router.route('/verifySensorToken').post(
 
       // TODO: Update BRGY table
       // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
-      const deviceIds = await Device.find(
-        { streamId: { $in: decodedToken.streamIds } }).select("_id"); // get device objectids from the db that corresponds to each streamid
+      const deviceIds = await Device
+        .find({ streamId: { $in: decodedToken.streamIds } })          // get device objectids from the db that corresponds to each streamid
+        .then(devices => devices.map(device => device._id));          // map to an array of ObjectId's only
+
       const brgy = await User.findOne({ 'username': req.username });  // get brgy account, username is on req.username due to verifyTokenRole middleware
 
+      let brgyAccountUpdated = false
       for (let i = 0; i < deviceIds.length; i++) {                    // for each deviceId, check if brgy.devices already contains it
         const deviceId = deviceIds[i];
 
@@ -228,12 +231,28 @@ router.route('/verifySensorToken').post(
         }
 
         brgy.devices.push(deviceId);                                  // If the device is not in the brgy.devices array, add it
-
+        brgyAccountUpdated = true;
       }
 
-      await brgy.save();                                              // Save the updated brgy account object
+      if (brgyAccountUpdated === true) {
+        await brgy.save();                                            // Save the updated brgy account object
+        const brgyStreamIds = brgy.devices.map(device => device.streamId)
 
-      res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
+        res.status(200).json({
+          status: 200,
+          message: 'Sender is a valid streamer with new streamIds',
+          accessToken: generateAccessToken({                          // Give the brgy a new authentication token that includes updated streamids
+            'username': brgy.username,
+            'streamIds': brgyStreamIds,
+            'role': 'brgy'
+          }),
+        });
+
+      }
+      else {
+        res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
+      }
+
     }) //end of jwt.verify()
   }
 )
