@@ -10,6 +10,7 @@ const User = require('../models/account.model');
  *  - role: to be provided by client app
  *      - 'sensor' is for when authenticating from rshake device
  *      - 'citizen' is for when authenticating from webapp frontend
+ *      - 'admin' is for when authenticating from webapp admin-frontend
  *      - 'brgy' is for when requesting authentication from ringserver
  * */
 const authenticateSchema = Joi.object().keys({

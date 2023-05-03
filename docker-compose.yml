@@ -28,9 +28,9 @@ services:
 
   mongodb:
     container_name: mongodb
-    image: "mongo:4.4.12"
+    image: "mongo:5.0"
     volumes:
-      - mongodb-data:/data/db
+      - earthquake-hub-mongodb-data:/data/db
     expose:
       - "27017"
     networks:
@@ -64,11 +64,13 @@ services:
                     # this mirrors a mysql service running locally on host machine
 
 volumes:
-  mongodb-data:
+  earthquake-hub-mongodb-data:
+    external: true # same volume used by other containers
+    name: earthquake-hub-mongodb-data
 
 networks:
   app-network:
-    name: latest-earthquakes-ph
+    name: earthquake-hub-backend
     driver: bridge
     ipam:
       config:
