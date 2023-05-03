@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/account.model');
+const Device = require('../models/device');
 
 /* validate ./accounts/authenticate endpoint
  *  - role: to be provided by client app
@@ -198,6 +199,9 @@ router.route('/verifySensorToken').post(
   },
   (req, res, next) => {
     // Verify SENSOR token in body, valid if it enters callback w/o err
+    // Valid means:
+    // it has right to send data to UP
+    // it the streamids the token claims to have access to are given/permitted by UP
     jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
       if (err) {
         console.log(err);
@@ -205,21 +209,30 @@ router.route('/verifySensorToken').post(
         return;
       }
 
-      // NOTE: valid means,
-      // it has right to send data to UP
-      // it the streamids the token claims to have access to are given/permitted by UP
       if (decodedToken.role !== 'sensor') { // check that role is sensor (since a token can have a different role and still be valid)
         res.status(403).json({ status: 403, message: "Role in token invalid" });
         return;
       }
 
-    // get user with devices array populated with device object instead of device id
-
       // TODO: Update BRGY table
-      // if brgy table doesn't have the brgy ids, add them
-      // update return message to brgy to include new token
       // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
-      
+      const deviceIds = await Device.find(
+        { streamId: { $in: decodedToken.streamIds } }).select("_id"); // get device objectids from the db that corresponds to each streamid
+      const brgy = await User.findOne({ 'username': req.username });  // get brgy account, username is on req.username due to verifyTokenRole middleware
+
+      for (let i = 0; i < deviceIds.length; i++) {                    // for each deviceId, check if brgy.devices already contains it
+        const deviceId = deviceIds[i];
+
+        if (brgy.devices.includes(deviceId)) {                        // If the device is already in the brgy.devices array, skip it
+          continue;
+        }
+
+        brgy.devices.push(deviceId);                                  // If the device is not in the brgy.devices array, add it
+
+      }
+
+      await brgy.save();                                              // Save the updated brgy account object
+
       res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
     }) //end of jwt.verify()
   }
