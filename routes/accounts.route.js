@@ -173,14 +173,6 @@ function verifyTokenRole(role) { // wrapper for custom args
   } // end of standard middleware
 } // end of wrapper
 
-router.route('/protected').get(
-  getCitizenToken,
-  verifyTokenRole('citizen'),
-  (req, res, next) => {
-    res.status(200).json({status:200, message:"Done GET on sample endpoint requiring citizen authorization"});
-  }
-)
-
 const verifySensorTokenSchema = Joi.object().keys({
   token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
   role: Joi.string().valid('sensor').required()
@@ -254,6 +246,20 @@ router.route('/verifySensorToken').post(
       }
 
     }) //end of jwt.verify()
+  }
+)
+
+router.route('/sample-profile-for-citizen').get(
+  getCitizenToken,
+  verifyTokenRole('citizen'),
+  // TODO: Do we need to check the username?
+  async (req, res, next) => {
+    const citizen = await User.findOne({ 'username': req.username });  // get citizen account, username is on req.username due to verifyTokenRole middleware
+    res.status(200).json({
+      status:200,
+      message:"Done GET on sample endpoint requiring citizen authorization",
+      samplePrivateResourceForUserCitizen: citizen.email
+    });
   }
 )
 
