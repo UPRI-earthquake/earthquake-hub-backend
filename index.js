@@ -24,6 +24,7 @@ const eventsRouter = require('./routes/events');
 const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
+const deviceRouter = require('./routes/devices');
 const authRouter = require('./routes/auth');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
@@ -40,6 +41,7 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/deviceLinkHandler', deviceLinkRouter)
+app.use('/device', deviceRouter)
 app.use('/messaging', messaging.router)
 app.use('/auth', authRouter);
 // TODO: await the redisProxy calls...
