@@ -32,7 +32,8 @@ router.route('/authenticate').post( async (req, res, next) => {
       return;
     }
 
-    const user = await User.findOne({ 'username': result.value.username });
+    // get user with devices array populated with device object instead of device id
+    const user = await User.findOne({ 'username': result.value.username }).populate('devices');
 
     if(!user){
       res.status(400).json({ status: 400, message: "User doesn't exists!"});
@@ -58,8 +59,15 @@ router.route('/authenticate').post( async (req, res, next) => {
 
     switch(result.value.role) {
       case 'sensor':
-        // TODO: get device stream ids as csv string
-        const streamIds = 'AM_R3B2D_00_EHZ,AM_R3B2D_00_ENN' // get this from user.accountDetails.devices;
+        // check if account has devices
+        if (user.devices.length === 0) {
+          res.status(400).json({ status: 400, message: 'User has no linked devices'});
+          return;
+       }
+
+        // get device stream ids as csv string
+        const streamIds = user.devices.map(device => device.streamId).join(',');
+        // TODO: check if streamids is one string or is a csv of streamids
 
         // return access token with claims for allowed channels to stream
         res.status(200).json({
