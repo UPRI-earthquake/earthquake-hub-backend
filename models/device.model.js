@@ -3,23 +3,19 @@ const { Schema, model } = mongoose;
 
 const DeviceSchema = new Schema({
   streamId: {
-    type: String,
-    required: true
+    type: String
   },
   network: {
-    type: String,
-    required: true
+    type: String
   },
   station: {
-    type: String,
-    required: true
+    type: String
   },
   location: {
-    type: String,
-    required: true
+    type: String
   },
   elevation: String,
-  madAddress: String,
+  macAddress: String,
   activity: {
     type: String,
     default: "Inactive"
