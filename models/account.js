@@ -11,10 +11,6 @@ const AccountSchema = new Schema({
     type: String,
     default: 'Inactive'
   },
-  devicesCount: {
-    type: Number,
-    default: 0
-  },
   devices: [{
     type: Types.ObjectId,
     ref: 'Device'
