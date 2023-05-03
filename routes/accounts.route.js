@@ -65,9 +65,9 @@ router.route('/authenticate').post( async (req, res, next) => {
           return;
        }
 
-        // get device stream ids as csv string
-        const streamIds = user.devices.map(device => device.streamId).join(',');
-        // TODO: check if streamids is one string or is a csv of streamids
+        // get device stream ids as array of string
+        const streamIds = user.devices.map(device => device.streamId);
+        // TODO: check if streamid is one string or is a csv of streamids
 
         // return access token with claims for allowed channels to stream
         res.status(200).json({
@@ -98,7 +98,7 @@ router.route('/authenticate').post( async (req, res, next) => {
        }
 
         // return access token in json format, with streamids of SENSORs it can forward
-        const brgyStreamIds = user.devices.map(device => device.streamId).join(',');
+        const brgyStreamIds = user.devices.map(device => device.streamId)
         res.status(200).json({
           status: 200,
           message: 'Login successful',
@@ -196,26 +196,30 @@ router.route('/verifySensorToken').post(
     }
     next();
   },
-  (req, res, next) => { // verify SENSOR token in body
-    jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
+  (req, res, next) => {
+    // Verify SENSOR token in body, valid if it enters callback w/o err
+    jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
       if (err) {
         console.log(err);
         res.status(403).json({ status: 403, message: "Token invalid" });
         return;
       }
 
-      if (decodedToken.role !== 'sensor') {
+      // NOTE: valid means,
+      // it has right to send data to UP
+      // it the streamids the token claims to have access to are given/permitted by UP
+      if (decodedToken.role !== 'sensor') { // check that role is sensor (since a token can have a different role and still be valid)
         res.status(403).json({ status: 403, message: "Role in token invalid" });
         return;
       }
 
-      const streamIds = 'AM_R3B2D_00_EHZ,AM_R3B2D_00_ENN' // TODO: get this from decodedToken.username.accountDetails.devices;
-      if(streamIds !== decodedToken.streamIds) {
-        res.status(403).json({ status: 403, message: "Invalid streamIds" });
-        return;
-      }
+    // get user with devices array populated with device object instead of device id
 
       // TODO: Update BRGY table
+      // if brgy table doesn't have the brgy ids, add them
+      // update return message to brgy to include new token
+      // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
+      
       res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
     }) //end of jwt.verify()
   }
