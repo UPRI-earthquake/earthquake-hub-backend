@@ -3,6 +3,7 @@ const os = require('os');
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 
 console.log('db-host: ' + process.env.MONGO_HOST)
@@ -32,6 +33,7 @@ app.use(cors({origin : process.env.NODE_ENV === 'production'
 }))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ROUTES
 app.get('/', (req, res) => {
@@ -47,6 +49,7 @@ app.use('/auth', authRouter);
 messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
+app.use('/accounts', require('./routes/accounts.route'))
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
