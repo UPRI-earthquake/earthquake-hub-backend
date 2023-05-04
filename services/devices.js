@@ -43,7 +43,8 @@ const linkDeviceSchema = Joi.object().keys({
   token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
   role: Joi.string().valid('sensor').required(),
   macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
-  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}$/).required()
+  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}(,[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3})*$/).required()
+
 });
 
 const linkDevice = async (req, res) => {
@@ -57,64 +58,53 @@ const linkDevice = async (req, res) => {
       return;
     }
 
-    const macAddress = req.body.macAddress;
-
-    // check if macAddress input is null
-    if (macAddress === null){
-      res.status(400).json({ message: "Mac Address field cannot be null" }) // send 400 - null input
-    }
     // check if device's mac address already exists in the database
     const deviceExists = await Device.exists({
-      macAddress: macAddress
+      macAddress: result.value.macAddress
     })
 
     if (deviceExists) { // device is already saved to db
       // Send message to front end that device is already used
       res.status(400).json({ message: 'Device is Already Linked to an Existing Account' }) // send 400 - resource exists
-    } else { // device is not yet used, proceed.
-      // TODO: Authenticate user input. For now, chineck ko lang kung existing yung input username
-      const username = req.body.username;
-      const userExists = await Account.exists({
-        username: username
-      })
-
-      if (userExists) { // user exists
-        // Must be an existing user account to accept device linking request - update db. Create new document under `devices` collection
-        const newDevice = new Device({
-          streamId: null,
-          network: null,
-          station: null,
-          location: null,
-          elevation: null,
-          macAddress: macAddress,
-          lastConnectedTime: null
-        })
-
-        newDevice.save()
-          .then(async (savedDoc) => {
-            console.log('Save new entry to devices collection [ _id: ' + savedDoc._id + ' ]')
-            const latestId = savedDoc._id // get the last _id inserted
-
-            console.log(userExists.devices)
-
-            //Update accounts collection
-            let doc = await Account.findOne({username})
-            doc.devices.push(latestId) // push last inserted _id of the device to devices array under accounts collection
-            doc.save()
-
-            console.log('Update accounts Collection Successful')
-            res.status(200).json({ message: 'Device-Account Link Successful' })
-          })
-          .catch(err => {
-            console.log(err)
-            res.status(500).json(err)
-          })
-
-      } else { // user does not exists
-        // send error - user does not exists
-        res.status(400).json({ message: 'User Does Not Exists' })
-      }
+      return;
     }
+
+    // TODO: Authenticate user input. For now, chineck ko lang kung existing yung input username
+    const username = "citizen" // this should come from verify(token)
+    const user = await Account.findOne({ 'username': username }).populate('devices')
+
+    if (!user) { // user exists
+      res.status(400).json({ message: 'User Does Not Exists' })
+      return;
+
+    }
+
+    // Must be an existing user account to accept device linking request - update db.
+    // get device with same Network and Station
+    const [network, station, loc, channel] = result.value.streamId.split(",")[0].split("_")
+    const device = await Device.findOne({ network:network, station:station })
+
+    if(!device){
+      res.status(400).json({ status: 400, message: "Device doesn't exist in the database!"});
+      return;
+    }
+
+    // find the index of the device in the user.devices array
+    const index = user.devices.findIndex(dev => dev.id === device.id);
+
+    if (index === -1) {
+      // device not found in the account.devices array, handle error or return null
+      res.status(400).json({ status: 400, message: "Device is not yet added to user's device list"});
+      return;
+    }
+
+    //Update device info
+    device.macAddress = result.value.macAddress
+    device.streamId = result.value.streamId
+    device.save()
+
+    console.log("Update account's device successful")
+    res.status(200).json({ message: 'Device-Account Linking Successful' })
 
   } catch (error) {
     console.log(error)
