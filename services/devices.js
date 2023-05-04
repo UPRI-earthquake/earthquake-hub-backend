@@ -53,7 +53,6 @@ const linkDevice = async (req, res) => {
     const deviceExists = await Device.exists({
       macAddress: macAddress
     })
-    console.log(deviceExists)
 
     if (deviceExists) { // device is already saved to db
       // Send message to front end that device is already used
@@ -64,7 +63,6 @@ const linkDevice = async (req, res) => {
       const userExists = await Account.exists({
         username: username
       })
-      console.log(userExists)
 
       if (userExists) { // user exists
         // Must be an existing user account to accept device linking request - update db. Create new document under `devices` collection
