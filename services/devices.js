@@ -1,3 +1,4 @@
+const Joi = require('joi');
 const Device = require('../models/device.model');
 const Account = require('../models/account.model');
 
@@ -38,11 +39,24 @@ const addDevice = async (req, res) => {
   }
 }
 
+const linkDeviceSchema = Joi.object().keys({
+  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
+  role: Joi.string().valid('sensor').required(),
+  macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
+  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}$/).required()
+});
+
 const linkDevice = async (req, res) => {
   console.log('Device Link Requested');
 
   try {
-    console.log(req.body)
+    const result = linkDeviceSchema.validate(req.body)
+     if(result.error){
+      // TODO: know more details on which input is invalid...
+      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      return;
+    }
+
     const macAddress = req.body.macAddress;
 
     // check if macAddress input is null
