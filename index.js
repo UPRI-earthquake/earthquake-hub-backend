@@ -64,12 +64,15 @@ app.use('/accounts', require('./routes/accounts.route'))
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   //console.trace(`Express error handler captured the following...\n ${err}`);
-  (process.env.NODE_ENV === 'production') // Provide different error response on prod and dev
-  ? res.status(statusCode).json({"message": "Server error occured"}) // TODO: make a standard api message for error
-  : res.status(statusCode).json({
+  if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
+    res.status(statusCode).json({"message": "Server error occured"}) // TODO: make a standard api message for error
+    console.log('Server error occured:', err.stack)
+  }else{
+    res.status(statusCode).json({
     'status': "Express error handler caught an error",
     'err': err.stack,
     'note': 'This error will only appear on non-production env'});
+  }
 
   return;
 });
