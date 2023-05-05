@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/account.model');
-const Device = require('../models/device');
+const Device = require('../models/device.model');
 
 /* validate ./accounts/authenticate endpoint
  *  - role: to be provided by client app

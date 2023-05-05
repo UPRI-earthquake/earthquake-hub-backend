@@ -22,7 +22,6 @@ mongodb.connect(); // Required by notifs router
 
 const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
-const deviceLinkRouter = require('./routes/deviceLink');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 const deviceRouter = require('./routes/devices');
@@ -42,7 +41,6 @@ app.get('/', (req, res) => {
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
-app.use('/deviceLinkHandler', deviceLinkRouter)
 app.use('/device', deviceRouter)
 app.use('/messaging', messaging.router)
 app.use('/auth', authRouter);
