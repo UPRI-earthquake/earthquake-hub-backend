@@ -30,8 +30,6 @@ const addDevice = async (req, res) => {
     const deviceDetailsCheck = await Device.findOne({
       network: req.body.network,
       station: req.body.station,
-      elevation: req.body.elevation,
-      location: req.body.location
     });
     if (deviceDetailsCheck) {
       // throw Error('Username does not exist');
