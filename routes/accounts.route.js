@@ -175,7 +175,6 @@ function verifyTokenRole(role) { // wrapper for custom args
 
 const verifySensorTokenSchema = Joi.object().keys({
   token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
-  role: Joi.string().valid('sensor').required()
 });
 
 router.route('/verifySensorToken').post(
