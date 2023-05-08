@@ -106,7 +106,7 @@ const linkDevice = async (req, res) => {
     res.status(200).json({ message: 'Device-Account Linking Successful' })
 
   } catch (error) {
-    console.log(error)
+    next(error)
   }
 }
 
