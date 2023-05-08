@@ -6,6 +6,11 @@ const jwt = require('jsonwebtoken');
 
 const User = require('../models/account.model');
 const Device = require('../models/device.model');
+const {
+  getTokenFromCookie,
+  getTokenFromBearer,
+  verifyTokenWithRole
+} = require('../middlewares/token.middleware')
 
 /* validate ./accounts/authenticate endpoint
  *  - role: to be provided by client app
@@ -118,68 +123,13 @@ router.route('/authenticate').post( async (req, res, next) => {
   }
 });
 
-
-// Middleware: Checks if the token has the correct citizen authority
-function getCitizenToken(req, res, next) {
-  if(!req.cookies) {
-    res.status(403).json({ status: 403, message: "Cookies undefined" })
-    return; // don't proceed to next()
-  }
-
-  const token = req.cookies.accessToken;
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in cookie missing" })
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Checks if the token has the correct brgy authority
-function getBrgyToken(req, res, next) {
-  const authHeader = req.headers["authorization"]
-  if(!authHeader) {
-    res.status(403).json({ status: 403, message: "Authorization Header Undefined" });
-    return; // don't proceed to next()
-  }
-
-  const token = authHeader.split(" ")[1] // authorization: "Bearer <token>"
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in header missing" });
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Verify token is valid, and role in token is role in arg
-function verifyTokenRole(role) { // wrapper for custom args
-  return (req, res, next) => {
-    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
-      if (err) {
-        res.status(403).json({ status: 403, message: "Token invalid" });
-        return;
-      }
-      if (decodedToken.role !== role) {
-        res.status(403).json({ status: 403, message: "Role invalid" });
-        return;
-      }
-      req.username = decodedToken.username;
-      req.role = decodedToken.role;
-      next();
-    }) //end of jwt.verify()
-  } // end of standard middleware
-} // end of wrapper
-
 const verifySensorTokenSchema = Joi.object().keys({
   token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
 });
 
 router.route('/verifySensorToken').post(
-  getBrgyToken,
-  verifyTokenRole('brgy'),
+  getTokenFromBearer,
+  verifyTokenWithRole('brgy'),
   (req, res, next) => { // validate POST body
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
@@ -249,8 +199,8 @@ router.route('/verifySensorToken').post(
 )
 
 router.route('/sample-profile-for-citizen').get(
-  getCitizenToken,
-  verifyTokenRole('citizen'),
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
   // TODO: Do we need to check the username?
   async (req, res, next) => {
     const citizen = await User.findOne({ 'username': req.username });  // get citizen account, username is on req.username due to verifyTokenRole middleware
