@@ -263,13 +263,65 @@ router.route('/sample-profile-for-citizen').get(
   }
 )
 
+
+const registrationInputValidation = Joi.object().keys({
+  username: Joi.string().required(),
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')).required(),
+  confirmPassword: Joi.valid(Joi.ref('password')).required(),
+  email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
+});
+
 router.route('/register').post(
   async (req, res) => { // validate POST body
     console.log("Register account requested");
     
-    
+    try {
+      const result = registrationInputValidation.validate(req.body);
+      if(result.error){
+        console.log(result.error.details[0].message)
+
+        // TODO: write more detailed error message
+        res.status(400).json({ status: 400, message: 'Invalid POST input'});
+        return;
+      }
+      
+      // Check if username is in use
+      const usernameExists = await User.findOne({ username: req.body.username });
+      if (usernameExists) { // username is already in use
+        res.status(400).json({ status: 400, message: 'Username already in use'});
+        return;
+      }
+
+      // Check if email is in use
+      const emailExists = await User.findOne({ email: req.body.email });
+      if (emailExists) { // email is already in use
+        res.status(400).json({ status: 400, message: 'Email address already in use'});
+        return;
+      }
+
+      // save inputs to database
+      const hashedPassword = bcrypt.hashSync(req.body.password, 10); // hash the password before saving to database
+
+      const newAccount = new User({
+        username: req.body.username,
+        email: req.body.email,
+        password: hashedPassword,
+        roles: ["citizen", "sensor"]
+      });
+      await newAccount.save();
+  
+      console.log(`Create account successful`);
+      return res.status(200).json({ status: 200, message: "Succesfully Created Account" });
+
+    } catch (e) {
+      console.log(`Create account unsuccessful: \n ${e}`);
+      res.status(400).json({ status: 400, message: e.message });
+      return;
+    }
+
   }
 )
+
 
 
 module.exports = router
