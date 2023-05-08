@@ -1,17 +1,82 @@
 const Joi = require('joi');
 const Device = require('../models/device.model');
 const Account = require('../models/account.model');
+const jwt = require('jsonwebtoken');
+
+const addDeviceSchema = Joi.object().keys({
+  network: Joi.string().required(),
+  station: Joi.string().required(),
+  elevation: Joi.string().required(),
+  location: Joi.string().required()
+});
+
+// Middleware: Checks if the token has the correct citizen authority
+function getCitizenToken(req, res, next) {
+  if(!req.cookies) {
+    res.status(403).json({ status: 403, message: "Cookies undefined" })
+    return; // don't proceed to next()
+  }
+
+  const token = req.cookies.accessToken;
+  if(!token) {
+    res.status(403).json({ status: 403, message: "Token in cookie missing" })
+    return;
+  }
+
+  req.token = token;
+  next();
+}
+
+// Middleware: Verify token is valid, and role in token is role in arg
+function verifyTokenRole(role) { // wrapper for custom args
+  return (req, res, next) => {
+    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
+      if (err) {
+        res.status(403).json({ status: 403, message: "Token invalid" });
+        return;
+      }
+      if (decodedToken.role !== role) {
+        res.status(403).json({ status: 403, message: "Role invalid" });
+        return;
+      }
+      req.username = decodedToken.username;
+      req.role = decodedToken.role;
+      next();
+    }) //end of jwt.verify()
+  } // end of standard middleware
+} // end of wrapper
 
 const addDevice = async (req, res) => {
   console.log("Add device requested");
 
-  const username = req.body.username;
+  const username = req.username; // this comes from cookie(token), not user input
 
   try {
-    const currentAccount = await Account.findOne({ username });
+    const result = addDeviceSchema.validate(req.body)
+    if(result.error){
+      // TODO: know more details on which input is invalid...
+      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      return;
+    }
 
+    const currentAccount = await Account.findOne({ username }); //check if account exists in the database
     if (!currentAccount) {
-      throw Error('Username does not exist');
+      // throw Error('Username does not exist');
+      res.status(400).json({ status: 400, message: 'Username does not exists'});
+      return;
+    }
+
+    // check if user inputs are not yet saved in the database
+    const deviceDetailsCheck = await Device.findOne({
+      network: req.body.network,
+      station: req.body.station,
+      elevation: req.body.elevation,
+      location: req.body.location
+    });
+    if (deviceDetailsCheck) {
+      // throw Error('Username does not exist');
+      res.status(400).json({ status: 400, message: 'Device details already used'});
+      return;
     }
 
     const newDevice = new Device({
@@ -111,6 +176,6 @@ const linkDevice = async (req, res) => {
 }
 
 module.exports = {
-  addDevice,
+  addDevice: [getCitizenToken, verifyTokenRole('citizen'), addDevice],
   linkDevice
-}
+} 
