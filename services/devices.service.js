@@ -10,42 +10,6 @@ const addDeviceSchema = Joi.object().keys({
   location: Joi.string().required()
 });
 
-// Middleware: Checks if the token has the correct citizen authority
-function getCitizenToken(req, res, next) {
-  if(!req.cookies) {
-    res.status(403).json({ status: 403, message: "Cookies undefined" })
-    return; // don't proceed to next()
-  }
-
-  const token = req.cookies.accessToken;
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in cookie missing" })
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Verify token is valid, and role in token is role in arg
-function verifyTokenRole(role) { // wrapper for custom args
-  return (req, res, next) => {
-    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
-      if (err) {
-        res.status(403).json({ status: 403, message: "Token invalid" });
-        return;
-      }
-      if (decodedToken.role !== role) {
-        res.status(403).json({ status: 403, message: "Role invalid" });
-        return;
-      }
-      req.username = decodedToken.username;
-      req.role = decodedToken.role;
-      next();
-    }) //end of jwt.verify()
-  } // end of standard middleware
-} // end of wrapper
-
 const addDevice = async (req, res) => {
   console.log("Add device requested");
 
