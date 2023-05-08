@@ -263,5 +263,13 @@ router.route('/sample-profile-for-citizen').get(
   }
 )
 
+router.route('/register').post(
+  async (req, res) => { // validate POST body
+    console.log("Register account requested");
+    
+    
+  }
+)
+
 
 module.exports = router
