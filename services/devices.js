@@ -80,19 +80,14 @@ const addDevice = async (req, res) => {
     }
 
     const newDevice = new Device({
-      streamId: req.body.streamId,
       network: req.body.network,
       station: req.body.station,
       elevation: req.body.elevation,
       location: req.body.location,
-      activity: req.body.activity,
-      lastConnectedTime: req.body.lastConnectedTime
     });
+    await newDevice.save(); // save new entry to device collections
 
-    await newDevice.save();
-
-    await currentAccount.updateOne({
-      $inc: { devicesCount: 1 },
+    await currentAccount.updateOne({ // update devices array under accounts collection
       $push: { devices: newDevice._id }
     });
 
