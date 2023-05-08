@@ -173,4 +173,4 @@ const linkDevice = async (req, res) => {
 module.exports = {
   addDevice: [getCitizenToken, verifyTokenRole('citizen'), addDevice],
   linkDevice
-} 
+}
