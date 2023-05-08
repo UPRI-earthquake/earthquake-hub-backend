@@ -13,20 +13,16 @@ const addDeviceSchema = Joi.object().keys({
 const addDevice = async (req, res) => {
   console.log("Add device requested");
 
-  const username = req.username; // this comes from cookie(token), not user input
-
   try {
+    // token verification should put username from token to req.username
+    if (!req.username){
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+    }
+
     const result = addDeviceSchema.validate(req.body)
     if(result.error){
       // TODO: know more details on which input is invalid...
       res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
-      return;
-    }
-
-    const currentAccount = await Account.findOne({ username }); //check if account exists in the database
-    if (!currentAccount) {
-      // throw Error('Username does not exist');
-      res.status(400).json({ status: 400, message: 'Username does not exists'});
       return;
     }
 
@@ -73,6 +69,11 @@ const linkDevice = async (req, res) => {
   console.log('Device Link Requested');
 
   try {
+    // token verification should put username from token to req.username
+    if (!req.username){
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+    }
+
     const result = linkDeviceSchema.validate(req.body)
      if(result.error){
       // TODO: know more details on which input is invalid...
@@ -91,7 +92,6 @@ const linkDevice = async (req, res) => {
       return;
     }
 
-    // token verification should put username from token to req.username
     const user = await Account.findOne({ 'username': req.username }).populate('devices')
 
     // Must be an existing user account to accept device linking request - update db.
