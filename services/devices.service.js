@@ -26,25 +26,26 @@ const addDevice = async (req, res) => {
       return;
     }
 
-    // check if user inputs are not yet saved in the database
+    // check if user inputs for the device are not yet saved in the database
     const deviceDetailsCheck = await Device.findOne({
-      network: req.body.network,
-      station: req.body.station,
+      network: result.value.network,
+      station: result.value.station,
     });
     if (deviceDetailsCheck) {
-      // throw Error('Username does not exist');
+      // throw Error('Username does not exist')r
       res.status(400).json({ status: 400, message: 'Device details already used'});
       return;
     }
 
     const newDevice = new Device({
-      network: req.body.network,
-      station: req.body.station,
-      elevation: req.body.elevation,
-      location: req.body.location,
+      network: result.value.network,
+      station: result.value.station,
+      elevation: result.value.elevation,
+      location: result.value.location,
     });
     await newDevice.save(); // save new entry to device collections
 
+    const currentAccount = await Account.findOne({ 'username' : req.username });
     await currentAccount.updateOne({ // update devices array under accounts collection
       $push: { devices: newDevice._id }
     });
