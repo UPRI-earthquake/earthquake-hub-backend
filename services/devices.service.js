@@ -52,9 +52,9 @@ const addDevice = async (req, res) => {
 
     console.log(`Add device successful`);
     return res.status(200).json({ status: 200, message: "Succesfully Added Device" });
-  } catch (e) {
-    console.log(`Add device unsuccessful: \n ${e}`);
-    return res.status(400).json({ status: 400, message: e.message });
+  } catch (error) {
+    console.log(`Add device unsuccessful: \n ${error}`);
+    next(error)
   }
 }
 
@@ -119,8 +119,8 @@ const linkDevice = async (req, res) => {
 
     console.log("Update account's device successful")
     res.status(200).json({ message: 'Device-Account Linking Successful' })
-
   } catch (error) {
+    console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
   }
 }
