@@ -64,7 +64,6 @@ const addDevice = async (req, res) => {
 }
 
 const linkDeviceSchema = Joi.object().keys({
-  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
   macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
   streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}(,[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3})*$/).required()
 
@@ -92,15 +91,8 @@ const linkDevice = async (req, res) => {
       return;
     }
 
-    // TODO: Authenticate user input. For now, chineck ko lang kung existing yung input username
-    const username = "citizen" // this should come from verify(token)
-    const user = await Account.findOne({ 'username': username }).populate('devices')
-
-    if (!user) { // user exists
-      res.status(400).json({ message: 'User Does Not Exists' })
-      return;
-
-    }
+    // token verification should put username from token to req.username
+    const user = await Account.findOne({ 'username': req.username }).populate('devices')
 
     // Must be an existing user account to accept device linking request - update db.
     // get device with same Network and Station
@@ -135,6 +127,6 @@ const linkDevice = async (req, res) => {
 }
 
 module.exports = {
-  addDevice: [getCitizenToken, verifyTokenRole('citizen'), addDevice],
+  addDevice,
   linkDevice
 }

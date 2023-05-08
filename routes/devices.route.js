@@ -1,5 +1,5 @@
 const express = require('express');
-const { addDevice, linkDevice } = require('../services/devices');
+const { addDevice, linkDevice } = require('../services/devices.service');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
