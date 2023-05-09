@@ -62,7 +62,7 @@ router.route('/register').post(
       return res.status(200).json({ status: 200, message: "Succesfully Created Account" });
 
     } catch (error) {
-      console.log(`Create account unsuccessful: \n ${error}`);
+      console.log(`Registration unsuccessful: \n ${error}`);
       next(error)
     }
 
@@ -178,6 +178,7 @@ router.route('/authenticate').post( async (req, res, next) => {
     return;
 
   } catch(error) {
+    console.log(`Authentication unsuccessful: \n ${error}`);
     next(error)
   }
 });
