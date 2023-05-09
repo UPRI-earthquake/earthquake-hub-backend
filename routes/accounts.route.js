@@ -6,6 +6,71 @@ const jwt = require('jsonwebtoken');
 
 const User = require('../models/account.model');
 const Device = require('../models/device.model');
+const {
+  getTokenFromCookie,
+  getTokenFromBearer,
+  verifyTokenWithRole
+} = require('../middlewares/token.middleware')
+
+// --- REGISTRATION ---
+
+const registerSchema = Joi.object({
+  username: Joi.string().required(),
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
+  confirmPassword: Joi.equal(Joi.ref('password')).required()
+                   .messages({"any.only": "Passwords should match."}),
+  email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
+});
+
+router.route('/register').post(
+  async (req, res) => { // validate POST body
+    console.log("Register account requested");
+
+    try {
+      const result = registerSchema.validate(req.body);
+      if(result.error){
+        console.log(result.error.details[0].message)
+        res.status(400).json({ status: 400, message: result.error.details[0].message});
+        return;
+      }
+
+      // Check if username is in use
+      const usernameExists = await User.findOne({ username: req.body.username });
+      if (usernameExists) { // username is already in use
+        res.status(400).json({ status: 400, message: 'Username already in use'});
+        return;
+      }
+
+      // Check if email is in use
+      const emailExists = await User.findOne({ email: req.body.email });
+      if (emailExists) { // email is already in use
+        res.status(400).json({ status: 400, message: 'Email address already in use'});
+        return;
+      }
+
+      // save inputs to database
+      const hashedPassword = bcrypt.hashSync(req.body.password, 10); // hash the password before saving to database
+
+      const newAccount = new User({
+        username: req.body.username,
+        email: req.body.email,
+        password: hashedPassword,
+        roles: ["citizen", "sensor"]
+      });
+      await newAccount.save();
+
+      console.log(`Account creation successful successful`);
+      return res.status(200).json({ status: 200, message: "Succesfully Created Account" });
+
+    } catch (error) {
+      console.log(`Registration unsuccessful: \n ${error}`);
+      next(error)
+    }
+
+  }
+)
+
+// --- LOGIN/AUTHENTICATION ---
 
 /* validate ./accounts/authenticate endpoint
  *  - role: to be provided by client app
@@ -16,8 +81,8 @@ const Device = require('../models/device.model');
  * */
 const authenticateSchema = Joi.object().keys({
   username: Joi.string().required(),
-  password: Joi.string().regex(/^[a-zA-Z0-9]{6,30}$/).required(),
-  role: Joi.string().valid('sensor', 'citizen', 'brgy').required()
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
+  role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
 });
 
 function generateAccessToken(payload){
@@ -28,8 +93,8 @@ router.route('/authenticate').post( async (req, res, next) => {
   try{
     const result = authenticateSchema.validate(req.body);
     if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: 'Invalid input'});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
@@ -114,77 +179,25 @@ router.route('/authenticate').post( async (req, res, next) => {
     return;
 
   } catch(error) {
+    console.log(`Authentication unsuccessful: \n ${error}`);
     next(error)
   }
 });
 
-
-// Middleware: Checks if the token has the correct citizen authority
-function getCitizenToken(req, res, next) {
-  if(!req.cookies) {
-    res.status(403).json({ status: 403, message: "Cookies undefined" })
-    return; // don't proceed to next()
-  }
-
-  const token = req.cookies.accessToken;
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in cookie missing" })
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Checks if the token has the correct brgy authority
-function getBrgyToken(req, res, next) {
-  const authHeader = req.headers["authorization"]
-  if(!authHeader) {
-    res.status(403).json({ status: 403, message: "Authorization Header Undefined" });
-    return; // don't proceed to next()
-  }
-
-  const token = authHeader.split(" ")[1] // authorization: "Bearer <token>"
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in header missing" });
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Verify token is valid, and role in token is role in arg
-function verifyTokenRole(role) { // wrapper for custom args
-  return (req, res, next) => {
-    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
-      if (err) {
-        res.status(403).json({ status: 403, message: "Token invalid" });
-        return;
-      }
-      if (decodedToken.role !== role) {
-        res.status(403).json({ status: 403, message: "Role invalid" });
-        return;
-      }
-      req.username = decodedToken.username;
-      req.role = decodedToken.role;
-      next();
-    }) //end of jwt.verify()
-  } // end of standard middleware
-} // end of wrapper
+// --- VERIFICATION ---
 
 const verifySensorTokenSchema = Joi.object().keys({
-  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
-  role: Joi.string().valid('sensor').required()
+  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
 });
 
 router.route('/verifySensorToken').post(
-  getBrgyToken,
-  verifyTokenRole('brgy'),
+  getTokenFromBearer,
+  verifyTokenWithRole('brgy'),
   (req, res, next) => { // validate POST body
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
-      res.status(400).json({ status: 400, message: 'Invalid POST input'});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
     next();
@@ -250,8 +263,8 @@ router.route('/verifySensorToken').post(
 )
 
 router.route('/sample-profile-for-citizen').get(
-  getCitizenToken,
-  verifyTokenRole('citizen'),
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
   // TODO: Do we need to check the username?
   async (req, res, next) => {
     const citizen = await User.findOne({ 'username': req.username });  // get citizen account, username is on req.username due to verifyTokenRole middleware
@@ -262,6 +275,5 @@ router.route('/sample-profile-for-citizen').get(
     });
   }
 )
-
 
 module.exports = router

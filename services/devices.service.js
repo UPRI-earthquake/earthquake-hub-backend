@@ -10,97 +10,55 @@ const addDeviceSchema = Joi.object().keys({
   location: Joi.string().required()
 });
 
-// Middleware: Checks if the token has the correct citizen authority
-function getCitizenToken(req, res, next) {
-  if(!req.cookies) {
-    res.status(403).json({ status: 403, message: "Cookies undefined" })
-    return; // don't proceed to next()
-  }
-
-  const token = req.cookies.accessToken;
-  if(!token) {
-    res.status(403).json({ status: 403, message: "Token in cookie missing" })
-    return;
-  }
-
-  req.token = token;
-  next();
-}
-
-// Middleware: Verify token is valid, and role in token is role in arg
-function verifyTokenRole(role) { // wrapper for custom args
-  return (req, res, next) => {
-    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
-      if (err) {
-        res.status(403).json({ status: 403, message: "Token invalid" });
-        return;
-      }
-      if (decodedToken.role !== role) {
-        res.status(403).json({ status: 403, message: "Role invalid" });
-        return;
-      }
-      req.username = decodedToken.username;
-      req.role = decodedToken.role;
-      next();
-    }) //end of jwt.verify()
-  } // end of standard middleware
-} // end of wrapper
-
 const addDevice = async (req, res) => {
   console.log("Add device requested");
 
-  const username = req.username; // this comes from cookie(token), not user input
-
   try {
+    // token verification should put username from token to req.username
+    if (!req.username){
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+    }
+
     const result = addDeviceSchema.validate(req.body)
     if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
-    const currentAccount = await Account.findOne({ username }); //check if account exists in the database
-    if (!currentAccount) {
-      // throw Error('Username does not exist');
-      res.status(400).json({ status: 400, message: 'Username does not exists'});
-      return;
-    }
-
-    // check if user inputs are not yet saved in the database
+    // check if user inputs for the device are not yet saved in the database
     const deviceDetailsCheck = await Device.findOne({
-      network: req.body.network,
-      station: req.body.station,
-      elevation: req.body.elevation,
-      location: req.body.location
+      network: result.value.network,
+      station: result.value.station,
     });
     if (deviceDetailsCheck) {
-      // throw Error('Username does not exist');
+      // throw Error('Username does not exist')r
       res.status(400).json({ status: 400, message: 'Device details already used'});
       return;
     }
 
     const newDevice = new Device({
-      network: req.body.network,
-      station: req.body.station,
-      elevation: req.body.elevation,
-      location: req.body.location,
+      network: result.value.network,
+      station: result.value.station,
+      elevation: result.value.elevation,
+      location: result.value.location,
     });
     await newDevice.save(); // save new entry to device collections
 
+    const currentAccount = await Account.findOne({ 'username' : req.username });
     await currentAccount.updateOne({ // update devices array under accounts collection
       $push: { devices: newDevice._id }
     });
 
     console.log(`Add device successful`);
     return res.status(200).json({ status: 200, message: "Succesfully Added Device" });
-  } catch (e) {
-    console.log(`Add device unsuccessful: \n ${e}`);
-    return res.status(400).json({ status: 400, message: e.message });
+  } catch (error) {
+    console.log(`Add device unsuccessful: \n ${error}`);
+    next(error)
   }
 }
 
 const linkDeviceSchema = Joi.object().keys({
-  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
   macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
   streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}(,[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3})*$/).required()
 
@@ -110,10 +68,15 @@ const linkDevice = async (req, res) => {
   console.log('Device Link Requested');
 
   try {
+    // token verification should put username from token to req.username
+    if (!req.username){
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+    }
+
     const result = linkDeviceSchema.validate(req.body)
      if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
@@ -128,15 +91,7 @@ const linkDevice = async (req, res) => {
       return;
     }
 
-    // TODO: Authenticate user input. For now, chineck ko lang kung existing yung input username
-    const username = "citizen" // this should come from verify(token)
-    const user = await Account.findOne({ 'username': username }).populate('devices')
-
-    if (!user) { // user exists
-      res.status(400).json({ message: 'User Does Not Exists' })
-      return;
-
-    }
+    const user = await Account.findOne({ 'username': req.username }).populate('devices')
 
     // Must be an existing user account to accept device linking request - update db.
     // get device with same Network and Station
@@ -164,13 +119,13 @@ const linkDevice = async (req, res) => {
 
     console.log("Update account's device successful")
     res.status(200).json({ message: 'Device-Account Linking Successful' })
-
   } catch (error) {
-    console.log(error)
+    console.log(`Link device unsuccessful: \n ${error}`);
+    next(error)
   }
 }
 
 module.exports = {
-  addDevice: [getCitizenToken, verifyTokenRole('citizen'), addDevice],
+  addDevice,
   linkDevice
-} 
+}

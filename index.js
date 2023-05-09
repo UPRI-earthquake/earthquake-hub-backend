@@ -24,8 +24,6 @@ const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
-const deviceRouter = require('./routes/devices');
-const authRouter = require('./routes/auth');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -41,15 +39,14 @@ app.get('/', (req, res) => {
 })
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
-app.use('/device', deviceRouter)
 app.use('/messaging', messaging.router)
-app.use('/auth', authRouter);
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
 messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
 app.use('/accounts', require('./routes/accounts.route'))
+app.use('/device', require('./routes/devices.route'))
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
