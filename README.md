@@ -1,6 +1,20 @@
 # earthquake-hub-backend
 Backend code for the EarthquakeHub web app
 
+## Local development
+1. Install the package manager `npm 9.6.6` via:
+    ```bash
+    npm install -g npm@9.6.6
+    ```
+2. Install the code base dependencies via
+    ```bash
+    npm clean-install
+    ```
+3. Run all the containers using the following command
+    ```bash
+    docker compose up --attach backend
+    ```
+
 ## Publishing container image
 1. Make sure that any changes from the env-file are also reflected in the commons repository docker-compose (TODO: predefine the env vars in the Dockerfile itself, instead of only on the env-file). This will ensure that when the commons uses this repository, it is using the env-vars that are expected by the image.
 2. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
