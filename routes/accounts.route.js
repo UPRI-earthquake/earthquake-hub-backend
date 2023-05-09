@@ -14,10 +14,10 @@ const {
 
 // --- REGISTRATION ---
 
-const registerSchema = Joi.object().keys({
+const registerSchema = Joi.object({
   username: Joi.string().required(),
-  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')).required(),
-  confirmPassword: Joi.valid(Joi.ref('password')).required(),
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
+  confirmPassword: Joi.equal(Joi.ref('password')).required(),
   email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
 });
 
@@ -29,9 +29,7 @@ router.route('/register').post(
       const result = registerSchema.validate(req.body);
       if(result.error){
         console.log(result.error.details[0].message)
-
-        // TODO: write more detailed error message
-        res.status(400).json({ status: 400, message: 'Invalid POST input'});
+        res.status(400).json({ status: 400, message: result.error.details[0].message});
         return;
       }
 
@@ -82,8 +80,8 @@ router.route('/register').post(
  * */
 const authenticateSchema = Joi.object().keys({
   username: Joi.string().required(),
-  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{3,30}$')).required(),
-  role: Joi.string().valid('sensor', 'citizen', 'brgy').required()
+  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
+  role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
 });
 
 function generateAccessToken(payload){
@@ -94,8 +92,8 @@ router.route('/authenticate').post( async (req, res, next) => {
   try{
     const result = authenticateSchema.validate(req.body);
     if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: 'Invalid input'});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
@@ -187,7 +185,7 @@ router.route('/authenticate').post( async (req, res, next) => {
 // --- VERIFICATION ---
 
 const verifySensorTokenSchema = Joi.object().keys({
-  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required(),
+  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
 });
 
 router.route('/verifySensorToken').post(
@@ -196,7 +194,8 @@ router.route('/verifySensorToken').post(
   (req, res, next) => { // validate POST body
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
-      res.status(400).json({ status: 400, message: 'Invalid POST input'});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
     next();

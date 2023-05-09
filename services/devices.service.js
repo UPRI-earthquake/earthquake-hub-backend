@@ -21,8 +21,8 @@ const addDevice = async (req, res) => {
 
     const result = addDeviceSchema.validate(req.body)
     if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
@@ -75,8 +75,8 @@ const linkDevice = async (req, res) => {
 
     const result = linkDeviceSchema.validate(req.body)
      if(result.error){
-      // TODO: know more details on which input is invalid...
-      res.status(400).json({ status: 400, message: `Invalid input: ${result.error}`});
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
       return;
     }
 
