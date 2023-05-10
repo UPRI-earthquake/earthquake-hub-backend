@@ -24,7 +24,7 @@ services:
       app-network:
         ipv4_address: 172.22.0.3
     # set command to only install node_modules if not present, then startDev
-    command: /bin/sh dev-entrypoint.sh
+    command: npm run start:dev
 
   mongodb:
     container_name: mongodb
