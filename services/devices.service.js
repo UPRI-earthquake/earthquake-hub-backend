@@ -125,7 +125,42 @@ const linkDevice = async (req, res) => {
   }
 }
 
+const getDeviceList = async (req, res) => {
+  console.log('GET request on /device/deviceList endpoint received')
+  const citizen = await Account.findOne({ 'username': req.username }).populate('devices');  // get citizen account, username is on req.username due to verifyTokenRole middleware
+  
+  const devicePayload = citizen.devices.map(device => {
+    let status = 'Not Yet Linked'
+    if (device.macAddress === 'TO_BE_LINKED') {
+      status = 'Not Yet Linked';
+    }
+    else if (device.activity === 'Inactive') {
+      status = 'Not Streaming';
+    }
+    else {
+      status = 'Streaming';
+    }
+
+    const deviceInfo = {
+      network: device.network,
+      station: device.station,
+      status: status
+    };
+
+    return deviceInfo;
+  });
+
+  console.log(devicePayload)
+
+  res.status(200).json({
+    status:200,
+    message:"GET device success",
+    payload: devicePayload
+  });
+}
+
 module.exports = {
   addDevice,
-  linkDevice
+  linkDevice,
+  getDeviceList
 }
