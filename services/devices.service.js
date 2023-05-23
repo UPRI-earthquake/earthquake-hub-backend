@@ -117,8 +117,21 @@ const linkDevice = async (req, res) => {
     device.streamId = result.value.streamId
     device.save()
 
+    // Query updated device information
+    const updatedDevice = await Device.findOne({ _id: device._id })
+
+    const deviceInfo = {
+      deviceInfo: {
+        network: updatedDevice.network,
+        station: updatedDevice.station,
+        location: updatedDevice.location,
+        elevation: updatedDevice.elevation,
+        streamId: updatedDevice.streamId
+      }
+    }
+
     console.log("Update account's device successful")
-    res.status(200).json({ message: 'Device-Account Linking Successful' })
+    res.status(200).json({ message: 'Device-Account Linking Successful', payload: deviceInfo })
   } catch (error) {
     console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
