@@ -244,6 +244,13 @@ router.route('/verifySensorToken').post(
         .then(devices => devices.map(device => device._id));          // map to an array of ObjectId's only
 
       const brgy = await User.findOne({ 'username': req.username });  // get brgy account, username is on req.username due to verifyTokenRole middleware
+      if( ! brgy) {
+        console.log( 'Brgy account is valid but not found in DB!!')
+        res.status(400).json({
+          status: responseCodes.INBEHALF_VERIFICATION_ERROR,
+          message: 'Internal error'});
+        return;
+      }
 
       let brgyAccountUpdated = false
       for (let i = 0; i < deviceIds.length; i++) {                    // for each deviceId, check if brgy.devices already contains it
