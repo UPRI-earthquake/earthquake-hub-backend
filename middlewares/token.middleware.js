@@ -1,4 +1,8 @@
 const jwt = require('jsonwebtoken');
+const {
+  responseCodes,
+  responseMessages
+} = require('../routes/responseCodes')
 
 // Citizen role request sends tokens thru cookie in requests
 function getTokenFromCookie(req, res, next) {
@@ -41,18 +45,34 @@ function verifyTokenWithRole(role) { // wrapper for custom args
     jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
 
       if (err) {
-        res.status(403).json({ status: 403, message: "Token invalid" });
+        if (err.name == 'JsonWebTokenError'){
+          res.status(403).json({
+            status: responseCodes.VERIFICATION_INVALID_TOKEN,
+            message: "Token invalid"
+          });
+        } else if (err.name == 'TokenExpiredError'){
+          res.status(403).json({
+            status: responseCodes.VERIFICATION_EXPIRED_TOKEN,
+            message: "Token expired"
+          });
+        }
         return;
       }
 
       if (decodedToken.role !== role) {
-        res.status(403).json({ status: 403, message: "Role invalid" });
+        res.status(403).json({
+          status: responseCodes.VERIFICATION_INVALID_ROLE,
+          message: "Role invalid"
+        });
         return;
       }
 
       req.username = decodedToken.username;
       req.role = decodedToken.role;
-
+      req.tokenExpiry = decodedToken.exp;
+      if (decodedToken.streamIds) { // for roles of brgy & sensor
+        req.streamIds = decodedToken.streamIds;
+      }
       next();
 
     }) //end of jwt.verify()

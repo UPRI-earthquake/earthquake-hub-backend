@@ -91,7 +91,7 @@ const authenticateSchema = Joi.object().keys({
 });
 
 function generateAccessToken(payload){
-  return jwt.sign(payload, process.env.ACCESS_TOKEN_PRIVATE_KEY);
+  return jwt.sign(payload, process.env.ACCESS_TOKEN_PRIVATE_KEY, {expiresIn: '30 days'}); // Add 'exp' in seconds since epoch
 }
 
 router.route('/authenticate').post( async (req, res, next) => {
