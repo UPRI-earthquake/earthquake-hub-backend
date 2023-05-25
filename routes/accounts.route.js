@@ -202,7 +202,7 @@ router.route('/verifySensorToken').post(
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
       console.log(result.error.details[0].message)
-      res.status(400).json({ status: responseCodes.VERIFICATION_ERROR, message: result.error.details[0].message});
+      res.status(400).json({ status: responseCodes.INBEHALF_VERIFICATION_ERROR, message: result.error.details[0].message});
       return;
     }
     next();
@@ -214,13 +214,26 @@ router.route('/verifySensorToken').post(
     // it the streamids the token claims to have access to are given/permitted by UP
     jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
       if (err) {
-        console.log(err);
-        res.status(403).json({ status: responseCodes.VERIFICATION_INVALID_TOKEN, message: "Token invalid" });
+        if (err.name == 'JsonWebTokenError'){
+          res.status(403).json({
+            status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN,
+            message: "Sender token invalid"
+          });
+        } else if (err.name == 'TokenExpiredError'){
+          res.status(403).json({
+            status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN,
+            message: "Sender token expired"
+          });
+        }
         return;
       }
 
+      // TODO: This can also be brgy!! A brgy can also act as a sender to UP ringserver...
       if (decodedToken.role !== 'sensor') { // check that role is sensor (since a token can have a different role and still be valid)
-        res.status(403).json({ status: responseCodes.VERIFICATION_INVALID_ROLE, message: "Role in token invalid" });
+        res.status(403).json({
+          status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE,
+          message: "Role in token invalid"
+        });
         return;
       }
 
@@ -249,7 +262,7 @@ router.route('/verifySensorToken').post(
         const brgyStreamIds = brgy.devices.map(device => device.streamId)
 
         res.status(200).json({
-          status: responseCodes.VERIFICATION_SUCCESS_NEW_TOKEN,
+          status: responseCodes.INBEHALF_VERIFICATION_SUCCESS_NEW_TOKEN,
           message: 'Sender is a valid streamer with new streamIds',
           accessToken: generateAccessToken({                          // Give the brgy a new authentication token that includes updated streamids
             'username': brgy.username,
@@ -261,7 +274,7 @@ router.route('/verifySensorToken').post(
       }
       else {
         res.status(200).json({
-          status: responseCodes.VERIFICATION_SUCCESS,
+          status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
           message: 'Sensor is a valid streamer'
         }); //TODO: think of a better message
       }
