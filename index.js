@@ -25,6 +25,11 @@ const eventsRouter = require('./routes/events');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
+const {
+  responseCodes,
+  responseMessages
+} = require('./routes/responseCodes')
+
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
   : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT
@@ -62,11 +67,14 @@ app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   //console.trace(`Express error handler captured the following...\n ${err}`);
   if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
-    res.status(statusCode).json({"message": "Server error occured"}) // TODO: make a standard api message for error
+    res.status(statusCode).json({
+      'status': responseCodes.GENERIC_ERROR,
+      "message": "Server error occured"
+    }) // TODO: make a standard api message for error
     console.log('Server error occured:', err.stack)
   }else{
     res.status(statusCode).json({
-    'status': "Express error handler caught an error",
+    'status': responseCodes.GENERIC_ERROR,
     'err': err.stack,
     'note': 'This error will only appear on non-production env'});
   }
