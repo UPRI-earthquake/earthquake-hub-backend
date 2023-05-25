@@ -12,6 +12,11 @@ const {
   verifyTokenWithRole
 } = require('../middlewares/token.middleware')
 
+const {
+  responseCodes,
+  responseMessages
+} = require('./responseCodes')
+
 // --- REGISTRATION ---
 
 const registerSchema = Joi.object({
@@ -94,7 +99,7 @@ router.route('/authenticate').post( async (req, res, next) => {
     const result = authenticateSchema.validate(req.body);
     if(result.error){
       console.log(result.error.details[0].message)
-      res.status(400).json({ status: 400, message: result.error.details[0].message});
+      res.status(400).json({ status: responseCodes.AUTHENTICATION_ERROR, message: result.error.details[0].message});
       return;
     }
 
@@ -102,13 +107,13 @@ router.route('/authenticate').post( async (req, res, next) => {
     const user = await User.findOne({ 'username': result.value.username }).populate('devices');
 
     if(!user){
-      res.status(400).json({ status: 400, message: "User doesn't exists!"});
+      res.status(400).json({ status: responseCodes.AUTHENTICATION_USER_NOT_EXIST, message: "User doesn't exists!"});
       return;
     }
 
     // check if claimed role reflects allowed role in db
     if(!user.roles.includes(result.value.role)){
-      res.status(400).json({ status: 400, message: 'Invalid role'});
+      res.status(400).json({ status: responseCodes.AUTHENTICATION_INVALID_ROLE, message: 'Invalid role'});
       return;
     }
 
@@ -119,7 +124,7 @@ router.route('/authenticate').post( async (req, res, next) => {
     )
 
     if(!passwordIsValid){
-      res.status(401).json({ status: 401, message: 'Wrong password'});
+      res.status(401).json({ status: responseCodes.AUTHENTICATION_WRONG_PASSWORD, message: 'Wrong password'});
       return;
     }
 
@@ -127,7 +132,7 @@ router.route('/authenticate').post( async (req, res, next) => {
       case 'sensor':
         // check if account has devices
         if (user.devices.length === 0) {
-          res.status(400).json({ status: 400, message: 'User has no linked devices'});
+          res.status(400).json({ status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE, message: 'User has no linked devices'});
           return;
        }
 
@@ -137,7 +142,7 @@ router.route('/authenticate').post( async (req, res, next) => {
 
         // return access token with claims for allowed channels to stream
         res.status(200).json({
-          status: 200,
+          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
           message: 'Authentication successful',
           accessToken: generateAccessToken({
             'username': user.username,
@@ -153,20 +158,20 @@ router.route('/authenticate').post( async (req, res, next) => {
             httpOnly: true, // set to be accessible only by web browser
             secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
           })
-          .json({ status: 200, message: "Authentication successful" });
+          .json({ status: responseCodes.AUTHENTICATION_TOKEN_COOKIE, message: "Authentication successful" });
         break;
       case 'brgy':
         // check if brgy account has devices (of their own, or that forwards to them)
         // that they can in turn forward to UP (main receiver)
         if (user.devices.length === 0) {
-          res.status(400).json({ status: 400, message: 'Brgy has no forwardable devices'});
+          res.status(400).json({ status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE, message: 'Brgy has no forwardable devices'});
           return;
        }
 
         // return access token in json format, with streamids of SENSORs it can forward
         const brgyStreamIds = user.devices.map(device => device.streamId)
         res.status(200).json({
-          status: 200,
+          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
           message: 'Login successful',
           accessToken: generateAccessToken({
             'username': user.username,
@@ -197,7 +202,7 @@ router.route('/verifySensorToken').post(
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
       console.log(result.error.details[0].message)
-      res.status(400).json({ status: 400, message: result.error.details[0].message});
+      res.status(400).json({ status: responseCodes.VERIFICATION_ERROR, message: result.error.details[0].message});
       return;
     }
     next();
@@ -210,12 +215,12 @@ router.route('/verifySensorToken').post(
     jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
       if (err) {
         console.log(err);
-        res.status(403).json({ status: 403, message: "Token invalid" });
+        res.status(403).json({ status: responseCodes.VERIFICATION_INVALID_TOKEN, message: "Token invalid" });
         return;
       }
 
       if (decodedToken.role !== 'sensor') { // check that role is sensor (since a token can have a different role and still be valid)
-        res.status(403).json({ status: 403, message: "Role in token invalid" });
+        res.status(403).json({ status: responseCodes.VERIFICATION_INVALID_ROLE, message: "Role in token invalid" });
         return;
       }
 
@@ -244,7 +249,7 @@ router.route('/verifySensorToken').post(
         const brgyStreamIds = brgy.devices.map(device => device.streamId)
 
         res.status(200).json({
-          status: 200,
+          status: responseCodes.VERIFICATION_SUCCESS_NEW_TOKEN,
           message: 'Sender is a valid streamer with new streamIds',
           accessToken: generateAccessToken({                          // Give the brgy a new authentication token that includes updated streamids
             'username': brgy.username,
@@ -255,7 +260,10 @@ router.route('/verifySensorToken').post(
 
       }
       else {
-        res.status(200).json({ status: 200, message: 'Sensor is a valid streamer'}); //TODO: think of a better message
+        res.status(200).json({
+          status: responseCodes.VERIFICATION_SUCCESS,
+          message: 'Sensor is a valid streamer'
+        }); //TODO: think of a better message
       }
 
     }) //end of jwt.verify()
