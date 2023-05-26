@@ -70,13 +70,15 @@ app.use((err, req, res, next) => {
     res.status(statusCode).json({
       'status': responseCodes.GENERIC_ERROR,
       "message": "Server error occured"
-    }) // TODO: make a standard api message for error
+    })
     console.log('Server error occured:', err.stack)
   }else{
     res.status(statusCode).json({
     'status': responseCodes.GENERIC_ERROR,
     'err': err.stack,
-    'note': 'This error will only appear on non-production env'});
+    'note': 'This error will only appear on non-production env'
+    });
+    console.log('Server error occured:', err.stack)
   }
 
   return;
