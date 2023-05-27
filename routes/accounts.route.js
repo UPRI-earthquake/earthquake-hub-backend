@@ -289,7 +289,7 @@ router.route('/verifySensorToken').post(
           message: 'Sensor is a valid streamer',
           decodedSenderToken: {
             streamIds: decodedToken.streamIds,
-            exp: decodedToken.tokenExpiry,
+            exp: decodedToken.exp,
           },
         }); //TODO: think of a better message
       }
