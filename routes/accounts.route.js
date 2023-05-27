@@ -272,8 +272,8 @@ router.route('/verifySensorToken').post(
           status: responseCodes.INBEHALF_VERIFICATION_SUCCESS_NEW_TOKEN,
           message: 'Sender is a valid streamer with new streamIds',
           decodedSenderToken: {
-            streamIds: req.streamIds,
-            exp: req.exp,
+            streamIds: decodedToken.streamIds,
+            exp: decodedToken.exp,
           },
           accessToken: generateAccessToken({                          // Give the brgy a new authentication token that includes updated streamids
             'username': brgy.username,
@@ -288,8 +288,8 @@ router.route('/verifySensorToken').post(
           status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
           message: 'Sensor is a valid streamer',
           decodedSenderToken: {
-            streamIds: req.streamIds,
-            exp: req.tokenExpiry,
+            streamIds: decodedToken.streamIds,
+            exp: decodedToken.tokenExpiry,
           },
         }); //TODO: think of a better message
       }
