@@ -27,7 +27,8 @@ const notifs  = require('./routes/notifications');
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
-  : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT
+  : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT,
+  credentials: true
 }))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }));
