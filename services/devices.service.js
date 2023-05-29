@@ -117,15 +117,66 @@ const linkDevice = async (req, res) => {
     device.streamId = result.value.streamId
     device.save()
 
+    // Query updated device information
+    const updatedDevice = await Device.findOne({ _id: device._id })
+
+    const deviceInfo = {
+      deviceInfo: {
+        network: updatedDevice.network,
+        station: updatedDevice.station,
+        location: updatedDevice.location,
+        elevation: updatedDevice.elevation,
+        streamId: updatedDevice.streamId
+      }
+    }
+
     console.log("Update account's device successful")
-    res.status(200).json({ message: 'Device-Account Linking Successful' })
+    res.status(200).json({ message: 'Device-Account Linking Successful', payload: deviceInfo })
   } catch (error) {
     console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
   }
 }
 
+const getDeviceList = async (req, res) => {
+  console.log('GET request on /device/deviceList endpoint received')
+  const citizen = await Account.findOne({ 'username': req.username }).populate('devices');  // get citizen account, username is on req.username due to verifyTokenRole middleware
+  
+  let devicePayload = [];
+
+  if (citizen.devices) {
+    devicePayload = citizen.devices.map(device => {
+      let status = 'Not Yet Linked';
+      
+      if (device.macAddress === 'TO_BE_LINKED') {
+        status = 'Not Yet Linked';
+      } else if (device.activity === 'Inactive') {
+        status = 'Not Streaming';
+      } else {
+        status = 'Streaming';
+      }
+
+      const deviceInfo = {
+        network: device.network,
+        station: device.station,
+        status: status
+      };
+
+      return deviceInfo;
+    });
+  }
+
+  console.log(devicePayload)
+
+  res.status(200).json({
+    status:200,
+    message:"GET device success",
+    payload: devicePayload
+  });
+}
+
 module.exports = {
   addDevice,
-  linkDevice
+  linkDevice,
+  getDeviceList
 }

@@ -1,5 +1,5 @@
 const express = require('express');
-const { addDevice, linkDevice } = require('../services/devices.service');
+const { addDevice, linkDevice, getDeviceList } = require('../services/devices.service');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
@@ -20,6 +20,13 @@ deviceRouter.route('/link').post(
   getTokenFromBearer,
   verifyTokenWithRole('sensor'),
   linkDevice
+);
+
+// Citizen users that will request list of devices linked to his account should have verified token
+deviceRouter.route('/list').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  getDeviceList
 );
 
 module.exports = deviceRouter;
