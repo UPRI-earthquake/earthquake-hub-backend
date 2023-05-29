@@ -23,7 +23,7 @@ deviceRouter.route('/link').post(
 );
 
 // Citizen users that will request list of devices linked to his account should have verified token
-deviceRouter.route('/listAll').get(
+deviceRouter.route('/list').get(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
   getDeviceList
