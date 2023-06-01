@@ -1,0 +1,63 @@
+const responseCodes = {
+  GENERIC_SUCCESS: 0,
+  GENERIC_ERROR: 100,
+
+  REGISTRATION_SUCCESS:          10,
+  REGISTRATION_ERROR:           110,
+  REGISTRATION_USERNAME_IN_USE: 111,
+  REGISTRATION_EMAIL_IN_USE:    112,
+
+  AUTHENTICATION_SUCCESS:           20,
+  AUTHENTICATION_TOKEN_COOKIE:      21,
+  AUTHENTICATION_TOKEN_PAYLOAD:     22,
+  AUTHENTICATION_ERROR:            120,
+  AUTHENTICATION_USER_NOT_EXIST:   121,
+  AUTHENTICATION_INVALID_ROLE:     122,
+  AUTHENTICATION_WRONG_PASSWORD:   123,
+  AUTHENTICATION_NO_LINKED_DEVICE: 124,
+
+  VERIFICATION_SUCCESS:            30,
+  VERIFICATION_SUCCESS_NEW_TOKEN:  31,
+  VERIFICATION_ERROR:             130,
+  VERIFICATION_INVALID_TOKEN:     131,
+  VERIFICATION_INVALID_ROLE:      132,
+  VERIFICATION_EXPIRED_TOKEN:     133,
+
+  INBEHALF_VERIFICATION_SUCCESS:            40,
+  INBEHALF_VERIFICATION_SUCCESS_NEW_TOKEN:  41,
+  INBEHALF_VERIFICATION_ERROR:             140,
+  INBEHALF_VERIFICATION_INVALID_TOKEN:     141,
+  INBEHALF_VERIFICATION_INVALID_ROLE:      142,
+  INBEHALF_VERIFICATION_EXPIRED_TOKEN:     143,
+};
+
+const responseMessages = {
+  GENERIC_SUCCESS: "Success",
+  GENERIC_ERROR: "Error",
+
+  REGISTRATION_SUCCESS: "Registration success",
+  REGISTRATION_ERROR: "Registration error",
+  REGISTRATION_USERNAME_IN_USE: "Registration error: Username already in use",
+  REGISTRATION_EMAIL_IN_USE: "Registration error: Email already in use",
+
+  AUTHENTICATION_SUCCESS: "Authentication success",
+  AUTHENTICATION_TOKEN_COOKIE: "Authentication success: Token in cookie",
+  AUTHENTICATION_TOKEN_PAYLOAD: "Authentication success: Token in payload",
+  AUTHENTICATION_ERROR: "Authentication error",
+  AUTHENTICATION_USER_NOT_EXIST: "Authentication error: User doesn't exist",
+  AUTHENTICATION_INVALID_ROLE: "Authentication error: Invalid role claimed",
+  AUTHENTICATION_WRONG_PASSWORD: "Authentication error: Wrong password",
+  AUTHENTICATION_NO_LINKED_DEVICE: "Authentication error: Account has no linked/forwardable devices",
+
+  VERIFICATION_SUCCESS: "Verification success",
+  VERIFICATION_SUCCESS_NEW_TOKEN: "Verification success with new token",
+  VERIFICATION_ERROR: "Verification error",
+  VERIFICATION_INVALID_TOKEN: "Verification error: Invalid token",
+  VERIFICATION_INVALID_ROLE: "Verification error: Invalid role in token",
+  VERIFICATION_EXPIRED_TOKEN: "Verification error: Expired token",
+};
+
+module.exports = {
+  responseCodes,
+  responseMessages,
+};
