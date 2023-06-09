@@ -60,7 +60,7 @@ const addDevice = async (req, res) => {
 
 const linkDeviceSchema = Joi.object().keys({
   macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
-  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3}(,[A-Z]{2}_[A-Z0-9]{5}_[0-9]{2}_[A-Z]{3})*$/).required()
+  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
 
 });
 
