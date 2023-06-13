@@ -312,8 +312,8 @@ router.route('/authTokenCheck').get(
   }
 )
 
-router.route('/logout').post( (req, res) => {
-  res.clearCookie('accessToken').json({ message: 'Logout successful' });
+router.route('/signout').post( (req, res) => {
+  res.clearCookie('accessToken').json({ message: 'Sign out successful' });
 })
 
 router.route('/sample-profile-for-citizen').get(
