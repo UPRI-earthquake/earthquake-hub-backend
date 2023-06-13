@@ -298,6 +298,24 @@ router.route('/verifySensorToken').post(
   }
 )
 
+router.route('/authTokenCheck').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  async (req, res, next) => {
+    console.log('GET request sent on /authTokenCheck endpoint')
+    const citizen = await User.findOne({ 'username': req.username });  // get citizen account, username is on req.username due to verifyTokenRole middleware
+    res.status(200).json({
+      status:200,
+      message: "Token is valid",
+      payload: { email: citizen.email }
+    });
+  }
+)
+
+router.route('/logout').post( (req, res) => {
+  res.clearCookie('accessToken').json({ message: 'Logout successful' });
+})
+
 router.route('/sample-profile-for-citizen').get(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
