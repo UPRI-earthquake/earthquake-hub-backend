@@ -1,4 +1,16 @@
 const responseCodes = {
+  /* Status Code Format: XYZ 
+   * X : 0 if success type, 1 if error type
+   * Y : 0-n based on group of response (ie REGISTRATION is 1, AUTH is 2, and so on)
+   * Z : 0-n increments as type changes within a group of response
+   * 
+   * For example:
+   * 123 :
+   * 1 = Error type of code
+   * 2 = Authentication group
+   * 3 = 3rd type of error within authentication group 
+   */
+
   GENERIC_SUCCESS: 0,
   GENERIC_ERROR: 100,
 
@@ -29,6 +41,9 @@ const responseCodes = {
   INBEHALF_VERIFICATION_INVALID_TOKEN:     141,
   INBEHALF_VERIFICATION_INVALID_ROLE:      142,
   INBEHALF_VERIFICATION_EXPIRED_TOKEN:     143,
+
+  SIGNOUT_SUCCESS:   50,
+  SIGNOUT_ERROR:    150,
 };
 
 const responseMessages = {
