@@ -307,20 +307,26 @@ router.route('/profile').get(
       const citizen = await User.findOne({ 'username': req.username });
 
       if (!citizen) { // User is not found in database
-        return res.status(409).json({
+        return res.status(400).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
           message: 'User not found'
         });
       }
 
-      res.status(200).json({message: 'Token is valid', 
+      res.status(200).json({
+        status: responseCodes.AUTHENTICATION_SUCCESS,
+        message: 'Token is valid', 
         payload: { 
           username: citizen.username,
           email: citizen.email
         } 
       });
     } catch (error) {
-      console.error('Error occurred during authTokenCheck:', error);
-      res.status(500).json({ error: 'Error checking token in cookie' });
+      console.error('Error occurred', error);
+      res.status(500).json({ 
+        status: responseCodes.AUTHENTICATION_ERROR,
+        message: 'Error checking token in cookie' 
+      });
     }
   }
 );
@@ -330,10 +336,16 @@ router.route('/signout').post(
   verifyTokenWithRole('citizen'),
   (req, res) => {
     try {
-      res.clearCookie('accessToken').json({ message: 'Sign out successful' });
+      res.clearCookie('accessToken').json({ 
+        status: responseCodes.SIGNOUT_SUCCESS,
+        message: 'Sign out successful' 
+      });
     } catch (error) {
       console.error('Error occurred during signout:', error);
-      res.status(500).json({ error: 'Error occured during signout' });
+      res.status(500).json({ 
+        status: responseCodes.SIGNOUT_ERROR,
+        message: 'Error occured during signout' 
+      });
     }
 });
 
