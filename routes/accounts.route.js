@@ -298,22 +298,26 @@ router.route('/verifySensorToken').post(
   }
 )
 
-router.route('/authTokenCheck').get(
+router.route('/profile').get(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
   async (req, res) => {
     try {
-      console.log('GET request sent on /authTokenCheck endpoint');
+      console.log('GET request sent on /profile endpoint');
       const citizen = await User.findOne({ 'username': req.username });
 
       if (!citizen) { // User is not found in database
-        return res.status(404).json({
-          status: 404,
+        return res.status(409).json({
           message: 'User not found'
         });
       }
 
-      res.status(200).json({message: 'Token is valid', payload: { email: citizen.email }});
+      res.status(200).json({message: 'Token is valid', 
+        payload: { 
+          username: citizen.username,
+          email: citizen.email
+        } 
+      });
     } catch (error) {
       console.error('Error occurred during authTokenCheck:', error);
       res.status(500).json({ error: 'Error checking token in cookie' });
@@ -321,13 +325,16 @@ router.route('/authTokenCheck').get(
   }
 );
 
-router.route('/signout').post((req, res) => {
-  try {
-    res.clearCookie('accessToken').json({ message: 'Sign out successful' });
-  } catch (error) {
-    console.error('Error occurred during signout:', error);
-    res.status(500).json({ error: 'Error occured during signout' });
-  }
+router.route('/signout').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  (req, res) => {
+    try {
+      res.clearCookie('accessToken').json({ message: 'Sign out successful' });
+    } catch (error) {
+      console.error('Error occurred during signout:', error);
+      res.status(500).json({ error: 'Error occured during signout' });
+    }
 });
 
 router.route('/sample-profile-for-citizen').get(
