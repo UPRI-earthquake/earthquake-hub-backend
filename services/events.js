@@ -3,39 +3,49 @@ const helper = require('../helper');
 const axios = require('axios');
 
 // get magnitude, coord, time,
-async function getEventsList(startTime, endTime){
-  const [rows, fields] = await db.query(
-    `select 
-       PEvent.publicID, 
-       Origin.time_value as OT, 
-       Origin.latitude_value,
-       Origin.longitude_value,
-       Origin.depth_value,
-       Magnitude.magnitude_value, 
-       Magnitude.type, 
-       EventDescription.text 
-     from 
-       Origin,
-       PublicObject as POrigin, 
-       Event,
-       PublicObject as PEvent, 
-       Magnitude,
-       PublicObject as PMagnitude,
-       EventDescription
-     where 
-       Event._oid=PEvent._oid 
-       and Origin._oid=POrigin._oid 
-       and Magnitude._oid=PMagnitude._oid 
-       and PMagnitude.publicID=Event.preferredMagnitudeID 
-       and POrigin.publicID=Event.preferredOriginID
-       and Event._oid=EventDescription._parent_oid
-       and EventDescription.type='region name'
-       and Origin.time_value >= ?
-       and Origin.time_value <= ?`        
-    , [startTime, endTime]); // automatic escaping when using placeholders
-  const data = helper.emptyOrRows(rows);
+// async function getEventsList(startTime, endTime){
+//   const [rows, fields] = await db.query(
+//     `select 
+//        PEvent.publicID, 
+//        Origin.time_value as OT, 
+//        Origin.latitude_value,
+//        Origin.longitude_value,
+//        Origin.depth_value,
+//        Magnitude.magnitude_value, 
+//        Magnitude.type, 
+//        EventDescription.text 
+//      from 
+//        Origin,
+//        PublicObject as POrigin, 
+//        Event,
+//        PublicObject as PEvent, 
+//        Magnitude,
+//        PublicObject as PMagnitude,
+//        EventDescription
+//      where 
+//        Event._oid=PEvent._oid 
+//        and Origin._oid=POrigin._oid 
+//        and Magnitude._oid=PMagnitude._oid 
+//        and PMagnitude.publicID=Event.preferredMagnitudeID 
+//        and POrigin.publicID=Event.preferredOriginID
+//        and Event._oid=EventDescription._parent_oid
+//        and EventDescription.type='region name'
+//        and Origin.time_value >= ?
+//        and Origin.time_value <= ?`        
+//     , [startTime, endTime]); // automatic escaping when using placeholders
+//   const data = helper.emptyOrRows(rows);
 
-  return data
+//   return data
+// }
+
+const events = require('../models/events.model');
+
+async function getEventsList(startTime, endTime){
+  const response = await events.find({
+    OT: { $gte: startTime, $lte: endTime }
+  });
+
+  return response;
 }
 
 function distKM(lat1, lon1, lat2, lon2){
@@ -104,9 +114,16 @@ async function addPlaces(eventsList){
       var address = 'Unavailable'
     }
     updatedData.push({
-      ...event,
+      publicID: event.publicID,
+      OT: event.OT,
+      latitude_value: event.latitude_value,
+      longitude_value: event.longitude_value,
+      depth_value: event.depth_value,
+      magnitude_value: event.magnitude_value,
+      type: event.type,
+      text: event.text,
       place: address
-    })
+    });
   }));
 
   return updatedData;

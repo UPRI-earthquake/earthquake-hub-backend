@@ -2,4 +2,5 @@
 require('./account.model.js');
 require('./device.model.js');
 require('./stations.model.js');
+require('./events.model.js');
 
