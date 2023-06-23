@@ -42,7 +42,8 @@ const addDevice = async (req, res) => {
       network: result.value.network.toUpperCase(),
       station: result.value.station.toUpperCase(),
       elevation: result.value.elevation,
-      location: `${result.value.latitude}, ${result.value.longitude}`,
+      longitude: result.value.longitude,
+      latitude: result.value.latitude
     });
     await newDevice.save(); // save new entry to device collections
 
@@ -125,7 +126,8 @@ const linkDevice = async (req, res) => {
       deviceInfo: {
         network: updatedDevice.network,
         station: updatedDevice.station,
-        location: updatedDevice.location,
+        longitude: updatedDevice.longitude,
+        latitude: updatedDevice.latitude,
         elevation: updatedDevice.elevation,
         streamId: updatedDevice.streamId
       }
