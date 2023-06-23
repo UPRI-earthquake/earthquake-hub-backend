@@ -14,12 +14,16 @@ const DeviceSchema = new Schema({
     type: String,
     required:true
   },
-  location: {
-    type: String,
+  latitude: {
+    type: Number,
+    required:true
+  },
+  longitude: {
+    type: Number,
     required:true
   },
   elevation: {
-    type: String,
+    type: Number,
     required:true
   },
   macAddress: {
