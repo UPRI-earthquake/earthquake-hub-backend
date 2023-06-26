@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const addDeviceSchema = Joi.object().keys({
   network: Joi.string().regex(/^[A-Z]{2}$/).required(),
   station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
-  elevation: Joi.string().regex(/^\d+(\.\d+)?$/).required(),
+  elevation: Joi.string().regex(/^[-+]?\d+(\.\d+)?$/).required(),
   latitude: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
   longitude: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required()
 });
