@@ -1,42 +1,5 @@
-const db = require('./mysqldb');
-const helper = require('../helper');
 const axios = require('axios');
-
-// get magnitude, coord, time,
-// async function getEventsList(startTime, endTime){
-//   const [rows, fields] = await db.query(
-//     `select 
-//        PEvent.publicID, 
-//        Origin.time_value as OT, 
-//        Origin.latitude_value,
-//        Origin.longitude_value,
-//        Origin.depth_value,
-//        Magnitude.magnitude_value, 
-//        Magnitude.type, 
-//        EventDescription.text 
-//      from 
-//        Origin,
-//        PublicObject as POrigin, 
-//        Event,
-//        PublicObject as PEvent, 
-//        Magnitude,
-//        PublicObject as PMagnitude,
-//        EventDescription
-//      where 
-//        Event._oid=PEvent._oid 
-//        and Origin._oid=POrigin._oid 
-//        and Magnitude._oid=PMagnitude._oid 
-//        and PMagnitude.publicID=Event.preferredMagnitudeID 
-//        and POrigin.publicID=Event.preferredOriginID
-//        and Event._oid=EventDescription._parent_oid
-//        and EventDescription.type='region name'
-//        and Origin.time_value >= ?
-//        and Origin.time_value <= ?`        
-//     , [startTime, endTime]); // automatic escaping when using placeholders
-//   const data = helper.emptyOrRows(rows);
-
-//   return data
-// }
+const Joi = require('joi');
 
 const events = require('../models/events.model');
 
@@ -129,7 +92,51 @@ async function addPlaces(eventsList){
   return updatedData;
 }
 
+
+const addEventSchema = Joi.object().keys({
+  publicID: Joi.string().required(),
+  OT: Joi.date().required(),
+  latitude_value: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
+  longitude_value: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required(),
+  depth_value: Joi.string().regex(/^\d+(\.\d+)?$/).required(),
+  magnitude_value: Joi.string().regex(/^\d+(\.\d+)?$/).required(),
+  type: Joi.string().required(),
+  text: Joi.string().required(),
+});
+
+const addEvent = async (req, res, next) => {
+  console.log("Event Posted");
+
+  try {
+    const result = addEventSchema.validate(req.body)
+    if(result.error){
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
+      return;
+    }
+
+    const newEvent = new events({
+      publicID: result.value.publicID,
+      OT: result.value.OT,
+      latitude_value: result.value.latitude_value,
+      longitude_value: result.value.longitude_value,
+      depth_value: result.value.depth_value,
+      magnitude_value: result.value.magnitude_value,
+      type: result.value.type,
+      text: result.value.text
+    });
+    await newEvent.save(); // save new entry to event collections
+
+    console.log(`Add event successful`);
+    return res.status(200).json({ status: 200, message: "New Event Added" });
+  } catch (error) {
+    console.log(`Add event unsuccessful: \n ${error}`);
+    res.status(500).json({ message: `Error adding event: ${error}` })
+  }
+}
+
 module.exports = {
   getEventsList,
   addPlaces,
+  addEvent,
 }

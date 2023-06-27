@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const events = require('../services/events')
+const {getEventsList, addPlaces, addEvent} = require('../services/events')
 
 // query database
 async function eventController(req, res, next) {
   try {
     // get data from db
-    var data = await events.getEventsList(req.query.startTime, 
+    var data = await getEventsList(req.query.startTime, 
                                             req.query.endTime);
     // append regional data 
-    var updatedData = await events.addPlaces(data)
+    var updatedData = await addPlaces(data)
 
     res.json(updatedData)
 
@@ -21,5 +21,8 @@ async function eventController(req, res, next) {
 
 /* GET Events*/
 router.get('/', eventController);
+
+/* POST Events*/
+router.post('/add-event', addEvent);
 
 module.exports = router;
