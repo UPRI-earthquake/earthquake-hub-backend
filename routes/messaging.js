@@ -144,4 +144,14 @@ router.post('/new-event', async (req, res) => {
   }
 });
 
+router.post('/new-pick', async (req, res) => {
+  try {
+    console.log('Adding new pick to SSE')
+    await eventCache.newEvent(req.body.redis_channel, req.body.message, req.body.channel);
+    res.status(200).json({message: "Pick received"})
+  } catch (error) {
+    res.status(500).json({error: error})
+  }
+});
+
 module.exports = {router, redisProxy, quitRedisProxy, eventCache}
