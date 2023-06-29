@@ -27,13 +27,13 @@ class EventCache extends EventEmitter {
 
     // Get data
     if(channel === 'SC_EVENT'){
-      let updatedEvent = await events.addPlaces([JSON.parse(event)]) // parse
+      let updatedEvent = await events.addPlaces([event]) // parse
       extendedEvent.data = updatedEvent[0]
       this.push(extendedEvent) // cache
       console.log(this.cache) // log SC_EVENT cache (not picks)
     }
     else if (channel === 'SC_PICK'){
-      extendedEvent.data = JSON.parse(event)
+      extendedEvent.data = event
     }
 
     this.emit("newEvent", extendedEvent) // emit
@@ -132,6 +132,16 @@ router.get('/',
       res.end();
       console.log('SSE connection closed:', req.ip)
     });
+});
+
+router.post('/new-event', async (req, res) => {
+  try {
+    console.log('Adding new event to SSE')
+    await eventCache.newEvent(req.body.redis_channel, req.body.message, req.body.channel);
+    res.status(200).json({message: "Event received"})
+  } catch (error) {
+    res.status(500).json({error: error})
+  }
 });
 
 module.exports = {router, redisProxy, quitRedisProxy, eventCache}
