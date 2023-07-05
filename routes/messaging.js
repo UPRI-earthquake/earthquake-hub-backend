@@ -134,20 +134,25 @@ router.get('/',
     });
 });
 
-router.post('/new-event', async (req, res) => {
+const addEventToSSE = async (req, res, next) => {
   try {
     console.log('Adding new event to SSE')
-    await eventCache.newEvent(req.body.redis_channel, req.body.message, req.body.channel);
-    res.status(200).json({message: "Event received"})
+    await eventCache.newEvent("SC_*", req.body, "SC_EVENT");
+    next();
   } catch (error) {
-    res.status(500).json({error: error})
+    next(error);
   }
-});
+}
+
+router.post('/new-event', 
+  addEventToSSE,
+  events.addEvent
+);
 
 router.post('/new-pick', async (req, res) => {
   try {
     console.log('Adding new pick to SSE')
-    await eventCache.newEvent(req.body.redis_channel, req.body.message, req.body.channel);
+    await eventCache.newEvent("SC_*", req.body, "SC_PICK");
     res.status(200).json({message: "Pick received"})
   } catch (error) {
     res.status(500).json({error: error})
