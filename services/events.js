@@ -108,8 +108,10 @@ const addEventSchema = Joi.object().keys({
   longitude_value: Joi.number().min(-180).max(180).required(),
   depth_value: Joi.number().required(),
   magnitude_value: Joi.number().required(),
-  type: Joi.string().required(),
+  eventType: Joi.string().required(),
+  method: Joi.string().required(),
   text: Joi.string().required(),
+  last_modification: Joi.date().required(),
 });
 
 const addEvent = async (req, res, next) => {
@@ -130,31 +132,10 @@ const addEvent = async (req, res, next) => {
       longitude_value: result.value.longitude_value,
       depth_value: result.value.depth_value,
       magnitude_value: result.value.magnitude_value,
-      type: result.value.type,
+      type: result.value.eventType,
       text: result.value.text
     });
     await newEvent.save(); // save new entry to event collections
-
-    // Post endpoint for triggering new SSE event
-    await axios.post(process.env.NODE_ENV === 'production'
-    ? 'https://' + process.env.BACKEND_PROD_HOST + '/messaging/new-event'
-    : 'http://' + process.env.BACKEND_DEV_HOST +":"+ process.env.BACKEND_DEV_PORT + '/messaging/new-event',
-      {
-        redis_channel: "SC_*",
-        message: {
-            eventType: "NEW",
-            publicID: result.value.publicID,
-            OT: result.value.OT,
-            latitude_value: result.value.latitude_value,
-            longitude_value: result.value.longitude_value,
-            depth_value: result.value.depth_value,
-            magnitude_value: result.value.magnitude_value,
-            text: result.value.text,
-            method: "LOCSAT",
-            last_modification: new Date()
-        },
-        channel: "SC_EVENT"
-    })
 
     console.log(`Add event successful`);
     return res.status(200).json({ status: 200, message: "New Event Added" });
