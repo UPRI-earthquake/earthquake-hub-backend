@@ -22,7 +22,4 @@ async function eventController(req, res, next) {
 /* GET Events*/
 router.get('/', eventController);
 
-/* POST Events*/
-router.post('/add-event', addEvent);
-
 module.exports = router;
