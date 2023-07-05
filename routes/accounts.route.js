@@ -18,6 +18,8 @@ const {
 } = require('./responseCodes')
 
 // --- REGISTRATION ---
+// Input: Username & Password
+// Output: User is added in database
 
 const registerSchema = Joi.object({
   username: Joi.string().required(),
@@ -76,6 +78,8 @@ router.route('/register').post(
 )
 
 // --- LOGIN/AUTHENTICATION ---
+// Input: Username & Passowrd
+// Output: Token
 
 /* validate ./accounts/authenticate endpoint
  *  - role: to be provided by client app
@@ -103,7 +107,7 @@ router.route('/authenticate').post( async (req, res, next) => {
       return;
     }
 
-    // get user with devices array populated with device object instead of device id
+    // get user with its devices array populated by device object (instead of device id)
     const user = await User.findOne({ 'username': result.value.username }).populate('devices');
 
     if(!user){
@@ -119,8 +123,8 @@ router.route('/authenticate').post( async (req, res, next) => {
 
     // compare received password with user's password in db
     let passwordIsValid = bcrypt.compareSync(
-      result.value.password,
-      user.password
+      result.value.password, // received password
+      user.password          // password in db
     )
 
     if(!passwordIsValid){
@@ -130,27 +134,25 @@ router.route('/authenticate').post( async (req, res, next) => {
 
     switch(result.value.role) {
       case 'sensor':
-        // check if account has devices
+      case 'brgy':
+        // check if sensor account has devices OR,
+        // check if brgy account has devices (of their own, or that forwards to them)
+        // that they can in turn forward to UP (main receiver)
         if (user.devices.length === 0) {
           res.status(400).json({ status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE, message: 'User has no linked devices'});
           return;
-       }
-
-        // get device stream ids as array of string
-        const streamIds = user.devices.map(device => device.streamId);
-        // TODO: check if streamid is one string or is a csv of streamids
-
+        }
         // return access token with claims for allowed channels to stream
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
           message: 'Authentication successful',
           accessToken: generateAccessToken({
             'username': user.username,
-            'streamIds': streamIds,
-            'role': 'sensor'
+            'role': result.value.role
           }),
         });
         break;
+
       case 'citizen':
         // return access token in http cookie (so it's hidden from browser js)
         res.status(200)
@@ -160,29 +162,8 @@ router.route('/authenticate').post( async (req, res, next) => {
           })
           .json({ status: responseCodes.AUTHENTICATION_TOKEN_COOKIE, message: "Authentication successful" });
         break;
-      case 'brgy':
-        // check if brgy account has devices (of their own, or that forwards to them)
-        // that they can in turn forward to UP (main receiver)
-        if (user.devices.length === 0) {
-          res.status(400).json({ status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE, message: 'Brgy has no forwardable devices'});
-          return;
-       }
-
-        // return access token in json format, with streamids of SENSORs it can forward
-        const brgyStreamIds = user.devices.map(device => device.streamId)
-        res.status(200).json({
-          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
-          message: 'Login successful',
-          accessToken: generateAccessToken({
-            'username': user.username,
-            'streamIds': brgyStreamIds,
-            'role': 'brgy'
-          }),
-        });
-        break;
     }
     return;
-
   } catch(error) {
     console.log(`Authentication unsuccessful: \n ${error}`);
     next(error)
@@ -190,6 +171,8 @@ router.route('/authenticate').post( async (req, res, next) => {
 });
 
 // --- VERIFICATION ---
+// Input: Token
+// Output: Whether token is valid or not
 
 const verifySensorTokenSchema = Joi.object().keys({
   token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
