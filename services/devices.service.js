@@ -148,20 +148,24 @@ const getDeviceList = async (req, res) => {
 
   if (citizen.devices) {
     devicePayload = citizen.devices.map(device => {
-      let status = 'Not Yet Linked';
+      let status = '';
+      let statusSince = 'Not Available';
       
       if (device.macAddress === 'TO_BE_LINKED') {
         status = 'Not Yet Linked';
-      } else if (device.activity === 'Inactive') {
+      } else if (device.activity === 'inactive') {
         status = 'Not Streaming';
+        statusSince = device.lastConnectedTime.toUTCString();
       } else {
         status = 'Streaming';
+        statusSince = device.lastConnectedTime.toUTCString();
       }
 
       const deviceInfo = {
         network: device.network,
         station: device.station,
-        status: status
+        status: status,
+        statusSince: statusSince
       };
 
       return deviceInfo;
@@ -177,8 +181,35 @@ const getDeviceList = async (req, res) => {
   });
 }
 
+async function getDeviceStatus(network, station){
+  const device = await Device.findOne({ network: network, station: station });
+
+  let status = '';
+  let statusSince = 'Not Available';
+
+  if (device.macAddress === 'TO_BE_LINKED') {
+    status = 'Not Yet Linked';
+  } else if (device.activity === 'inactive') {
+    status = 'Not Streaming';
+    statusSince = device.lastConnectedTime;
+  } else {
+    status = 'Streaming';
+    statusSince = device.lastConnectedTime;
+  }
+
+  let devicePayload = {
+    network: device.network,
+    station: device.station,
+    status: status,
+    statusSince: statusSince
+  };
+
+ return devicePayload;
+}
+
 module.exports = {
   addDevice,
   linkDevice,
-  getDeviceList
+  getDeviceList,
+  getDeviceStatus
 }
