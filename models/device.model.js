@@ -32,9 +32,12 @@ const DeviceSchema = new Schema({
   },
   activity: {
     type: String,
-    default: "Inactive",
+    default: "inactive",
   },
-  lastConnectedTime: String
+  lastConnectedTime: {
+    type: Date,
+    default: new Date(0),
+  }
 })
 
 module.exports = model('Device', DeviceSchema);
