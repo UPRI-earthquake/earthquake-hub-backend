@@ -12,9 +12,7 @@ const {
   verifyTokenWithRole
 } = require('../middlewares/token.middleware')
 
-const {
-  createUniqueAccount
-} = require('../controllers/accounts.controller')
+const AccountsController = require('../controllers/accounts.controller')
 
 const {
   responseCodes,
@@ -27,7 +25,7 @@ const {
 
 
 router.route('/register').post(
-  createUniqueAccount
+  AccountsController.registerAccount
 )
 
 // --- LOGIN/AUTHENTICATION ---
