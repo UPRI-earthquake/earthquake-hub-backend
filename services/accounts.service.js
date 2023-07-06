@@ -16,14 +16,12 @@ const User = require('../models/account.model');
  ***************************************************************************/
 exports.createUniqueAccount = async (username, email, password) => {
   // Check if username is in use
-  const usernameExists = await User.findOne({ username: username });
-  if (usernameExists) { // username is already in use
+  if (await User.findOne({ username: username })) {
     return 'usernameExists';
   }
 
   // Check if email is in use
-  const emailExists = await User.findOne({ email: email });
-  if (emailExists) { // email is already in use
+  if (await User.findOne({ email: email })) {
     return 'emailExists';
   }
 
