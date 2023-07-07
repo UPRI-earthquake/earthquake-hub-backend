@@ -64,10 +64,17 @@ const sseConnectionsEventListener = async() => {
       userUpdate.save();
     });
   });
+
+  source.addEventListener('open', () => {
+    console.log('Connection to /sse-connections opened');
+  });
+
+  source.addEventListener('error', (error) => {
+    console.log('Error connecting to /sse-connections: ', error);
+  });
   
   source.addEventListener('close', () => {
     console.log('Connection to /sse-connections closed');
-    // Handle SSE connection closure
   });
 }
 
@@ -138,10 +145,17 @@ const sseStreamidsEventListener = async() => {
         }
     })
   });
+
+  source.addEventListener('open', () => {
+    console.log('Connection to /sse-streams opened');
+  });
+
+  source.addEventListener('error', (error) => {
+    console.log('Error connecting to /sse-streams: ', error);
+  });
   
   source.addEventListener('close', () => {
     console.log('Connection to /sse-streams closed');
-    // Handle SSE connection closure
   });
 }
 
