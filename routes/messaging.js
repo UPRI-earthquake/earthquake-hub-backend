@@ -87,7 +87,7 @@ const sseConnectionsEventListener = async() => {
 }
 
 // Routine to subscribe to ringserver /sse-streams endpoint
-const sseStreamidsEventListener = async() => {
+const sseStreamsEventListener = async() => {
   const ringserver_ip = `http://${process.env.RINGSERVER_HOST}:${process.env.RINGSERVER_PORT}`;
   const source = new EventSource(`${ringserver_ip}/sse-streams`)
 
@@ -272,5 +272,5 @@ module.exports = {
   router, 
   eventCache, 
   sseConnectionsEventListener, 
-  sseStreamidsEventListener
+  sseStreamsEventListener
 }
