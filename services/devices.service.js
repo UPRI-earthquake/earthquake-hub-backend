@@ -155,10 +155,10 @@ const getDeviceList = async (req, res) => {
         status = 'Not Yet Linked';
       } else if (device.activity === 'inactive') {
         status = 'Not Streaming';
-        statusSince = device.lastConnectedTime.toUTCString();
+        statusSince = device.activityToggleTime.toUTCString();
       } else {
         status = 'Streaming';
-        statusSince = device.lastConnectedTime.toUTCString();
+        statusSince = device.activityToggleTime.toUTCString();
       }
 
       const deviceInfo = {
@@ -188,13 +188,13 @@ async function getDeviceStatus(network, station){
   let statusSince = 'Not Available';
 
   if (device.macAddress === 'TO_BE_LINKED') {
-    status = 'Not Yet Linked';
+    status = 'Not yet linked';
   } else if (device.activity === 'inactive') {
-    status = 'Not Streaming';
-    statusSince = device.lastConnectedTime;
+    status = 'Not streaming';
+    statusSince = device.activityToggleTime;
   } else {
     status = 'Streaming';
-    statusSince = device.lastConnectedTime;
+    statusSince = device.activityToggleTime;
   }
 
   let devicePayload = {

@@ -34,7 +34,7 @@ const DeviceSchema = new Schema({
     type: String,
     default: "inactive",
   },
-  lastConnectedTime: {
+  activityToggleTime: {
     type: Date,
     default: new Date(0),
   }
