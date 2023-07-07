@@ -5,6 +5,8 @@ const EventSource = require('eventsource');
 const events = require('../services/events')
 const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
+let sseConnectionsErrorFlag = 0;
+let sseStreamsErrorFlag = 0;
 
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
@@ -70,7 +72,13 @@ const sseConnectionsEventListener = async() => {
   });
 
   source.addEventListener('error', (error) => {
-    console.log('Error connecting to /sse-connections: ', error);
+    sseConnectionsErrorFlag += 1;
+    if (sseConnectionsErrorFlag < 2) {
+      console.log('Error connecting to /sse-connections: ', error);
+    } 
+    else if (sseConnectionsErrorFlag === 3) {
+      console.log('Error connecting to /sse-connections. Will keep on retrying ...');
+    }
   });
   
   source.addEventListener('close', () => {
@@ -151,7 +159,13 @@ const sseStreamidsEventListener = async() => {
   });
 
   source.addEventListener('error', (error) => {
-    console.log('Error connecting to /sse-streams: ', error);
+    sseStreamsErrorFlag += 1;
+    if (sseStreamsErrorFlag < 2) {
+      console.log('Error connecting to /sse-streams: ', error);
+    } 
+    else if (sseStreamsErrorFlag === 3) {
+      console.log('Error connecting to /sse-streams. Will keep on retrying ...');
+    }
   });
   
   source.addEventListener('close', () => {
