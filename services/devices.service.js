@@ -1,7 +1,6 @@
 const Joi = require('joi');
 const Device = require('../models/device.model');
 const Account = require('../models/account.model');
-const jwt = require('jsonwebtoken');
 
 const addDeviceSchema = Joi.object().keys({
   network: Joi.string().required(),
