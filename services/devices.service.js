@@ -186,7 +186,7 @@ async function getDeviceStatus(network, station){
   const device = await Device.findOne({ network: network, station: station });
 
   let status = '';
-  let statusSince = 'Not Available';
+  let statusSince = null;
 
   if (device.macAddress === 'TO_BE_LINKED') {
     status = 'Not yet linked';
