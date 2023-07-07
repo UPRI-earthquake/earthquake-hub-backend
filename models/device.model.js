@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
 
 const DeviceSchema = new Schema({
+  description: {
+    type: String
+  },
   streamId: {
     type: String,
     default: "TO_BE_LINKED"
@@ -14,12 +17,16 @@ const DeviceSchema = new Schema({
     type: String,
     required:true
   },
-  location: {
-    type: String,
+  latitude: {
+    type: Number,
+    required:true
+  },
+  longitude: {
+    type: Number,
     required:true
   },
   elevation: {
-    type: String,
+    type: Number,
     required:true
   },
   macAddress: {
@@ -28,9 +35,12 @@ const DeviceSchema = new Schema({
   },
   activity: {
     type: String,
-    default: "Inactive",
+    default: "inactive",
   },
-  lastConnectedTime: String
+  activityToggleTime: {
+    type: Date,
+    default: new Date(0),
+  }
 })
 
 module.exports = model('Device', DeviceSchema);

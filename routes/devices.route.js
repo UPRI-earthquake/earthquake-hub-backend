@@ -1,5 +1,5 @@
 const express = require('express');
-const { addDevice, linkDevice, getDeviceList } = require('../services/devices.service');
+const { addDevice, linkDevice, getDeviceList, getDeviceStatus } = require('../services/devices.service');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
@@ -28,5 +28,15 @@ deviceRouter.route('/list').get(
   verifyTokenWithRole('citizen'),
   getDeviceList
 );
+
+deviceRouter.route('/status').get( async (req, res) => {
+  console.log('GET request on /device/status endpoint received');
+  try {
+    var data = await getDeviceStatus(req.query.network, req.query.station)
+    res.status(200).json({ status: 200, message: "GET Device's Status Success", payload: data})
+  }catch(err){
+    res.status(500).json({ status: 500, message: 'Station not found' })
+  }
+})
 
 module.exports = deviceRouter;
