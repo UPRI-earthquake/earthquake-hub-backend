@@ -125,17 +125,34 @@ const addEvent = async (req, res, next) => {
       return;
     }
 
-    const newEvent = new events({
-      publicID: result.value.publicID,
-      OT: result.value.OT,
-      latitude_value: result.value.latitude_value,
-      longitude_value: result.value.longitude_value,
-      depth_value: result.value.depth_value,
-      magnitude_value: result.value.magnitude_value,
-      type: result.value.eventType,
-      text: result.value.text
-    });
-    await newEvent.save(); // save new entry to event collections
+    if (result.value.eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
+      const eventToUpdate = await events.findOne({ publicID: result.value.publicID });
+
+      eventToUpdate.OT = result.value.OT,
+      eventToUpdate.latitude_value = result.value.latitude_value,
+      eventToUpdate.longitude_value = result.value.longitude_value,
+      eventToUpdate.depth_value =  result.value.depth_value,
+      eventToUpdate.magnitude_value = result.value.magnitude_value,
+      eventToUpdate.type = result.value.eventType,
+      eventToUpdate.text = result.value.text
+
+      eventToUpdate.save();
+    }
+    else{ // if eventType === 'NEW', add new entry
+      const newEvent = new events({
+        publicID: result.value.publicID,
+        OT: result.value.OT,
+        latitude_value: result.value.latitude_value,
+        longitude_value: result.value.longitude_value,
+        depth_value: result.value.depth_value,
+        magnitude_value: result.value.magnitude_value,
+        type: result.value.eventType,
+        text: result.value.text
+      });
+      await newEvent.save(); // save new entry to event collections
+    }
+
+    
 
     console.log(`Add event successful`);
     return res.status(200).json({ status: 200, message: "New Event Added" });
