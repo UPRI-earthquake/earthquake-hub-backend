@@ -1,41 +1,13 @@
-const db = require('./mysqldb');
-const helper = require('../helper');
 const axios = require('axios');
+const Joi = require('joi');
+const events = require('../models/events.model');
 
-// get magnitude, coord, time,
 async function getEventsList(startTime, endTime){
-  const [rows, fields] = await db.query(
-    `select 
-       PEvent.publicID, 
-       Origin.time_value as OT, 
-       Origin.latitude_value,
-       Origin.longitude_value,
-       Origin.depth_value,
-       Magnitude.magnitude_value, 
-       Magnitude.type, 
-       EventDescription.text 
-     from 
-       Origin,
-       PublicObject as POrigin, 
-       Event,
-       PublicObject as PEvent, 
-       Magnitude,
-       PublicObject as PMagnitude,
-       EventDescription
-     where 
-       Event._oid=PEvent._oid 
-       and Origin._oid=POrigin._oid 
-       and Magnitude._oid=PMagnitude._oid 
-       and PMagnitude.publicID=Event.preferredMagnitudeID 
-       and POrigin.publicID=Event.preferredOriginID
-       and Event._oid=EventDescription._parent_oid
-       and EventDescription.type='region name'
-       and Origin.time_value >= ?
-       and Origin.time_value <= ?`        
-    , [startTime, endTime]); // automatic escaping when using placeholders
-  const data = helper.emptyOrRows(rows);
+  const response = await events.find({
+    OT: { $gte: startTime, $lte: endTime }
+  });
 
-  return data
+  return response;
 }
 
 function distKM(lat1, lon1, lat2, lon2){
@@ -73,19 +45,30 @@ async function addPlaces(eventsList){
   var updatedData = [];
 
   await Promise.all(eventsList.map(async (event) => {
+    let eventData;
+    // check event data structure
+    if (event._doc) {
+      // if coming from mongoDB output
+      eventData = event._doc;
+    } else {
+      // others
+      eventData = event;
+    }
+
     try{
       const result = await axios.get(
+        // `https://earthquake.usgs.gov`
         `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
         //`http://localhost:8080`
          +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
-         +`&latitude=${event.latitude_value}&longitude=${event.longitude_value}`
+         +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`
       );
       var address = '';
       if (result.data.error){ address = result.data.error }
       else{
         [lon, lat, _] = result.data.geonames.features[0].geometry.coordinates
-        event_lat = parseFloat(event.latitude_value)
-        event_lon = parseFloat(event.longitude_value)
+        event_lat = parseFloat(eventData.latitude_value)
+        event_lon = parseFloat(eventData.longitude_value)
         dist = distKM(lat, lon, event_lat, event_lon)
         dir = direction(event_lat, event_lon, lat, lon)
 
@@ -97,22 +80,73 @@ async function addPlaces(eventsList){
         address = address
           .replace(/, $/, '') // remove dangling comma-space, if any
 
-        console.log(address)
+        // console.log(address)
       }
+      updatedData.push({
+        ...eventData,
+        place: address
+      })
     }catch(err){
       console.log('Catch: No Geoserve')
       var address = 'Unavailable'
+      updatedData.push({
+        ...eventData,
+        place: address
+      })
     }
-    updatedData.push({
-      ...event,
-      place: address
-    })
+    
   }));
 
   return updatedData;
 }
 
+
+const addEventSchema = Joi.object().keys({
+  publicID: Joi.string().required(),
+  OT: Joi.date().required(),
+  latitude_value: Joi.number().min(-90).max(90).required(),
+  longitude_value: Joi.number().min(-180).max(180).required(),
+  depth_value: Joi.number().required(),
+  magnitude_value: Joi.number().required(),
+  eventType: Joi.string().required(),
+  method: Joi.string().required(),
+  text: Joi.string().required(),
+  last_modification: Joi.date().required(),
+});
+
+const addEvent = async (req, res, next) => {
+  console.log("Event Posted");
+
+  try {
+    const result = addEventSchema.validate(req.body)
+    if(result.error){
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: 400, message: result.error.details[0].message});
+      return;
+    }
+
+    const newEvent = new events({
+      publicID: result.value.publicID,
+      OT: result.value.OT,
+      latitude_value: result.value.latitude_value,
+      longitude_value: result.value.longitude_value,
+      depth_value: result.value.depth_value,
+      magnitude_value: result.value.magnitude_value,
+      type: result.value.eventType,
+      text: result.value.text
+    });
+    await newEvent.save(); // save new entry to event collections
+
+    console.log(`Add event successful`);
+    return res.status(200).json({ status: 200, message: "New Event Added" });
+  } catch (error) {
+    console.log(`Add event unsuccessful: \n ${error}`);
+    res.status(500).json({ message: `Error adding event: ${error}` })
+  }
+}
+
 module.exports = {
   getEventsList,
   addPlaces,
+  addEvent,
 }

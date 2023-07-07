@@ -46,9 +46,10 @@ app.get('/', (req, res) => {
 app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messaging.router)
+messaging.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
+messaging.sseStreamidsEventListener() // listen for ringserver-streamids-status events from ringserver
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
-messaging.redisProxy() // forwards events from redis into a JS event
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
 app.use('/accounts', require('./routes/accounts.route'))

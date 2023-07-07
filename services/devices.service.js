@@ -3,10 +3,11 @@ const Device = require('../models/device.model');
 const Account = require('../models/account.model');
 
 const addDeviceSchema = Joi.object().keys({
-  network: Joi.string().required(),
-  station: Joi.string().required(),
-  elevation: Joi.string().required(),
-  location: Joi.string().required()
+  network: Joi.string().regex(/^[A-Z]{2}$/).required(),
+  station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
+  elevation: Joi.string().regex(/^[-+]?\d+(\.\d+)?$/).required(),
+  latitude: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
+  longitude: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required()
 });
 
 const addDevice = async (req, res) => {
@@ -37,10 +38,12 @@ const addDevice = async (req, res) => {
     }
 
     const newDevice = new Device({
-      network: result.value.network,
-      station: result.value.station,
+      description: `${req.username}'s device`,
+      network: result.value.network.toUpperCase(),
+      station: result.value.station.toUpperCase(),
       elevation: result.value.elevation,
-      location: result.value.location,
+      longitude: result.value.longitude,
+      latitude: result.value.latitude
     });
     await newDevice.save(); // save new entry to device collections
 
@@ -123,7 +126,8 @@ const linkDevice = async (req, res) => {
       deviceInfo: {
         network: updatedDevice.network,
         station: updatedDevice.station,
-        location: updatedDevice.location,
+        longitude: updatedDevice.longitude,
+        latitude: updatedDevice.latitude,
         elevation: updatedDevice.elevation,
         streamId: updatedDevice.streamId
       }
@@ -145,20 +149,24 @@ const getDeviceList = async (req, res) => {
 
   if (citizen.devices) {
     devicePayload = citizen.devices.map(device => {
-      let status = 'Not Yet Linked';
+      let status = '';
+      let statusSince = 'Not Available';
       
       if (device.macAddress === 'TO_BE_LINKED') {
         status = 'Not Yet Linked';
-      } else if (device.activity === 'Inactive') {
+      } else if (device.activity === 'inactive') {
         status = 'Not Streaming';
+        statusSince = device.activityToggleTime.toUTCString();
       } else {
         status = 'Streaming';
+        statusSince = device.activityToggleTime.toUTCString();
       }
 
       const deviceInfo = {
         network: device.network,
         station: device.station,
-        status: status
+        status: status,
+        statusSince: statusSince
       };
 
       return deviceInfo;
@@ -174,8 +182,35 @@ const getDeviceList = async (req, res) => {
   });
 }
 
+async function getDeviceStatus(network, station){
+  const device = await Device.findOne({ network: network, station: station });
+
+  let status = '';
+  let statusSince = 'Not Available';
+
+  if (device.macAddress === 'TO_BE_LINKED') {
+    status = 'Not yet linked';
+  } else if (device.activity === 'inactive') {
+    status = 'Not streaming';
+    statusSince = device.activityToggleTime;
+  } else {
+    status = 'Streaming';
+    statusSince = device.activityToggleTime;
+  }
+
+  let devicePayload = {
+    network: device.network,
+    station: device.station,
+    status: status,
+    statusSince: statusSince
+  };
+
+ return devicePayload;
+}
+
 module.exports = {
   addDevice,
   linkDevice,
-  getDeviceList
+  getDeviceList,
+  getDeviceStatus
 }
