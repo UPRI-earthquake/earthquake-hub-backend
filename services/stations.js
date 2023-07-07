@@ -9,7 +9,7 @@ async function getStationLocations(){
     code: _device.station,
     latitude: _device.latitude,
     longitude: _device.longitude,
-    description: `'s device` //TODO: populate device to username
+    description: _device.description
   }));
 
   return response;

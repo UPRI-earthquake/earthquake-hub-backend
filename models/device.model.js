@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
 
 const DeviceSchema = new Schema({
+  description: {
+    type: String
+  },
   streamId: {
     type: String,
     default: "TO_BE_LINKED"

@@ -38,6 +38,7 @@ const addDevice = async (req, res) => {
     }
 
     const newDevice = new Device({
+      description: `${req.username}'s device`,
       network: result.value.network.toUpperCase(),
       station: result.value.station.toUpperCase(),
       elevation: result.value.elevation,
