@@ -106,21 +106,20 @@ const sseStreamidsEventListener = async() => {
     const devices = await Devices.find();
 
     devices.forEach( async (device) => {
-      // Object.keys(latestStreamTimes).forEach( async (stream_id, key) => {
-        // console.log(device.streamId)
         if (!latestStreamTimes[device.streamId]) {
           return; // skip to the next iteration
         }
 
         const current_utc_time = new Date(current_time).getTime();
         const latest_packet_time = latestStreamTimes[device.streamId].getTime();
-        const lastConnectedTime = device.lastConnectedTime.getTime();
+        const activityToggleTime = device.activityToggleTime.getTime();
         const MAX_LAG_MS = 30 * 1000; // in milliseconds
 
         if (current_utc_time - latest_packet_time > MAX_LAG_MS){
           if (device.activity === 'active') {
             const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
 
+            deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
             deviceToUpdate.activity = 'inactive';
             deviceToUpdate.save();
             return;
@@ -130,21 +129,13 @@ const sseStreamidsEventListener = async() => {
         }
 
         // latest_packet_time is within MAX_LAG; hence update device if necessary
-
-        if (latest_packet_time > lastConnectedTime) {
-          const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
-
-          deviceToUpdate.lastConnectedTime = latestStreamTimes[device.streamId];
-          deviceToUpdate.save();
-        }
-
         if (device.activity === 'inactive') {
           const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
 
+          deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
           deviceToUpdate.activity = 'active';
           deviceToUpdate.save();
         }
-      // })
     })
   });
   
