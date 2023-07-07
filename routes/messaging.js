@@ -1,4 +1,3 @@
-const redis = require('redis');
 const express = require('express');
 const router = express.Router();
 const EventEmitter = require('events')
@@ -44,29 +43,6 @@ class EventCache extends EventEmitter {
 }
 const eventCache = new EventCache(30); // record last 30 events\
 
-// Setup Redis pubsub subscriber, and Event Emitter (emits events per SC msg)
-var subscriber;
-const redisProxy = async (new_config) =>{
-  try {
-    const redis_channel = "SC_*"; // SC_PICK or SC_EVENT
-    subscriber = redis.createClient(new_config ? new_config : {
-      url:`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
-    });
-    await subscriber.connect(); // TODO: add reconnect strategy with dev options,
-                                // currently, this will repeatedly retry (albeit silently)
-    await subscriber.pSubscribe(redis_channel,  (message, channel) =>{
-      console.log(`messaging.js received: ${channel}`);
-      eventCache.newEvent(redis_channel, message, channel);
-    });
-  } catch (err) {
-    console.trace(`In Redis setup...\n ${err}`)
-    //TODO: properly handle this scenario
-  }
-}
-const quitRedisProxy = async () => {
-  subscriber && (await subscriber.quit())
-}
-
 // Routine to subscribe to ringserver /sse-connections endpoint
 const sseConnectionsEventListener = async() => {
   const ringserver_ip = `http://${process.env.RINGSERVER_HOST}:${process.env.RINGSERVER_PORT}`;
@@ -87,11 +63,6 @@ const sseConnectionsEventListener = async() => {
       userUpdate.updatedAt = connections.current_time;
       userUpdate.save();
     });
-  });
-
-  source.addEventListener('error', (error) => {
-    console.error('Error connecting to /sse-connections:', error);
-    // Handle the SSE connection error
   });
   
   source.addEventListener('close', () => {
@@ -175,11 +146,6 @@ const sseStreamidsEventListener = async() => {
         }
       // })
     })
-  });
-
-  source.addEventListener('error', (error) => {
-    console.error('Error connecting to /sse-streams:', error);
-    // Handle the SSE connection error
   });
   
   source.addEventListener('close', () => {
@@ -285,8 +251,6 @@ router.post('/new-pick', async (req, res) => {
 
 module.exports = {
   router, 
-  redisProxy, 
-  quitRedisProxy, 
   eventCache, 
   sseConnectionsEventListener, 
   sseStreamidsEventListener
