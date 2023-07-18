@@ -1,3 +1,50 @@
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Account:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *           description: The auto-generated ObjectId of the account
+ *         email:
+ *           type: string
+ *           description: The email address of the account
+ *         username:
+ *           type: string
+ *           description: The username of the account
+ *         password:
+ *           type: string
+ *           description: The password of the account
+ *         roles:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: The roles associated with the account (sensor, citizen, brgy, admin)
+ *         accountStatus:
+ *           type: string
+ *           description: The account status (inactive, active)
+ *         devices:
+ *           type: array
+ *           items:
+ *             type: objectId
+ *           description: The devices associated with the account
+ *       example:
+ *         _id: 6151ec04b417ad001ff7d343
+ *         email: test@gmail.com
+ *         username: test_user
+ *         password: 
+ *         roles:
+ *           - sensor
+ *           - citizen
+ *         accountStatus: inactive
+ *         devices:
+ *           - 6151ec04b417ad001ff7d345
+ *           - 6151ec04b417ad001ff7d346
+ *     
+ */
+
 const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
