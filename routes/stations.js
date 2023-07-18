@@ -1,3 +1,15 @@
+/**
+ * @swagger
+ * /stationLocations:
+ *   get:
+ *     summary: Get all devices registered in UPRI-earthquake-hub network
+ *     tags:
+ *       - Devices
+ *     responses:
+ *       200:
+ *         description: Successful response with station locations
+ */
+
 const express = require('express');
 const router = express.Router();
 const stations = require('../services/stations')
