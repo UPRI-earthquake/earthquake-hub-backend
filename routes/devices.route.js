@@ -45,7 +45,7 @@
  * @swagger
  * /device/status:
  *   get:
- *     summary: Get the status of a specified device
+ *     summary: Endpoint for getting the status of a specified device
  *     tags:
  *       - Devices
  *     parameters:
@@ -79,54 +79,22 @@
  *                   description: A descriptive message
  *                 payload:
  *                   type: object
- *                   description: Data payload
+ *                   properties:
+ *                     network:
+ *                       type: string
+ *                       description: The network code of the device
+ *                     station:
+ *                       type: string
+ *                       description: The station code of the device
+ *                     status:
+ *                       type: string
+ *                       description: The status of the device (Streaming, Not Streaming, Not Yet Linked)
+ *                     statusSince:
+ *                       type: string
+ *                       description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
  *       500:
  *         description: Station not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: number
- *                   description: The HTTP status code
- *                 message:
- *                   type: string
- *                   description: A descriptive message
  */
-
-
-const express = require('express');
-const { addDevice, linkDevice, getDeviceList, getDeviceStatus } = require('../services/devices.service');
-const {
-  getTokenFromCookie,
-  getTokenFromBearer,
-  verifyTokenWithRole
-} = require('../middlewares/token.middleware')
-
-const deviceRouter = express.Router();
-
-// Citizen users should have verified token to add devices to their profile via webapp
-deviceRouter.route('/add').post(
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  addDevice
-);
-
-// Sensor devices that will request for linking with a citizen acct requires bearer token
-deviceRouter.route('/link').post(
-  getTokenFromBearer,
-  verifyTokenWithRole('sensor'),
-  linkDevice
-);
-
-// Citizen users that will request list of devices linked to his account should have verified token
-deviceRouter.route('/list').get(
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  getDeviceList
-);
-
 deviceRouter.route('/status').get( async (req, res) => {
   console.log('GET request on /device/status endpoint received');
   try {
