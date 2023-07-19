@@ -2,7 +2,7 @@
  * @swagger
  * /stationLocations:
  *   get:
- *     summary: Get all devices registered in UPRI-earthquake-hub network
+ *     summary: Endpoint for getting all devices registered in UPRI-earthquake-hub network
  *     tags:
  *       - Devices
  *     responses:
