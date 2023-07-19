@@ -17,14 +17,22 @@
  *         password:
  *           type: string
  *           description: The password of the account
+ *         accountStatus:
+ *           type: string
+ *           description: The status of the account
+ *           enum:
+ *             - Inactive
+ *             - Active
  *         roles:
  *           type: array
  *           items:
  *             type: string
- *           description: The roles associated with the account (sensor, citizen, brgy, admin)
- *         accountStatus:
- *           type: string
- *           description: The account status (inactive, active)
+ *           description: The roles associated with the account 
+ *           enum:
+ *             - sensor  # 'sensor' is for when authenticating from rshake device
+ *             - citizen # 'citizen' is for when authenticating from webapp frontend
+ *             - admin   # 'admin' is for when authenticating from webapp admin-frontend
+ *             - brgy    # 'brgy' is for when requesting authentication from ringserver
  *         devices:
  *           type: array
  *           items:
@@ -33,8 +41,8 @@
  *       example:
  *         _id: 6151ec04b417ad001ff7d343
  *         email: test@gmail.com
- *         username: test_user
- *         password: 
+ *         username: testuser
+ *         password: testpassword
  *         roles:
  *           - sensor
  *           - citizen
