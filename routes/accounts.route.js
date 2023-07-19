@@ -339,6 +339,42 @@ router.route('/verify-sensor-token').post(
   }
 )
 
+
+/**
+ * @swagger
+ * /accounts/profile:
+ *   get:
+ *     summary: Endpoint for getting the profile information of a citizen user
+ *     tags:
+ *       - Accounts
+ *     responses:
+ *       200:
+ *         description: Successful response with user profile information sent as payload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   description: HTTP status code
+ *                 message:
+ *                   type: string
+ *                   description: A descriptive message
+ *                 payload:
+ *                   type: object
+ *                   properties:
+ *                     username:
+ *                       type: string
+ *                       description: Username of the user
+ *                     email:
+ *                       type: string
+ *                       description: Email of the user
+ *       400:
+ *         description: User not found
+ *       500:
+ *         description: Error checking token in cookie
+ */
 router.route('/profile').get(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
