@@ -408,6 +408,22 @@ router.route('/profile').get(
   }
 );
 
+
+/**
+ * @swagger
+ * /accounts/signout:
+ *   post:
+ *     summary: Endpoint for signing out a user by clearing the access token cookie
+ *     tags:
+ *       - Accounts
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Sign out successful
+ *       500:
+ *         description: Internal server error
+ */
 router.route('/signout').post(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
