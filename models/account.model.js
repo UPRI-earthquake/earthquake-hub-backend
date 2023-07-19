@@ -5,9 +5,9 @@ const AccountSchema = new mongoose.Schema({
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
-  accountStatus: {
+  accountStatus: { // inactive, active
     type: String,
-    default: 'Inactive'
+    default: 'inactive'
   },
   devices: [{
     type: mongoose.Schema.Types.ObjectId,
