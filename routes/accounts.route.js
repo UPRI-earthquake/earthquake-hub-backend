@@ -117,17 +117,52 @@ router.route('/register').post(
   AccountsController.registerAccount
 )
 
-// --- LOGIN/AUTHENTICATION ---
-// Input: Username & Passowrd
-// Output: Token
 
-/* validate ./accounts/authenticate endpoint
- *  - role: to be provided by client app
- *      - 'sensor' is for when authenticating from rshake device
- *      - 'citizen' is for when authenticating from webapp frontend
- *      - 'admin' is for when authenticating from webapp admin-frontend
- *      - 'brgy' is for when requesting authentication from ringserver
- * */
+/**
+ * @swagger
+ * /accounts/authenticate:
+ *   post:
+ *     summary: Endpoint for authenticating a user based on his account role. This endpoint returns a json-web-token
+ *     tags:
+ *       - Auth Server
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       description: User credentials for authentication
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: Username used in registration
+ *               password:
+ *                 type: string
+ *                 description: Account's password
+ *               role:
+ *                 type: string
+ *                 description: To be provided by client app (in reference to where it is authenticating from)
+ *                 enum:
+ *                   - sensor  # 'sensor' is for when authenticating from rshake device
+ *                   - citizen # 'citizen' is for when authenticating from webapp frontend
+ *                   - admin   # 'admin' is for when authenticating from webapp admin-frontend
+ *                   - brgy    # 'brgy' is for when requesting authentication from ringserver
+ *             example:
+ *               username: citizen
+ *               password: testpassword
+ *               role: citizen
+ *     responses:
+ *       200:
+ *         description: Authentication successful
+ *       400:
+ *         description: Bad request - Invalid input or user does not exist
+ *       401:
+ *         description: Unauthorized - Invalid password
+ *       500:
+ *         description: Internal server error
+ */
 const authenticateSchema = Joi.object().keys({
   username: Joi.string().required(),
   password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
