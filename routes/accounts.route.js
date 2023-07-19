@@ -74,11 +74,45 @@ const {
   responseMessages
 } = require('./responseCodes')
 
-// --- REGISTRATION ---
-// Input: Username & Password
-// Output: User is added in database
 
-
+/**
+ * @swagger
+ * /accounts/register:
+ *   post:
+ *     summary: Endpoint for registering a new user to the earthquake-hub network
+ *     tags:
+ *       - Accounts
+ *     requestBody:
+ *       description: Account details for registration
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 description: Email address of the user who wants to register to the network
+ *               username:
+ *                 type: string
+ *                 description: Account's username to be used
+ *               password:
+ *                 type: string
+ *                 description: Account's password
+ *               confirmPassword:
+ *                 type: string
+ *                 description: Account's repeat password
+ *           example:
+ *             email: citizen123@gmail.com
+ *             username: citizen123
+ *             password: testpassword
+ *             confirmPassword: testpassword
+ *     responses:
+ *       200:
+ *         description: Account registered successfully
+ *       500:
+ *         description: Internal server error
+ */
 router.route('/register').post(
   AccountsController.registerAccount
 )
