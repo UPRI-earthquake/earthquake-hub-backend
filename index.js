@@ -19,9 +19,9 @@ const options = {
   swaggerDefinition: {
     openapi: '3.0.0',
     info: {
-      title: 'Earthquake-Hub APIs',
+      title: 'UPRI Earthquake-Hub APIs',
       version: '1.0.0',
-      description: 'These are the APIs used for UPRI earthquake-hub-backend',
+      description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
     },
   },
   apis: ['./routes/*.js'], // Path to the API routes in your project
