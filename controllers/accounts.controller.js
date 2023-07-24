@@ -147,10 +147,7 @@ exports.authenticateAccount = async (req, res, next) => {
         });
         break;
       case "successCitizen":
-        res.status(200).json({
-          status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
-          message: "Authentication successful"
-        })
+        res.status(200)
         // return access token in http cookie (so it's hidden from browser js)
         .cookie(
           "accessToken",
@@ -159,7 +156,11 @@ exports.authenticateAccount = async (req, res, next) => {
             httpOnly: true, // set to be accessible only by web browser
             secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
           }
-        );
+        )
+        .json({
+          status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
+          message: "Authentication successful"
+        })
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from loginAccountRole()`)
