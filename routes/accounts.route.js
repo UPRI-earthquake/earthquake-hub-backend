@@ -76,93 +76,93 @@ const {
 
 
 /**
- * @swagger
- * /accounts/register:
- *   post:
- *     summary: Endpoint for registering a new user to the earthquake-hub network
- *     tags:
- *       - Accounts
- *     requestBody:
- *       description: Account details for registration
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 description: Email address of the user who wants to register to the network
- *               username:
- *                 type: string
- *                 description: Account's username to be used
- *               password:
- *                 type: string
- *                 description: Account's password
- *               confirmPassword:
- *                 type: string
- *                 description: Account's repeat password
- *           example:
- *             email: citizen123@gmail.com
- *             username: citizen123
- *             password: testpassword
- *             confirmPassword: testpassword
- *     responses:
- *       200:
- *         description: Account registered successfully
- *       500:
- *         description: Internal server error
- */
+  * @swagger
+  * /accounts/register:
+  *   post:
+  *     summary: Endpoint for registering a new user to the earthquake-hub network
+  *     tags:
+  *       - Accounts
+  *     requestBody:
+  *       description: Account details for registration
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               email:
+  *                 type: string
+  *                 description: Email address of the user who wants to register to the network
+  *               username:
+  *                 type: string
+  *                 description: Account's username to be used
+  *               password:
+  *                 type: string
+  *                 description: Account's password
+  *               confirmPassword:
+  *                 type: string
+  *                 description: Account's repeat password
+  *           example:
+  *             email: citizen123@gmail.com
+  *             username: citizen123
+  *             password: testpassword
+  *             confirmPassword: testpassword
+  *     responses:
+  *       200:
+  *         description: Account registered successfully
+  *       500:
+  *         description: Internal server error
+  */
 router.route('/register').post(
   AccountsController.registerAccount
 )
 
 
 /**
- * @swagger
- * /accounts/authenticate:
- *   post:
- *     summary: Endpoint for authenticating a user based on his account role. This endpoint returns a json-web-token
- *     tags:
- *       - Auth Server
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       description: User credentials for authentication
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               username:
- *                 type: string
- *                 description: Username used in registration
- *               password:
- *                 type: string
- *                 description: Account's password
- *               role:
- *                 type: string
- *                 description: To be provided by client app (in reference to where it is authenticating from)
- *                 enum:
- *                   - sensor  # 'sensor' is for when authenticating from rshake device
- *                   - citizen # 'citizen' is for when authenticating from webapp frontend
- *                   - admin   # 'admin' is for when authenticating from webapp admin-frontend
- *                   - brgy    # 'brgy' is for when requesting authentication from ringserver
- *             example:
- *               username: citizen
- *               password: testpassword
- *               role: citizen
- *     responses:
- *       200:
- *         description: Authentication successful
- *       400:
- *         description: Bad request - Invalid input or user does not exist
- *       401:
- *         description: Unauthorized - Invalid password
- *       500:
- *         description: Internal server error
- */
+  * @swagger
+  * /accounts/authenticate:
+  *   post:
+  *     summary: Endpoint for authenticating a user based on his account role. This endpoint returns a json-web-token
+  *     tags:
+  *       - Auth Server
+  *     security:
+  *       - cookieAuth: []
+  *     requestBody:
+  *       description: User credentials for authentication
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               username:
+  *                 type: string
+  *                 description: Username used in registration
+  *               password:
+  *                 type: string
+  *                 description: Account's password
+  *               role:
+  *                 type: string
+  *                 description: To be provided by client app (in reference to where it is authenticating from)
+  *                 enum:
+  *                   - sensor  # 'sensor' is for when authenticating from rshake device
+  *                   - citizen # 'citizen' is for when authenticating from webapp frontend
+  *                   - admin   # 'admin' is for when authenticating from webapp admin-frontend
+  *                   - brgy    # 'brgy' is for when requesting authentication from ringserver
+  *             example:
+  *               username: citizen
+  *               password: testpassword
+  *               role: citizen
+  *     responses:
+  *       200:
+  *         description: Authentication successful
+  *       400:
+  *         description: Bad request - Invalid input or user does not exist
+  *       401:
+  *         description: Unauthorized - Invalid password
+  *       500:
+  *         description: Internal server error
+  */
 const authenticateSchema = Joi.object().keys({
   username: Joi.string().required(),
   password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
@@ -341,40 +341,40 @@ router.route('/verify-sensor-token').post(
 
 
 /**
- * @swagger
- * /accounts/profile:
- *   get:
- *     summary: Endpoint for getting the profile information of a citizen user
- *     tags:
- *       - Accounts
- *     responses:
- *       200:
- *         description: Successful response with user profile information sent as payload
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: number
- *                   description: HTTP status code
- *                 message:
- *                   type: string
- *                   description: A descriptive message
- *                 payload:
- *                   type: object
- *                   properties:
- *                     username:
- *                       type: string
- *                       description: Username of the user
- *                     email:
- *                       type: string
- *                       description: Email of the user
- *       400:
- *         description: User not found
- *       500:
- *         description: Error checking token in cookie
- */
+  * @swagger
+  * /accounts/profile:
+  *   get:
+  *     summary: Endpoint for getting the profile information of a citizen user
+  *     tags:
+  *       - Accounts
+  *     responses:
+  *       200:
+  *         description: Successful response with user profile information sent as payload
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: HTTP status code
+  *                 message:
+  *                   type: string
+  *                   description: A descriptive message
+  *                 payload:
+  *                   type: object
+  *                   properties:
+  *                     username:
+  *                       type: string
+  *                       description: Username of the user
+  *                     email:
+  *                       type: string
+  *                       description: Email of the user
+  *       400:
+  *         description: User not found
+  *       500:
+  *         description: Error checking token in cookie
+  */
 router.route('/profile').get(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
@@ -410,20 +410,20 @@ router.route('/profile').get(
 
 
 /**
- * @swagger
- * /accounts/signout:
- *   post:
- *     summary: Endpoint for signing out a user by clearing the access token cookie
- *     tags:
- *       - Accounts
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Sign out successful
- *       500:
- *         description: Internal server error
- */
+  * @swagger
+  * /accounts/signout:
+  *   post:
+  *     summary: Endpoint for signing out a user by clearing the access token cookie
+  *     tags:
+  *       - Accounts
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Sign out successful
+  *       500:
+  *         description: Internal server error
+  */
 router.route('/signout').post(
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
