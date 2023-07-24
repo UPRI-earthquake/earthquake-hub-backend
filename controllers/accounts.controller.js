@@ -279,3 +279,20 @@ exports.getAccountProfile = async (req, res, next) => {
     next(error)
   }
 }
+
+exports.removeCookies = async (req, res, next) => {
+  console.log("Sign-out requested");
+  try {
+    res.clearCookie('accessToken').json({ 
+      status: responseCodes.SIGNOUT_SUCCESS,
+      message: 'Sign out successful' 
+    });
+  } catch (error) {
+    console.error('Error occurred during signout:', error);
+    res.status(500).json({ 
+      status: responseCodes.SIGNOUT_ERROR,
+      message: 'Error occured during signout' 
+    });
+  }
+}
+

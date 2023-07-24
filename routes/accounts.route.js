@@ -235,21 +235,9 @@ router.route('/profile').get(
   *         description: Internal server error
   */
 router.route('/signout').post(
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  (req, res) => {
-    try {
-      res.clearCookie('accessToken').json({ 
-        status: responseCodes.SIGNOUT_SUCCESS,
-        message: 'Sign out successful' 
-      });
-    } catch (error) {
-      console.error('Error occurred during signout:', error);
-      res.status(500).json({ 
-        status: responseCodes.SIGNOUT_ERROR,
-        message: 'Error occured during signout' 
-      });
-    }
-});
+  getTokenFromCookie,              // Citizen token is stored in cookie
+  verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
+  AccountsController.removeCookies // Get profile information and respond accordingly
+);
 
 module.exports = router
