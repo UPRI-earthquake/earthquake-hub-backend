@@ -55,23 +55,9 @@
 
 const express = require('express');
 const router = express.Router();
-const Joi = require('joi');
-const bcrypt = require('bcryptjs');
 
-const User = require('../models/account.model');
-const Device = require('../models/device.model');
-const {
-  getTokenFromCookie,
-  getTokenFromBearer,
-  verifyTokenWithRole
-} = require('../middlewares/token.middleware')
-
+const Middleware = require('../middlewares/token.middleware')
 const AccountsController = require('../controllers/accounts.controller')
-
-const {
-  responseCodes,
-  responseMessages
-} = require('./responseCodes')
 
 
 /**
@@ -171,9 +157,9 @@ router.route('/authenticate').post(
 // Output: Whether token is valid or not
 
 router.route('/verify-sensor-token').post(
-  getTokenFromBearer,                  // Brgy token should be assigned to Bearer in request header
-  verifyTokenWithRole('brgy'),         // This endpoint should only be accessed by Brgy Accounts
-  AccountsController.verifySensorToken // Verify sensor's token as provided by the brgy
+  Middleware.getTokenFromBearer,          // Brgy token should be assigned to Bearer in request header
+  Middleware.verifyTokenWithRole('brgy'), // This endpoint should only be accessed by Brgy Accounts
+  AccountsController.verifySensorToken    // Verify sensor's token as provided by the brgy
 )
 
 
@@ -213,9 +199,9 @@ router.route('/verify-sensor-token').post(
   *         description: Error checking token in cookie
   */
 router.route('/profile').get(
-  getTokenFromCookie,                  // Citizen token is stored in cookie
-  verifyTokenWithRole('citizen'),      // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.getAccountProfile // Get profile information and respond accordingly
+  Middleware.getTokenFromCookie,             // Citizen token is stored in cookie
+  Middleware.verifyTokenWithRole('citizen'), // This enpoint should only be accessible to Citizen Accounts
+  AccountsController.getAccountProfile       // Get profile information and respond accordingly
 );
 
 
@@ -235,9 +221,9 @@ router.route('/profile').get(
   *         description: Internal server error
   */
 router.route('/signout').post(
-  getTokenFromCookie,              // Citizen token is stored in cookie
-  verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.removeCookies // Get profile information and respond accordingly
+  Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
+  Middleware.verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
+  AccountsController.removeCookies            // Get profile information and respond accordingly
 );
 
 module.exports = router
