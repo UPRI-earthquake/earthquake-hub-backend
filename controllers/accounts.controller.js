@@ -61,7 +61,7 @@ exports.registerAccount = async (req, res, next) => {
         });
         break;
       default:
-        throw Error("Unhandled return value from createUniqueAccount()")
+        throw Error(`Unhandled return value ${returnStr} from createUniqueAccount()`)
     }
 
     return ;
@@ -162,12 +162,81 @@ exports.authenticateAccount = async (req, res, next) => {
         );
         break;
       default:
-        throw Error("Unhandled return value from createUniqueAccount()")
+        throw Error(`Unhandled return value ${returnStr} from loginAccountRole()`)
     }
 
     return;
   } catch(error) {
     console.log(`Authentication unsuccessful: \n ${error}`);
+    next(error)
+  }
+}
+
+exports.verifySensorToken = async (req, res, next) => {
+  console.log("Sensor token verification requested");
+
+  // Define validation schema
+  const verifySensorTokenSchema = Joi.object().keys({
+    token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
+  });
+
+  try {
+    // Validate input
+    const result = verifySensorTokenSchema.validate(req.body);
+    if(result.error){
+      console.log(result.error.details[0].message)
+      res.status(400).json({ status: responseCodes.INBEHALF_VERIFICATION_ERROR, message: result.error.details[0].message});
+      return;
+    }
+
+    // Perform Task
+    returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
+
+    // Respond based on returned value
+    switch (returnObj.str) {
+      case "JsonWebTokenError":
+        res.status(403).json({
+          status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN,
+          message: "Sender token invalid"
+        });
+        break;
+      case "TokenExpiredError":
+        res.status(403).json({
+          status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN,
+          message: "Sender token expired"
+        });
+        break;
+      case "tokenRoleInvalid":
+        res.status(403).json({
+          status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE,
+          message: "Role in token invalid"
+        });
+        break;
+      case "brgyNotFound":
+        res.status(400).json({
+          status: responseCodes.INBEHALF_VERIFICATION_ERROR,
+          message: 'Internal error'
+        });
+        break;
+      case "sensorIsValid":
+        res.status(200).json({
+          status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
+          message: 'Sensor is a valid streamer',
+          sensorInfo: {
+            username: returnObj.sensor.username,
+            role: returnObj.sensor.role, 
+            streamIds: returnObj.sensor.streamIds,
+            tokenExp: returnObj.sensor.exp,
+          },
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+    }
+
+    return;
+  } catch(error) {
+    console.log(`Sensor verification unsuccessful: \n ${error}`);
     next(error)
   }
 }

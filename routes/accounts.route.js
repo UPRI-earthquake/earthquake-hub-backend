@@ -170,94 +170,10 @@ router.route('/authenticate').post(
 // Input: Token
 // Output: Whether token is valid or not
 
-const verifySensorTokenSchema = Joi.object().keys({
-  token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
-});
-
 router.route('/verify-sensor-token').post(
-  getTokenFromBearer,
-  verifyTokenWithRole('brgy'),
-  (req, res, next) => {
-    // validate POST body
-    const result = verifySensorTokenSchema.validate(req.body);
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: responseCodes.INBEHALF_VERIFICATION_ERROR, message: result.error.details[0].message});
-      return;
-    }
-
-    // Verify SENSOR token in body, valid if it enters callback w/o err
-    jwt.verify(req.body.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
-      if (err) {
-        if (err.name == 'JsonWebTokenError'){
-          res.status(403).json({
-            status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN,
-            message: "Sender token invalid"
-          });
-        } else if (err.name == 'TokenExpiredError'){
-          res.status(403).json({
-            status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN,
-            message: "Sender token expired"
-          });
-        }
-        return;
-      }
-
-      // NOTE: A brgy can also act as a sender to UP ringserver...
-      if (! (decodedToken.role == 'sensor' || decodedToken.role == 'brgy')) { // check that role is sensor or brgy (since a token can have a different role and still be valid)
-        res.status(403).json({
-          status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE,
-          message: "Role in token invalid"
-        });
-        return;
-      }
-
-      // Get streamIds (will be sent as response) and ObjectId (used to update brgy table) of sensor
-      const sensor = await User.findOne({ 'username': decodedToken.username }).populate('devices'); // populate devices array with object itself instead of just ids
-      const sensorStreamIds = sensor.devices.map(device => device.streamId)
-      const sensorDeviceIds = sensor.devices.map(device => device._id)
-
-      // Update device list of brgy to include this sensor (so that UP server, which can
-      // be seen as also a brgy, will allow this brgy to forward sensor's data)
-      // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
-      const brgy = await User.findOne({ 'username': req.username });  // brgy account, username is on req.username due to verifyTokenRole middleware
-      if( ! brgy) {
-        console.log( 'Brgy account is valid but not found in DB!!')
-        res.status(400).json({
-          status: responseCodes.INBEHALF_VERIFICATION_ERROR,
-          message: 'Internal error'});
-        return;
-      }
-
-      // Add sensorDeviceIds to brgy table
-      let brgyAccountUpdated = false
-      for (let i = 0; i < sensorDeviceIds.length; i++) {              // for each deviceId, check if brgy.devices already contains it
-        const deviceId = sensorDeviceIds[i];
-
-        if (brgy.devices.includes(deviceId)) {                        // If the device is already in the brgy.devices array, skip it
-          continue;
-        }
-
-        brgy.devices.push(deviceId);                                  // If the device is not in the brgy.devices array, add it
-        brgyAccountUpdated = true;
-      }
-
-      if (brgyAccountUpdated === true) {
-        await brgy.save();                                            // Save the updated brgy account object
-      }
-
-      res.status(200).json({
-        status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
-        message: 'Sensor is a valid streamer',
-        sensorInfo: {
-          username: decodedToken.username,
-          role: decodedToken.role, 
-          streamIds: sensorStreamIds,
-          tokenExp: decodedToken.exp,
-        },
-      });
-    }) //end of jwt.verify()
-  }
+  getTokenFromBearer,                  // Brgy token should be assigned to Bearer in request header
+  verifyTokenWithRole('brgy'),         // This endpoint should only be accessed by Brgy Accounts
+  AccountsController.verifySensorToken // Verify sensor's token as provided by the brgy
 )
 
 
