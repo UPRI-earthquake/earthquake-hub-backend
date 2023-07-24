@@ -57,7 +57,6 @@ const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
 const User = require('../models/account.model');
 const Device = require('../models/device.model');
@@ -363,19 +362,5 @@ router.route('/signout').post(
       });
     }
 });
-
-router.route('/sample-profile-for-citizen').get(
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  // TODO: Do we need to check the username?
-  async (req, res, next) => {
-    const citizen = await User.findOne({ 'username': req.username });  // get citizen account, username is on req.username due to verifyTokenRole middleware
-    res.status(200).json({
-      status:200,
-      message:"Done GET on sample endpoint requiring citizen authorization",
-      samplePrivateResourceForUserCitizen: citizen.email
-    });
-  }
-)
 
 module.exports = router
