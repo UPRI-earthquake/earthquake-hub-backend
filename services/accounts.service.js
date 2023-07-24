@@ -176,3 +176,32 @@ exports.verifySensorToken = async (token, brgyUsername) => {
   }) //end of Promise
 }
 
+
+/***************************************************************************
+ * getAccountProfile:
+ *     Gets profile information for the account of 'username'
+ * Inputs:
+ *     username: citizen username of the account
+ * Outputs obj.str:
+ *     "accountNotExists": if username doesn't exist in DB
+ *     "success":          if username is registered in DB
+ * Outputs obj.profile:
+ *     Will contain profile info based on ccount
+ *     {username, email}
+ *     
+ ***************************************************************************/
+exports.getAccountProfile = async (username) => {
+    const citizen = await User.findOne({ 'username': username });
+
+    if (!citizen) { // User is not found in database
+      return {str: 'accountNotExists'};
+    }
+    
+    return {
+      str: 'success',
+      profile: {
+        username: citizen.username,
+        email: citizen.email
+      }
+    }
+}

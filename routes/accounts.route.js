@@ -213,36 +213,9 @@ router.route('/verify-sensor-token').post(
   *         description: Error checking token in cookie
   */
 router.route('/profile').get(
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  async (req, res) => {
-    try {
-      console.log('GET request sent on /profile endpoint');
-      const citizen = await User.findOne({ 'username': req.username });
-
-      if (!citizen) { // User is not found in database
-        return res.status(400).json({
-          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: 'User not found'
-        });
-      }
-
-      res.status(200).json({
-        status: responseCodes.AUTHENTICATION_SUCCESS,
-        message: 'Token is valid', 
-        payload: { 
-          username: citizen.username,
-          email: citizen.email
-        } 
-      });
-    } catch (error) {
-      console.error('Error occurred', error);
-      res.status(500).json({ 
-        status: responseCodes.AUTHENTICATION_ERROR,
-        message: 'Error checking token in cookie' 
-      });
-    }
-  }
+  getTokenFromCookie,                  // Citizen token is stored in cookie
+  verifyTokenWithRole('citizen'),      // This enpoint should only be accessible to Citizen Accounts
+  AccountsController.getAccountProfile // Get profile information and respond accordingly
 );
 
 

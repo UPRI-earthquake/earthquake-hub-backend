@@ -241,3 +241,41 @@ exports.verifySensorToken = async (req, res, next) => {
     next(error)
   }
 }
+
+exports.getAccountProfile = async (req, res, next) => {
+  console.log("Account profile requested");
+
+  // No validation schema since this is for GET endpoint
+
+  try {
+    // Perform Task
+    returnObj = await AccountsService.getAccountProfile(req.username)
+
+    // Respond based on returned value
+    switch (returnObj.str) {
+      case "accountNotExists":
+        res.status(400).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found'
+        });
+        break;
+      case "success":
+        res.status(200).json({
+          status: responseCodes.AUTHENTICATION_SUCCESS,
+          message: 'Token is valid', 
+          payload: { 
+            username: returnObj.profile.username,
+            email: returnObj.profile.email
+          } 
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+    }
+
+    return;
+  } catch (error) {
+    console.log(`Unable to get account profile: \n ${error}`);
+    next(error)
+  }
+}
