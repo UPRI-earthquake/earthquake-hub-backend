@@ -163,87 +163,9 @@ router.route('/register').post(
   *       500:
   *         description: Internal server error
   */
-const authenticateSchema = Joi.object().keys({
-  username: Joi.string().required(),
-  password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-  role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
-});
-
-function generateAccessToken(payload){
-  return jwt.sign(payload, process.env.ACCESS_TOKEN_PRIVATE_KEY, {expiresIn: '30 days'}); // Add 'exp' in seconds since epoch
-}
-
-router.route('/authenticate').post( async (req, res, next) => {
-  try{
-    const result = authenticateSchema.validate(req.body);
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: responseCodes.AUTHENTICATION_ERROR, message: result.error.details[0].message});
-      return;
-    }
-
-    // get user with its devices array populated by device object (instead of device id)
-    const user = await User.findOne({ 'username': result.value.username }).populate('devices');
-
-    if(!user){
-      res.status(400).json({ status: responseCodes.AUTHENTICATION_USER_NOT_EXIST, message: "User doesn't exists!"});
-      return;
-    }
-
-    // check if claimed role reflects allowed role in db
-    if(!user.roles.includes(result.value.role)){
-      res.status(400).json({ status: responseCodes.AUTHENTICATION_INVALID_ROLE, message: 'Invalid role'});
-      return;
-    }
-
-    // compare received password with user's password in db
-    let passwordIsValid = bcrypt.compareSync(
-      result.value.password, // received password
-      user.password          // password in db
-    )
-
-    if(!passwordIsValid){
-      res.status(401).json({ status: responseCodes.AUTHENTICATION_WRONG_PASSWORD, message: 'Wrong password'});
-      return;
-    }
-
-    switch(result.value.role) {
-      case 'sensor':
-      case 'brgy':
-        // check if sensor account has devices OR,
-        // check if brgy account has devices (of their own, or that forwards to them)
-        // that they can in turn forward to UP (main receiver)
-        if (user.devices.length === 0) {
-          res.status(400).json({ status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE, message: 'User has no linked devices'});
-          return;
-        }
-        // return access token with claims for allowed channels to stream
-        res.status(200).json({
-          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
-          message: 'Authentication successful',
-          accessToken: generateAccessToken({
-            'username': user.username,
-            'role': result.value.role
-          }),
-        });
-        break;
-
-      case 'citizen':
-        // return access token in http cookie (so it's hidden from browser js)
-        res.status(200)
-          .cookie("accessToken", generateAccessToken({'username': user.username, 'role': 'citizen'}), {
-            httpOnly: true, // set to be accessible only by web browser
-            secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
-          })
-          .json({ status: responseCodes.AUTHENTICATION_TOKEN_COOKIE, message: "Authentication successful" });
-        break;
-    }
-    return;
-  } catch(error) {
-    console.log(`Authentication unsuccessful: \n ${error}`);
-    next(error)
-  }
-});
+router.route('/authenticate').post(
+  AccountsController.authenticateAccount
+);
 
 // --- VERIFICATION ---
 // Input: Token
