@@ -40,7 +40,6 @@ const mongodb = require('./services/mongodb')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
-const stationsRouter = require('./routes/stations');
 const eventsRouter = require('./routes/events');
 const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
@@ -63,7 +62,6 @@ app.use(cookieParser());
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
 })
-app.use('/stationLocations', stationsRouter)
 app.use('/eventsList', eventsRouter)
 app.use('/messaging', messaging.router)
 messaging.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
