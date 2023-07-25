@@ -124,7 +124,7 @@ deviceRouter.route('/link').post( // Sensor devices that will request for linkin
 
 /**
   * @swagger
-  * /device/list:
+  * /device/mydevices:
   *   get:
   *     summary: Endpoint for getting list of devices associated with the authenticated user (citizen)
   *     tags:
@@ -166,7 +166,7 @@ deviceRouter.route('/link').post( // Sensor devices that will request for linkin
   *       500:
   *         description: Internal server error
   */
-deviceRouter.route('/list').get( 
+deviceRouter.route('/my-devices').get( 
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
   getDeviceList
