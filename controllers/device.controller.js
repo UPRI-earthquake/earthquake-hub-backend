@@ -60,46 +60,73 @@ exports.getAllDeviceLocations = async (req, res, next) => {
   }
 }
 
-exports.getOwnedDevices = async (req, res) => {
-  console.log('GET request on /device/deviceList endpoint received')
-  const citizen = await Account.findOne({ 'username': req.username }).populate('devices');  // get citizen account, username is on req.username due to verifyTokenRole middleware
-  
-  let devicePayload = [];
+exports.getOwnedDevices = async (req, res, next) => {
+  console.log('Owned devices requested');
+  try {
+    DeviceService.getAccountDevices = async (username) => {
+      const citizen = await Account.findOne({ 'username': username }).populate('devices');
+      if( ! citizen) { return {str: 'usernameNotFound'} }
 
-  if (citizen.devices) {
-    devicePayload = citizen.devices.map(device => {
-      let status = '';
-      let statusSince = 'Not Available';
-      
-      if (device.macAddress === 'TO_BE_LINKED') {
-        status = 'Not Yet Linked';
-      } else if (device.activity === 'inactive') {
-        status = 'Not Streaming';
-        statusSince = device.activityToggleTime.toUTCString();
-      } else {
-        status = 'Streaming';
-        statusSince = device.activityToggleTime.toUTCString();
+      let devicePayload = [];
+
+      if (citizen.devices) {
+        devicePayload = citizen.devices.map(device => {
+          let status = '';
+          let statusSince = 'Not Available';
+          
+          if (device.macAddress === 'TO_BE_LINKED') {
+            status = 'Not Yet Linked';
+          } else if (device.activity === 'inactive') {
+            status = 'Not Streaming';
+            statusSince = device.activityToggleTime.toUTCString();
+          } else {
+            status = 'Streaming';
+            statusSince = device.activityToggleTime.toUTCString();
+          }
+
+          const deviceInfo = {
+            network: device.network,
+            station: device.station,
+            status: status,
+            statusSince: statusSince
+          };
+
+          return deviceInfo;
+        });
       }
 
-      const deviceInfo = {
-        network: device.network,
-        station: device.station,
-        status: status,
-        statusSince: statusSince
+      return {
+        str: 'success',
+        devices: devicePayload
       };
+    };    
 
-      return deviceInfo;
-    });
+    // Perform Task
+    const returnObj = await DeviceService.getAccountDevices(req.username);
+
+    // Respond based on returned value
+    switch (returnObj.str) {
+      case "usernameNotFound":
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Getting user record failed",
+        });
+        break;
+      case "success":
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: "Get owned devices success",
+          devices: returnObj.devices
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from DeviceService.getAccountDevices()`);
+    }
+  } catch (error) {
+    console.log(`Error getting owned devices: \n ${error}`);
+    next(error);
   }
-
-  console.log(devicePayload)
-
-  res.status(200).json({
-    status:200,
-    message:"GET device success",
-    payload: devicePayload
-  });
-}
+};
 
 exports.getDeviceStatus = async (req, res) => {
   console.log('GET request on /device/status endpoint received');
