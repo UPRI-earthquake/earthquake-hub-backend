@@ -49,76 +49,10 @@ const {
   verifyTokenWithRole
 } = require('../middlewares/token.middleware')
 
-const deviceRouter = express.Router(); 
+const router = express.Router(); 
 
-deviceRouter.get('/all', async function (req, res, next) {
-  try {
-    res.json(await getAllDeviceLocations());
-  }catch(err){
-    console.trace(`While getting stations from mysql...\n ${err}`);
-    next(err)
-  }
-});
-
-/**
-  * @swagger
-  * /device/add:
-  *   post:
-  *     summary: Endpoint for adding a device to the user's profile
-  *     tags:
-  *       - Devices
-  *     security:
-  *       - cookieAuth: []
-  *     requestBody:
-  *       description: Device data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               network:
-  *                 type: string
-  *                 description: The network code of the device
-  *               station:
-  *                 type: string
-  *                 description: The station code of the device
-  *               latitude:
-  *                 type: string
-  *                 description: The latitude of the device (in degree coordinates)
-  *               longitude:
-  *                 type: string
-  *                 description: The longitude of the device (in degree coordinates)
-  *               elevation:
-  *                 type: string
-  *                 description: The elevation of the device (in meters)
-  *           example:
-  *             network: "AM"
-  *             station: "R3B2D"
-  *             latitude: "40.123456"
-  *             longitude: "120.654321"
-  *             elevation: "50"
-  *     responses:
-  *       200:
-  *         description: Device added successfully
-  *       400:
-  *         description: Device is already added to the database
-  *       403:
-  *         description: Unauthorized - Invalid or missing token
-  *       500:
-  *         description: Internal server error
-  */
-deviceRouter.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  DeviceController.addDevice
-);
-
-
-deviceRouter.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
-  getTokenFromBearer,
-  verifyTokenWithRole('sensor'),
-  DeviceController.linkDevice
+router.route('/all').get(
+  DeviceController.getAllDeviceLocations
 );
 
 
@@ -166,7 +100,7 @@ deviceRouter.route('/link').post( // Sensor devices that will request for linkin
   *       500:
   *         description: Internal server error
   */
-deviceRouter.route('/my-devices').get( 
+router.route('/my-devices').get( 
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
   DeviceController.getDeviceList
@@ -227,8 +161,71 @@ deviceRouter.route('/my-devices').get(
   *       500:
   *         description: Station not found
   */
-deviceRouter.route('/status').get(
+router.route('/status').get(
   DeviceController.getDeviceStatus
 )
 
-module.exports = deviceRouter;
+
+/**
+  * @swagger
+  * /device/add:
+  *   post:
+  *     summary: Endpoint for adding a device to the user's profile
+  *     tags:
+  *       - Devices
+  *     security:
+  *       - cookieAuth: []
+  *     requestBody:
+  *       description: Device data to be added
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               network:
+  *                 type: string
+  *                 description: The network code of the device
+  *               station:
+  *                 type: string
+  *                 description: The station code of the device
+  *               latitude:
+  *                 type: string
+  *                 description: The latitude of the device (in degree coordinates)
+  *               longitude:
+  *                 type: string
+  *                 description: The longitude of the device (in degree coordinates)
+  *               elevation:
+  *                 type: string
+  *                 description: The elevation of the device (in meters)
+  *           example:
+  *             network: "AM"
+  *             station: "R3B2D"
+  *             latitude: "40.123456"
+  *             longitude: "120.654321"
+  *             elevation: "50"
+  *     responses:
+  *       200:
+  *         description: Device added successfully
+  *       400:
+  *         description: Device is already added to the database
+  *       403:
+  *         description: Unauthorized - Invalid or missing token
+  *       500:
+  *         description: Internal server error
+  */
+router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.addDevice
+);
+
+
+router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.linkDevice
+);
+
+
+module.exports = router;

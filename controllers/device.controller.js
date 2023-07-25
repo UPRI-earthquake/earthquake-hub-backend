@@ -182,19 +182,26 @@ const getDeviceList = async (req, res) => {
   });
 }
 
-const getAllDeviceLocations = async () => {
-  const devices = await Device.find();
+const getAllDeviceLocations = async (req, res, next) => {
+  try {
+    const devices = await Device.find();
 
-  const response = devices.map(device => ({
-    network: device.network,
-    code: device.station,
-    latitude: device.latitude,
-    longitude: device.longitude,
-    description: device.description
-  }));
+    const response = devices.map(device => ({
+      network: device.network,
+      code: device.station,
+      latitude: device.latitude,
+      longitude: device.longitude,
+      description: device.description
+    }));
 
-  return response;
+    res.json(response);
+
+  }catch(err){
+    console.trace(`While getting stations from mysql...\n ${err}`);
+    next(err)
+  }
 }
+
 const getDeviceStatus = async (req, res) => {
   console.log('GET request on /device/status endpoint received');
   try {
