@@ -42,7 +42,7 @@
   */
 
 const express = require('express');
-const { addDevice, linkDevice, getDeviceList, getDeviceStatus } = require('../services/devices.service');
+const { addDevice, linkDevice, getDeviceList, getDeviceStatus, getAllDeviceLocations } = require('../services/devices.service');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
@@ -50,6 +50,15 @@ const {
 } = require('../middlewares/token.middleware')
 
 const deviceRouter = express.Router(); 
+
+deviceRouter.get('/', async function (req, res, next) {
+  try {
+    res.json(await getAllDeviceLocations());
+  }catch(err){
+    console.trace(`While getting stations from mysql...\n ${err}`);
+    next(err)
+  }
+});
 
 /**
   * @swagger

@@ -182,7 +182,7 @@ const getDeviceList = async (req, res) => {
   });
 }
 
-async function getDeviceStatus(network, station){
+const getDeviceStatus = async (network, station) => {
   const device = await Device.findOne({ network: network, station: station });
 
   let status = '';
@@ -205,12 +205,27 @@ async function getDeviceStatus(network, station){
     statusSince: statusSince
   };
 
- return devicePayload;
+  return devicePayload;
+}
+
+const getAllDeviceLocations = async () => {
+  const devices = await Device.find();
+
+  const response = devices.map(device => ({
+    network: device.network,
+    code: device.station,
+    latitude: device.latitude,
+    longitude: device.longitude,
+    description: device.description
+  }));
+
+  return response;
 }
 
 module.exports = {
   addDevice,
   linkDevice,
   getDeviceList,
-  getDeviceStatus
+  getDeviceStatus,
+  getAllDeviceLocations
 }
