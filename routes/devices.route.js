@@ -103,7 +103,7 @@ router.route('/all').get(
 router.route('/my-devices').get( 
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
-  DeviceController.getDeviceList
+  DeviceController.getOwnedDevices
 );
 
 
