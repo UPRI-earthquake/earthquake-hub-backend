@@ -120,46 +120,94 @@ exports.getOwnedDevices = async (req, res, next) => {
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from DeviceService.getAccountDevices()`);
+        throw Error(`Unhandled return value ${returnObj} from service.getAccountDevices()`);
     }
+
+    return;
   } catch (error) {
     console.log(`Error getting owned devices: \n ${error}`);
     next(error);
   }
 };
 
-exports.getDeviceStatus = async (req, res) => {
-  console.log('GET request on /device/status endpoint received');
+exports.getDeviceStatus = async (req, res, next) => {
+  console.log('Device status requested');
+
+  // Define validation schema
+  const deviceStatusQuerySchema = Joi.object({
+    network: Joi.string().regex(/^[A-Z]{2}$/).required(),
+    station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
+  });
+
   try {
-    const device = await Device.findOne({ network: req.query.network, station: req.query.station });
+    DeviceService.getDeviceStatus = async (network, station) => {
+      const device = await Device.findOne({ network: network, station: station });
+      if( ! device) { return {str: 'deviceNotFound'} }
 
-    let status = '';
-    let statusSince = null;
+      let status = '';
+      let statusSince = null;
 
-    if (device.macAddress === 'TO_BE_LINKED') {
-      status = 'Not yet linked';
-    } else if (device.activity === 'inactive') {
-      status = 'Not streaming';
-      statusSince = device.activityToggleTime;
-    } else {
-      status = 'Streaming';
-      statusSince = device.activityToggleTime;
+      if (device.macAddress === 'TO_BE_LINKED') {
+        status = 'Not yet linked';
+      } else if (device.activity === 'inactive') {
+        status = 'Not streaming';
+        statusSince = device.activityToggleTime;
+      } else {
+        status = 'Streaming';
+        statusSince = device.activityToggleTime;
+      }
+
+      let deviceStatus = {
+        network: device.network,
+        station: device.station,
+        status: status,
+        statusSince: statusSince
+      };
+
+      return {
+        str: 'success',
+        device: deviceStatus
+      }
     }
 
-    let devicePayload = {
-      network: device.network,
-      station: device.station,
-      status: status,
-      statusSince: statusSince
-    };
+    // Validate query params
+    const {error, value} = deviceStatusQuerySchema.validate(req.query)
+    if(error){
+      console.log(error.details[0].message)
+      res.status(400).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: error.details[0].message
+      });
+      return;
+    }
+    const {network, station} = value
 
-    res.status(200).json({
-      status: 200,
-      message: "GET Device's Status Success",
-      payload: devicePayload
-    })
-  }catch(err){
-    res.status(500).json({ status: 500, message: 'Station not found' })
+    // Perform Task
+    const returnObj = await DeviceService.getDeviceStatus(network, station);
+
+    // Respond based on returned value
+    switch (returnObj.str) {
+      case "deviceNotFound":
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device not found",
+        });
+        break;
+      case "success":
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: "Get device status success",
+          device: returnObj.device
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from service.getDeviceStatus()`);
+    }
+
+    return;
+  }catch(error){
+    console.log(`Error getting device status: \n ${error}`);
+    next(error);
   }
 }
 
