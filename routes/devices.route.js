@@ -42,7 +42,7 @@
   */
 
 const express = require('express');
-const { addDevice, linkDevice, getDeviceList, getDeviceStatus, getAllDeviceLocations } = require('../services/devices.service');
+const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
@@ -111,14 +111,14 @@ deviceRouter.get('/all', async function (req, res, next) {
 deviceRouter.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
-  addDevice
+  DeviceController.addDevice
 );
 
 
 deviceRouter.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
   getTokenFromBearer,
   verifyTokenWithRole('sensor'),
-  linkDevice
+  DeviceController.linkDevice
 );
 
 
@@ -169,7 +169,7 @@ deviceRouter.route('/link').post( // Sensor devices that will request for linkin
 deviceRouter.route('/my-devices').get( 
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
-  getDeviceList
+  DeviceController.getDeviceList
 );
 
 
@@ -227,14 +227,8 @@ deviceRouter.route('/my-devices').get(
   *       500:
   *         description: Station not found
   */
-deviceRouter.route('/status').get( async (req, res) => {
-  console.log('GET request on /device/status endpoint received');
-  try {
-    var data = await getDeviceStatus(req.query.network, req.query.station)
-    res.status(200).json({ status: 200, message: "GET Device's Status Success", payload: data})
-  }catch(err){
-    res.status(500).json({ status: 500, message: 'Station not found' })
-  }
-})
+deviceRouter.route('/status').get(
+  DeviceController.getDeviceStatus
+)
 
 module.exports = deviceRouter;

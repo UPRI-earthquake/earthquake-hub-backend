@@ -182,32 +182,6 @@ const getDeviceList = async (req, res) => {
   });
 }
 
-const getDeviceStatus = async (network, station) => {
-  const device = await Device.findOne({ network: network, station: station });
-
-  let status = '';
-  let statusSince = null;
-
-  if (device.macAddress === 'TO_BE_LINKED') {
-    status = 'Not yet linked';
-  } else if (device.activity === 'inactive') {
-    status = 'Not streaming';
-    statusSince = device.activityToggleTime;
-  } else {
-    status = 'Streaming';
-    statusSince = device.activityToggleTime;
-  }
-
-  let devicePayload = {
-    network: device.network,
-    station: device.station,
-    status: status,
-    statusSince: statusSince
-  };
-
-  return devicePayload;
-}
-
 const getAllDeviceLocations = async () => {
   const devices = await Device.find();
 
@@ -221,7 +195,40 @@ const getAllDeviceLocations = async () => {
 
   return response;
 }
+const getDeviceStatus = async (req, res) => {
+  console.log('GET request on /device/status endpoint received');
+  try {
+    const device = await Device.findOne({ network: req.query.network, station: req.query.station });
 
+    let status = '';
+    let statusSince = null;
+
+    if (device.macAddress === 'TO_BE_LINKED') {
+      status = 'Not yet linked';
+    } else if (device.activity === 'inactive') {
+      status = 'Not streaming';
+      statusSince = device.activityToggleTime;
+    } else {
+      status = 'Streaming';
+      statusSince = device.activityToggleTime;
+    }
+
+    let devicePayload = {
+      network: device.network,
+      station: device.station,
+      status: status,
+      statusSince: statusSince
+    };
+
+    res.status(200).json({
+      status: 200,
+      message: "GET Device's Status Success",
+      payload: devicePayload
+    })
+  }catch(err){
+    res.status(500).json({ status: 500, message: 'Station not found' })
+  }
+}
 module.exports = {
   addDevice,
   linkDevice,
