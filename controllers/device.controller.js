@@ -298,7 +298,6 @@ exports.addDevice = async (req, res, next) => {
   }
 }
 
-
 exports.linkDevice = async (req, res, next) => {
   console.log('Link device requested');
 
