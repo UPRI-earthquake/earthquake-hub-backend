@@ -51,7 +51,7 @@ const {
 
 const deviceRouter = express.Router(); 
 
-deviceRouter.get('/', async function (req, res, next) {
+deviceRouter.get('/all', async function (req, res, next) {
   try {
     res.json(await getAllDeviceLocations());
   }catch(err){
