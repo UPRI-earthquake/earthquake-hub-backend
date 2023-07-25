@@ -211,16 +211,17 @@ exports.getDeviceStatus = async (req, res, next) => {
   }
 }
 
-const addDeviceSchema = Joi.object().keys({
-  network: Joi.string().regex(/^[A-Z]{2}$/).required(),
-  station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
-  elevation: Joi.string().regex(/^[-+]?\d+(\.\d+)?$/).required(),
-  latitude: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
-  longitude: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required()
-});
-
-exports.addDevice = async (req, res) => {
+exports.addDevice = async (req, res, next) => {
   console.log("Add device requested");
+
+  // Define validation schema
+  const addDeviceSchema = Joi.object().keys({
+    network: Joi.string().regex(/^[A-Z]{2}$/).required(),
+    station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
+    elevation: Joi.string().regex(/^[-+]?\d+(\.\d+)?$/).required(),
+    latitude: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
+    longitude: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required()
+  });
 
   try {
     // token verification should put username from token to req.username
@@ -228,41 +229,69 @@ exports.addDevice = async (req, res) => {
       res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
     }
 
-    const result = addDeviceSchema.validate(req.body)
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: 400, message: result.error.details[0].message});
+    // Validate POST input
+    const {error, value} = addDeviceSchema.validate(req.body)
+    if(error){
+      console.log(error.details[0].message)
+      res.status(400).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: error.details[0].message
+      });
       return;
     }
+    const {network, station, elevation, latitude, longitude} = value
 
-    // check if user inputs for the device are not yet saved in the database
-    const deviceDetailsCheck = await Device.findOne({
-      network: result.value.network,
-      station: result.value.station,
-    });
-    if (deviceDetailsCheck) {
-      // throw Error('Username does not exist')r
-      res.status(400).json({ status: 400, message: 'Device details already used'});
-      return;
+    DeviceService.addDevice = async (username, network, station, elevation, latitude, longitude) => {
+      // check if user inputs for the device are not yet saved in the database
+      const deviceDetailsCheck = await Device.findOne({
+        network: network,
+        station: station,
+      });
+      if (deviceDetailsCheck) {
+        // throw Error('Username does not exist')r
+        res.status(400).json({ status: 400, message: 'Device details already used'});
+        return 'detailsAlreadyUsed';
+      }
+
+      const newDevice = new Device({
+        description: `${username}'s device`,
+        network: network.toUpperCase(),
+        station: station.toUpperCase(),
+        elevation: elevation,
+        longitude: longitude,
+        latitude: latitude
+      });
+      await newDevice.save(); // save new entry to device collections
+
+      const currentAccount = await Account.findOne({ 'username' : username });
+      await currentAccount.updateOne({ // update devices array under accounts collection
+        $push: { devices: newDevice._id }
+      });
+      
+      return 'success';
     }
 
-    const newDevice = new Device({
-      description: `${req.username}'s device`,
-      network: result.value.network.toUpperCase(),
-      station: result.value.station.toUpperCase(),
-      elevation: result.value.elevation,
-      longitude: result.value.longitude,
-      latitude: result.value.latitude
-    });
-    await newDevice.save(); // save new entry to device collections
+    // Perform Task
+    returnStr = await DeviceService.addDevice(req.username, network, station, elevation, latitude, longitude);
 
-    const currentAccount = await Account.findOne({ 'username' : req.username });
-    await currentAccount.updateOne({ // update devices array under accounts collection
-      $push: { devices: newDevice._id }
-    });
+    switch(returnStr) {
+      case "detailsAlreadyUsed":
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device details already used",
+        });
+        break;
+      case "success":
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: "Successfully added device",
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnStr} from service.addDevice()`);
+    }
 
-    console.log(`Add device successful`);
-    return res.status(200).json({ status: 200, message: "Succesfully Added Device" });
+    return;
   } catch (error) {
     console.log(`Add device unsuccessful: \n ${error}`);
     next(error)
