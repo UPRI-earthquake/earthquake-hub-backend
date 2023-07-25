@@ -226,7 +226,7 @@ exports.addDevice = async (req, res, next) => {
   try {
     // token verification should put username from token to req.username
     if (!req.username){
-      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+      res.status(403).json({ status: responseCodes.GENERIC_ERROR, message: "Username of a logged-in user is required."});
     }
 
     // Validate POST input
@@ -298,14 +298,16 @@ exports.addDevice = async (req, res, next) => {
   }
 }
 
-const linkDeviceSchema = Joi.object().keys({
-  macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
-  streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
 
-});
+exports.linkDevice = async (req, res, next) => {
+  console.log('Link device requested');
 
-exports.linkDevice = async (req, res) => {
-  console.log('Device Link Requested');
+  // Define validation schema
+  const linkDeviceSchema = Joi.object().keys({
+    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
+    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
+
+  });
 
   try {
     // token verification should put username from token to req.username
@@ -313,66 +315,113 @@ exports.linkDevice = async (req, res) => {
       res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
     }
 
-    const result = linkDeviceSchema.validate(req.body)
-     if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: 400, message: result.error.details[0].message});
+    // Validate POST input
+    const {error, value} = linkDeviceSchema.validate(req.body)
+      if(error){
+        console.log(error.details[0].message)
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: error.details[0].message
+      });
       return;
     }
+    const {macAddress, streamId} = value
 
-    // check if device's mac address already exists in the database
-    const deviceExists = await Device.exists({
-      macAddress: result.value.macAddress
-    })
+    DeviceService.linkDevice = async(username, macAddress, streamId) => {
+      // check if device's mac address already exists in the database
+      const deviceExists = await Device.exists({
+        macAddress: macAddress
+      })
 
-    if (deviceExists) { // device is already saved to db
-      // Send message to front end that device is already used
-      res.status(400).json({ message: 'Device is Already Linked to an Existing Account' }) // send 400 - resource exists
-      return;
-    }
-
-    const user = await Account.findOne({ 'username': req.username }).populate('devices')
-
-    // Must be an existing user account to accept device linking request - update db.
-    // get device with same Network and Station
-    const [network, station, loc, channel] = result.value.streamId.split(",")[0].split("_")
-    const device = await Device.findOne({ network:network, station:station })
-
-    if(!device){
-      res.status(400).json({ status: 400, message: "Device doesn't exist in the database!"});
-      return;
-    }
-
-    // find the index of the device in the user.devices array
-    const index = user.devices.findIndex(dev => dev.id === device.id);
-
-    if (index === -1) {
-      // device not found in the account.devices array, handle error or return null
-      res.status(400).json({ status: 400, message: "Device is not yet added to user's device list"});
-      return;
-    }
-
-    //Update device info
-    device.macAddress = result.value.macAddress
-    device.streamId = result.value.streamId
-    device.save()
-
-    // Query updated device information
-    const updatedDevice = await Device.findOne({ _id: device._id })
-
-    const deviceInfo = {
-      deviceInfo: {
-        network: updatedDevice.network,
-        station: updatedDevice.station,
-        longitude: updatedDevice.longitude,
-        latitude: updatedDevice.latitude,
-        elevation: updatedDevice.elevation,
-        streamId: updatedDevice.streamId
+      if (deviceExists) { // device is already saved to db
+        // Send message to front end that device is already used
+        return {str:'alreadyLinked'};
       }
+
+      const user = await Account.findOne({ 'username': username }).populate('devices')
+      if(!user){
+        return {str:'usernameNotFound'};
+      }
+
+
+      // Must be an existing user account to accept device linking request - update db.
+      // get device with same Network and Station
+      const [network, station, loc, channel] = streamId.split(",")[0].split("_")
+      const device = await Device.findOne({ network:network, station:station })
+
+      if(!device){
+        return {str:'deviceNotFound'};
+      }
+
+      // find the index of the device in the user.devices array
+      const index = user.devices.findIndex(dev => dev.id === device.id);
+
+      if (index === -1) {
+        // device not found in the account.devices array, handle error or return null
+        return {str:'deviceNotOwned'};
+      }
+
+      //Update device info
+      device.macAddress = macAddress
+      device.streamId = streamId
+      device.save()
+
+      // Query updated device information
+      const updatedDevice = await Device.findOne({ _id: device._id })
+
+      const payload = {
+        deviceInfo: {
+          network: updatedDevice.network,
+          station: updatedDevice.station,
+          longitude: updatedDevice.longitude,
+          latitude: updatedDevice.latitude,
+          elevation: updatedDevice.elevation,
+          streamId: updatedDevice.streamId
+        }
+      }
+
+      return {str:'success', deviceInfo: payload}
     }
 
-    console.log("Update account's device successful")
-    res.status(200).json({ message: 'Device-Account Linking Successful', payload: deviceInfo })
+    // Perform task
+    returnObj = await DeviceService.linkDevice(req.username, macAddress, streamId)
+
+    switch(returnObj.str){
+      case 'alreadyLinked':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Device is already linked to an existing account'
+        })
+        break;
+      case 'usernameNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "User not found"
+        });
+        break;
+      case 'deviceNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device doesn't exist in the database!"
+        });
+        break;
+      case 'deviceNotOwned':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device is not yet added to user's device list"
+        });
+        break;
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Device-Account Linking Successful',
+          payload: returnObj.payload
+        })
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from service.linkDevice()`);
+    }
+
   } catch (error) {
     console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
