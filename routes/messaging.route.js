@@ -3,7 +3,7 @@ const router = express.Router();
 const MessagingMiddleware = require('../middlewares/messaging.middleware')
 const MessagingController = require('../controllers/messaging.controller')
 
-const restrictedPath = 'restricted'; // NGINX will deny public access to this path
+const restrictedPath = '/restricted'; // NGINX will deny public access to this path
 
 router.get('/',
   MessagingMiddleware.SSEFormatting,
@@ -43,7 +43,7 @@ router.get('/',
   *       500:
   *         description: Internal server error
   */
-router.post(`/${restrictedPath}/new-event`,
+router.post(`${restrictedPath}/new-event`,
   MessagingController.newEvent
 );
 
@@ -83,7 +83,7 @@ router.post(`/${restrictedPath}/new-event`,
   *       500:
   *         description: Internal server error
   */
-router.post(`/${restrictedPath}/new-pick`,
+router.post(`${restrictedPath}/new-pick`,
   MessagingController.newPick
 );
 
