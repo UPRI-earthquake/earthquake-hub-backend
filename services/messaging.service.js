@@ -1,13 +1,10 @@
-const express = require('express');
-const router = express.Router();
 const EventEmitter = require('events')
 const EventSource = require('eventsource');
-const events = require('../services/events')
 const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
+const events = require('../services/events')
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
-const restrictedPath = 'restricted'; // NGINX will deny public access to this path
 
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
@@ -45,6 +42,9 @@ class EventCache extends EventEmitter {
   }
 }
 const eventCache = new EventCache(30); // record last 30 events\
+
+
+/* --- External Event Sources --- */
 
 // Routine to subscribe to ringserver /sse-connections endpoint
 const sseConnectionsEventListener = async() => {
@@ -174,172 +174,8 @@ const sseStreamsEventListener = async() => {
   });
 }
 
-// create helper middleware so we can reuse server-sent events
-const useServerSentEventsMiddleware = (req, res, next) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.flushHeaders();
-
-  const sendEventStreamData = (eventName, data, id) => {
-    if(!res.finished){
-      res.write(`event: ${eventName}\n`);
-      res.write(`data: ${data}\n`);
-      res.write(`id: ${id}\n`);
-      res.write(`\n\n`);
-    }
-  }
-
-  // we are attaching sendEventStreamData to res, so we can use it later
-  Object.assign(res, {
-    sendEventStreamData
-  });
-
-  next();
-}
-
-const useMissedEventsResender = (req, res, next) => {
-  var lastEventId = Number(req.headers['last-event-id'])
-                    || Number(req.query.lastEventId)
-  if(lastEventId){
-    console.log('last-event-id:', lastEventId)
-    const eventsToReSend = eventCache.cache.filter(e => e.id > lastEventId)
-
-    eventsToReSend.forEach(event => {
-      res.sendEventStreamData(
-        event.name, JSON.stringify(event.data), event.id
-      )
-    })
-  }
-  next();
-}
-
-router.get('/',
-  useServerSentEventsMiddleware,
-  useMissedEventsResender,
-  (req, res) => {
-    console.log('SSE connection opened:', req.ip)
-
-    // send new event
-    function sendEvent(event){
-      console.log(`Sending SSE: ${req.ip}\n`, event);
-      res.sendEventStreamData(
-        event.name, JSON.stringify(event.data), event.id
-      )
-    }
-    eventCache.on("newEvent", sendEvent);
-
-    // send heartbeats every 15 sec (client detects dead connx w/in 45 secs)
-    var heartbeat = setInterval(() => {
-      if(!res.finished) {
-        res.write(': heartbeat\n\n')
-      }
-    }, 15000);
-
-    res.on('close', () => {
-      clearInterval(heartbeat);
-      eventCache.removeListener('newEvent', sendEvent);
-      res.end();
-      console.log('SSE connection closed:', req.ip)
-    });
-});
-
-const addEventToSSE = async (req, res, next) => {
-  try {
-    console.log('Adding new event to SSE')
-    await eventCache.newEvent("SC_*", req.body, "SC_EVENT");
-    next();
-  } catch (error) {
-    next(error);
-  }
-}
-
-
-/**
-  * @swagger
-  * /messaging/new-event:
-  *   post:
-  *     summary: Endpoint for adding a new event to messaging sse and save this as an entry to database
-  *     tags:
-  *       - Events
-  *     requestBody:
-  *       description: Event data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             $ref: '#/components/schemas/Event'
-  *           example:
-  *             eventType: NEW
-  *             publicID: TEST4
-  *             OT: '2023-06-09T14:39:21.000Z'
-  *             latitude_value: 21.317
-  *             longitude_value: 118.998
-  *             depth_value: 1.1
-  *             magnitude_value: 6.1
-  *             text: Cagayan Valley, Philippines
-  *             method: LOCSAT
-  *             last_modification: '2023-06-09T14:39:21.000Z'
-  *     responses:
-  *       200:
-  *         description: Event added successfully
-  *       500:
-  *         description: Internal server error
-  */
-router.post(`/${restrictedPath}/new-event`, 
-  addEventToSSE,
-  events.addEvent
-);
-
-
-/**
-  * @swagger
-  * /messaging/new-pick:
-  *   post:
-  *     summary: Add a new pick to messaging sse and save this as an entry to database
-  *     tags:
-  *       - Picks
-  *     requestBody:
-  *       description: Pick data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               networkCode:
-  *                 type: string
-  *                 description: The network code of the device
-  *               stationCode:
-  *                 type: string
-  *                 description: The station code of the device
-  *               timestamp:
-  *                 type: string
-  *                 format: $date-time
-  *                 description: The timestamp when the pick was recorded
-  *           example:
-  *             networkCode: AM
-  *             stationCode: RE722
-  *             timestamp: '2023-06-27T05:58:21.000Z'
-  *     responses:
-  *       200:
-  *         description: Pick added successfully
-  *       500:
-  *         description: Internal server error
-  */
-router.post(`/${restrictedPath}/new-event`, async (req, res) => {
-  try {
-    console.log('Adding new pick to SSE')
-    await eventCache.newEvent("SC_*", req.body, "SC_PICK");
-    res.status(200).json({message: "Pick received"})
-  } catch (error) {
-    res.status(500).json({error: error})
-  }
-});
-
 module.exports = {
-  router, 
-  eventCache, 
-  sseConnectionsEventListener, 
-  sseStreamsEventListener
+  eventCache,
+  sseConnectionsEventListener,
+  sseStreamsEventListener,
 }

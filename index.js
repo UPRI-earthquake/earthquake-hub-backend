@@ -8,6 +8,8 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc')
 const swaggerUi = require('swagger-ui-express')
 
+const MessagingService = require('./services/messaging.service')
+
 console.log('db-host: ' + process.env.MONGO_HOST)
 require('./models/index');
 
@@ -41,7 +43,6 @@ mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
 const eventsRouter = require('./routes/events');
-const messaging = require('./routes/messaging');
 const notifs  = require('./routes/notifications');
 
 const {
@@ -62,16 +63,14 @@ app.use(cookieParser());
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
 })
-app.use('/eventsList', eventsRouter)
-app.use('/messaging', messaging.router)
-messaging.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
-messaging.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
+app.use('/accounts', require('./routes/accounts.route'))
+app.use('/device', require('./routes/devices.route'))
+app.use('/messaging', require('./routes/messaging.route'))
 // TODO: await the redisProxy calls...
 // TODO: quit() the redisProxy calls...
 app.use('/notifications', notifs.router)
 notifs.redisProxy() // forwards events from redis to web-push
-app.use('/accounts', require('./routes/accounts.route'))
-app.use('/device', require('./routes/devices.route'))
+app.use('/eventsList', eventsRouter)
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
@@ -121,6 +120,8 @@ if (process.env.NODE_ENV === 'production'){
         'Production client expected (by CORS) at '
       + `https://${process.env.CLIENT_PROD_HOST}`);
     });
+  MessagingService.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
+  MessagingService.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
 }else{
   // Run http server (for local development)
   http.createServer(app)
@@ -134,4 +135,6 @@ if (process.env.NODE_ENV === 'production'){
       + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       })
     });
+  MessagingService.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
+  MessagingService.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
 }
