@@ -52,6 +52,30 @@ const notifySubscribersEQ = async (message) =>{
   }
 }
 
+const createSubscription = async (subscriptionRequest) =>{
+  if(mongoose.connection.readyState === 1) { // connected to MongoDB
+
+    const subExists = await Subscription.exists(
+      {endpoint: subscriptionRequest.endpoint}
+    )
+
+    if(subExists){
+      console.log('Old subscription found');
+      return 'subscriptionExists';
+    }
+
+    const subscription = new Subscription(subscriptionRequest);
+    await subscription.save();
+    console.log('New subscription created')
+    return 'success'
+
+  }else{
+    console.warn("Can't create new subscription, MongoDB not connected");
+    return 'dbNotAccessible'
+  }
+}
+
 module.exports = {
   notifySubscribersEQ,
+  createSubscription
 }
