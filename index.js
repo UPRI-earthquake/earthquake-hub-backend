@@ -43,7 +43,6 @@ mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
 const eventsRouter = require('./routes/events');
-const notifs  = require('./routes/notifications');
 
 const {
   responseCodes,
@@ -66,10 +65,7 @@ app.get('/', (req, res) => {
 app.use('/accounts', require('./routes/accounts.route'))
 app.use('/device', require('./routes/devices.route'))
 app.use('/messaging', require('./routes/messaging.route'))
-// TODO: await the redisProxy calls...
-// TODO: quit() the redisProxy calls...
-app.use('/notifications', notifs.router)
-notifs.redisProxy() // forwards events from redis to web-push
+app.use('/notifications', require('./routes/notifications.route'))
 app.use('/eventsList', eventsRouter)
 
 // TODO: Test for multiple origin 

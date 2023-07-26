@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const MessagingService = require('../services/messaging.service')
 const EQEventsService = require('../services/EQevents.service')
+const NotificationsService = require('../services/notifications.service')
 const {responseCodes} = require('../routes/responseCodes')
 
 exports.setupSSEConnection = async (req, res, next) => {
@@ -35,6 +36,7 @@ exports.setupSSEConnection = async (req, res, next) => {
 }
 
 exports.newEQEvent = async (req, res, next) => {
+    console.log('Received new EQEvent')
   /* NOTE: "EQEvent" is different from "event" as used in this codebase.
    *       "EQEvent" = an earthquake evenet detected from the data processing software, ie
    *                   SeisComp
@@ -67,20 +69,14 @@ exports.newEQEvent = async (req, res, next) => {
       return;
     }
 
-    // Perform Task A
-    console.log('Adding new event to SSE')
-    let returnStrA = await MessagingService.eventCache.newEvent("SC_*", req.body, "SC_EVENT");
-    switch(returnStrA){
-      case 'success':
-        console.log("New event added to SSE") // proceed to next task
-        break;
-      default:
-        throw Error(`Unhandled return value ${returnStrA} from service.EventCache.newEvent()`)
+    // Perform Task A: Notify subscribed clients
+    let returnStrA = await NotificationsService.notifySubscribersEQ(value)
 
-    }
+    // Perform Task B: Add EQevent to SSE cache
+    let returnStrB = await MessagingService.eventCache.newEvent("SC_*", req.body, "SC_EVENT");
 
-    // Perform Task B
-    let returnStrB = await EQEventsService.addEQEvent(
+    // Perform Task C: Add EQevent to MongoDB
+    let returnStrC = await EQEventsService.addEQEvent(
       value.publicID,
       value.OT,
       value.latitude_value,
@@ -92,21 +88,19 @@ exports.newEQEvent = async (req, res, next) => {
     )
 
     // Respond based on return value
-    switch(returnStrB){
-      case 'success':
-        console.log(`Add event to DB successful`);
-        return res.status(200).json({
-          status: responseCodes.GENERIC_SUCCESS,
-          message: "New event published to SSE and added to DB"
-        });
-        break;
-      default:
-        throw Error(`Unhandled return value ${returnStrA} from service.EventCache.newEvent()`)
-
+    if (returnStrA === 'success' && returnStrB === 'success' && returnStrC === 'success') {
+      res.status(200).json({
+        status: responseCodes.GENERIC_SUCCESS,
+        message: "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+      });
+    }
+    else{
+      throw Error(`Not all tasks returned successfully: \n A:${returnStrA} B:${returnStrB} C:${returnStrC}`)
     }
 
+    return;
   } catch (error) {
-    console.log(`Adding new event unsuccessful: \n ${error}`);
+    console.log(`Routing new EQevent to notifs,SSE,DB unsuccessful: \n ${error}`);
     next(error);
   }
 }

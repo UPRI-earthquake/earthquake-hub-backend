@@ -3,7 +3,7 @@ const Joi = require('joi');
 const EQEvents = require('../models/events.model');
 
 async function getEventsList(startTime, endTime){
-  const response = await events.find({
+  const response = await EQEvents.find({
     OT: { $gte: startTime, $lte: endTime }
   });
 
@@ -40,7 +40,7 @@ function direction(lat, lon, ref_lat, ref_lon){
   else {return lat_dir + lon_dir}
 }
 
-async function addPlaces(eventsList){
+async function addPlacesAttribute(eventsList){
   /* returns eventsList with .place */
   var updatedData = [];
 
@@ -133,6 +133,6 @@ async function addEQEvent(publicID, OT, latitude_value, longitude_value, depth_v
 
 module.exports = {
   getEventsList,
-  addPlaces,
+  addPlacesAttribute,
   addEQEvent,
 }

@@ -32,7 +32,7 @@ class EventCache extends EventEmitter {
 
     // Get data
     if(channel === 'SC_EVENT'){
-      let updatedEvent = await EQEventsService.addPlaces([event]) // parse
+      let updatedEvent = await EQEventsService.addPlacesAttribute([event]) // parse
       extendedEvent.data = updatedEvent[0]
       this.push(extendedEvent) // cache
       console.log(this.cache) // log SC_EVENT cache (not picks)
