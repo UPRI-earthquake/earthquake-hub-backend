@@ -1,6 +1,6 @@
 const express = require('express');
 const Subscription = require('../models/subscription');
-const events = require('../services/events')
+const events = require('../services/EQevents.service')
 const mongoose = require('mongoose');
 const redis = require("redis")
 const webpush = require('web-push')

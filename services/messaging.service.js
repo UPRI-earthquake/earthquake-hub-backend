@@ -1,8 +1,11 @@
 const EventEmitter = require('events')
 const EventSource = require('eventsource');
+
 const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
-const EQEventsService = require('../services/events')
+
+const EQEventsService = require('./EQevents.service')
+
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
 
@@ -43,7 +46,7 @@ class EventCache extends EventEmitter {
     return 'success'
   }
 }
-const eventCache = new EventCache(30); // record last 30 events\
+const eventCache = new EventCache(30); // will contain last 30 EQevents added via new-event
 
 
 /* --- External Event Sources --- */
