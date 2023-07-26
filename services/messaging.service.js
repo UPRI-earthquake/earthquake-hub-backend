@@ -2,7 +2,7 @@ const EventEmitter = require('events')
 const EventSource = require('eventsource');
 const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
-const events = require('../services/events')
+const EQEventsService = require('../services/events')
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
 
@@ -29,7 +29,7 @@ class EventCache extends EventEmitter {
 
     // Get data
     if(channel === 'SC_EVENT'){
-      let updatedEvent = await events.addPlaces([event]) // parse
+      let updatedEvent = await EQEventsService.addPlaces([event]) // parse
       extendedEvent.data = updatedEvent[0]
       this.push(extendedEvent) // cache
       console.log(this.cache) // log SC_EVENT cache (not picks)
@@ -39,6 +39,8 @@ class EventCache extends EventEmitter {
     }
 
     this.emit("newEvent", extendedEvent) // emit
+
+    return 'success'
   }
 }
 const eventCache = new EventCache(30); // record last 30 events\

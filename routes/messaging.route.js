@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const MessagingMiddleware = require('../middlewares/messaging.middleware')
 const MessagingController = require('../controllers/messaging.controller')
 
@@ -44,7 +45,7 @@ router.get('/',
   *         description: Internal server error
   */
 router.post(`${restrictedPath}/new-event`,
-  MessagingController.newEvent
+  MessagingController.newEQEvent
 );
 
 

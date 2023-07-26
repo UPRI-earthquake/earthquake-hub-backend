@@ -1,6 +1,6 @@
 const axios = require('axios');
 const Joi = require('joi');
-const events = require('../models/events.model');
+const EQEvents = require('../models/events.model');
 
 async function getEventsList(startTime, endTime){
   const response = await events.find({
@@ -100,70 +100,39 @@ async function addPlaces(eventsList){
   return updatedData;
 }
 
+async function addEQEvent(publicID, OT, latitude_value, longitude_value, depth_value, magnitude_value, eventType, text){
+  if (eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
+    const eventToUpdate = await EQEvents.findOne({ publicID: publicID });
 
-const addEventSchema = Joi.object().keys({
-  publicID: Joi.string().required(),
-  OT: Joi.date().required(),
-  latitude_value: Joi.number().min(-90).max(90).required(),
-  longitude_value: Joi.number().min(-180).max(180).required(),
-  depth_value: Joi.number().required(),
-  magnitude_value: Joi.number().required(),
-  eventType: Joi.string().required(),
-  method: Joi.string().required(),
-  text: Joi.string().required(),
-  last_modification: Joi.date().required(),
-});
+    eventToUpdate.OT = OT,
+    eventToUpdate.latitude_value = latitude_value,
+    eventToUpdate.longitude_value = longitude_value,
+    eventToUpdate.depth_value =  depth_value,
+    eventToUpdate.magnitude_value = magnitude_value,
+    eventToUpdate.type = eventType,
+    eventToUpdate.text = text
 
-const addEvent = async (req, res, next) => {
-  console.log("Event Posted");
-
-  try {
-    const result = addEventSchema.validate(req.body)
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: 400, message: result.error.details[0].message});
-      return;
-    }
-
-    if (result.value.eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
-      const eventToUpdate = await events.findOne({ publicID: result.value.publicID });
-
-      eventToUpdate.OT = result.value.OT,
-      eventToUpdate.latitude_value = result.value.latitude_value,
-      eventToUpdate.longitude_value = result.value.longitude_value,
-      eventToUpdate.depth_value =  result.value.depth_value,
-      eventToUpdate.magnitude_value = result.value.magnitude_value,
-      eventToUpdate.type = result.value.eventType,
-      eventToUpdate.text = result.value.text
-
-      eventToUpdate.save();
-    }
-    else{ // if eventType === 'NEW', add new entry
-      const newEvent = new events({
-        publicID: result.value.publicID,
-        OT: result.value.OT,
-        latitude_value: result.value.latitude_value,
-        longitude_value: result.value.longitude_value,
-        depth_value: result.value.depth_value,
-        magnitude_value: result.value.magnitude_value,
-        type: result.value.eventType,
-        text: result.value.text
-      });
-      await newEvent.save(); // save new entry to event collections
-    }
-
-    
-
-    console.log(`Add event successful`);
-    return res.status(200).json({ status: 200, message: "New Event Added" });
-  } catch (error) {
-    console.log(`Add event unsuccessful: \n ${error}`);
-    res.status(500).json({ message: `Error adding event: ${error}` })
+    eventToUpdate.save();
   }
+  else{ // if eventType === 'NEW', add new entry
+    const newEQEvent = new EQEvents({
+      publicID: publicID,
+      OT: OT,
+      latitude_value: latitude_value,
+      longitude_value: longitude_value,
+      depth_value: depth_value,
+      magnitude_value: magnitude_value,
+      type: eventType,
+      text: text
+    });
+    await newEQEvent.save(); // save new entry to event collections
+  }
+
+  return 'success'
 }
 
 module.exports = {
   getEventsList,
   addPlaces,
-  addEvent,
+  addEQEvent,
 }

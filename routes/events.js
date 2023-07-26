@@ -50,7 +50,7 @@
 
 const express = require('express');
 const router = express.Router();
-const {getEventsList, addPlaces, addEvent} = require('../services/events')
+const {getEventsList, addPlaces, addEQEvent} = require('../services/events')
 
 // query database
 async function eventController(req, res, next) {
