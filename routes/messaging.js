@@ -7,6 +7,7 @@ const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
+const restrictedPath = 'restricted'; // NGINX will deny public access to this path
 
 // define EQ event multiplexer/parse-cache-middleware
 class EventCache extends EventEmitter {
@@ -285,7 +286,7 @@ const addEventToSSE = async (req, res, next) => {
   *       500:
   *         description: Internal server error
   */
-router.post('/new-event', 
+router.post(`/${restrictedPath}/new-event`, 
   addEventToSSE,
   events.addEvent
 );
@@ -326,7 +327,7 @@ router.post('/new-event',
   *       500:
   *         description: Internal server error
   */
-router.post('/new-pick', async (req, res) => {
+router.post(`/${restrictedPath}/new-event`, async (req, res) => {
   try {
     console.log('Adding new pick to SSE')
     await eventCache.newEvent("SC_*", req.body, "SC_PICK");
