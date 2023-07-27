@@ -64,8 +64,7 @@ const AccountsController = require('../controllers/accounts.controller')
   * @swagger
   * /accounts/register:
   *   post:
-  *     tags:
-  *       - Accounts
+  *     tags: [Accounts]
   *     summary: Create a new account given user information
   *     requestBody:
   *       description: Account details for registration
@@ -138,9 +137,8 @@ router.route('/register').post(
   * @swagger
   * /accounts/authenticate:
   *   post:
-  *     summary: Endpoint for authenticating a user based on his account role. This endpoint returns a json-web-token
-  *     tags:
-  *       - Auth Server
+  *     summary: Return a JWT in exchange for username, password, & role
+  *     tags: [Accounts]
   *     security:
   *       - cookieAuth: []
   *     requestBody:
@@ -153,22 +151,22 @@ router.route('/register').post(
   *             properties:
   *               username:
   *                 type: string
-  *                 description: Username used in registration
+  *                 description: Registered username
   *               password:
   *                 type: string
   *                 description: Account's password
   *               role:
-  *                 type: string
-  *                 description: To be provided by client app (in reference to where it is authenticating from)
-  *                 enum:
-  *                   - sensor  # 'sensor' is for when authenticating from rshake device
-  *                   - citizen # 'citizen' is for when authenticating from webapp frontend
-  *                   - admin   # 'admin' is for when authenticating from webapp admin-frontend
-  *                   - brgy    # 'brgy' is for when requesting authentication from ringserver
-  *             example:
-  *               username: citizen
-  *               password: testpassword
-  *               role: citizen
+  *                 type: enum[string]
+  *                 description: >
+  *                   Account role, depends on where to auth from:
+  *                    * `sensor`  - when authenticating from rshake device
+  *                    * `citizen` - when authenticating from webapp frontend
+  *                    * `admin`   - when authenticating from webapp admin-frontend
+  *                    * `brgy`    - when authenticating from ringserver
+  *           example:
+  *             username: citizen
+  *             password: testpassword
+  *             role: citizen
   *     responses:
   *       200:
   *         description: Authentication successful
