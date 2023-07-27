@@ -192,13 +192,19 @@ router.route('/register').post(
   *                   example: "Authentication successful"
   *                 accessToken:
   *                   type: string
-  *                   example: "your-access-token"
+  *                   example: "sensor-or-brgy-access-token"
   *                   description: >
   *                     JWT for auth user, this is either in payload/cookie depending on role
   *                      * `sensor`  - returned in JSON response
   *                      * `citizen` - returned in cookie
   *                      * `admin`   - returned in cookie
   *                      * `brgy`    - returned in JSON response
+  *         headers: 
+  *           Set-Cookie:  # If citizen or admin role
+  *             description: If role is citizen or admin, JWT is returned as cookie
+  *             schema: 
+  *               type: string
+  *               example: accessToken=abcde12345; Path=/; HttpOnly
   *       '400':
   *         description: Authentication failed due to various reasons
   *         content:
@@ -253,6 +259,29 @@ router.route('/register').post(
 router.route('/authenticate').post(
   AccountsController.authenticateAccount
 );
+
+
+/**
+  * @swagger
+  * /accounts/signout:
+  *   post:
+  *     summary: Endpoint for signing out a user by clearing the access token cookie
+  *     tags:
+  *       - Accounts
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Sign out successful
+  *       500:
+  *         description: Internal server error
+  */
+router.route('/signout').post(
+  Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
+  Middleware.verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
+  AccountsController.removeCookies            // Get profile information and respond accordingly
+);
+
 
 /**
   * @swagger
@@ -405,26 +434,5 @@ router.route('/profile').get(
   AccountsController.getAccountProfile       // Get profile information and respond accordingly
 );
 
-
-/**
-  * @swagger
-  * /accounts/signout:
-  *   post:
-  *     summary: Endpoint for signing out a user by clearing the access token cookie
-  *     tags:
-  *       - Accounts
-  *     security:
-  *       - cookieAuth: []
-  *     responses:
-  *       200:
-  *         description: Sign out successful
-  *       500:
-  *         description: Internal server error
-  */
-router.route('/signout').post(
-  Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
-  Middleware.verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.removeCookies            // Get profile information and respond accordingly
-);
 
 module.exports = router

@@ -25,10 +25,15 @@ const options = {
     },
     components: {
       securitySchemes: {
-        bearerAuth: {
+        bearerAuth: { //arbitrary name for the security scheme; will be used in the "security" key later
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
+        },
+        cookieAuth: { 
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'accessToken',  // cookie name
         }
       }
     },
