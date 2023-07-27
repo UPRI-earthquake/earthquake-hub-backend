@@ -100,7 +100,7 @@ const AccountsController = require('../controllers/accounts.controller')
   *               type: object
   *               properties:
   *                 status:
-  *                   type: int
+  *                   type: number
   *                   example: responseCodes.REGISTRATION_SUCCESS
   *                 message:
   *                   type: string
@@ -113,7 +113,7 @@ const AccountsController = require('../controllers/accounts.controller')
   *               type: object
   *               properties:
   *                 status:
-  *                   type: int
+  *                   type: number
   *                 message:
   *                   type: string
   *             examples:
@@ -125,8 +125,19 @@ const AccountsController = require('../controllers/accounts.controller')
   *                 value:
   *                   status: responseCodes.REGISTRATION_EMAIL_IN_USE
   *                   message: "Email address already in use"
-  *       500:
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/register').post(
   AccountsController.registerAccount
@@ -139,8 +150,6 @@ router.route('/register').post(
   *   post:
   *     summary: Return a JWT in exchange for username, password, & role
   *     tags: [Accounts]
-  *     security:
-  *       - cookieAuth: []
   *     requestBody:
   *       description: User credentials for authentication
   *       required: true
@@ -168,23 +177,186 @@ router.route('/register').post(
   *             password: testpassword
   *             role: citizen
   *     responses:
-  *       200:
-  *         description: Authentication successful
-  *       400:
-  *         description: Bad request - Invalid input or user does not exist
-  *       401:
-  *         description: Unauthorized - Invalid password
-  *       500:
+  *       '200':
+  *         description: Authentication successful. ! Varies depending on account role !
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD
+  *                 message:
+  *                   type: string
+  *                   example: "Authentication successful"
+  *                 accessToken:
+  *                   type: string
+  *                   example: "your-access-token"
+  *                   description: >
+  *                     JWT for auth user, this is either in payload/cookie depending on role
+  *                      * `sensor`  - returned in JSON response
+  *                      * `citizen` - returned in cookie
+  *                      * `admin`   - returned in cookie
+  *                      * `brgy`    - returned in JSON response
+  *       '400':
+  *         description: Authentication failed due to various reasons
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               accountNotExists:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   message: "User doesn't exists!"
+  *               invalidRole:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_INVALID_ROLE
+  *                   message: "Invalid role"
+  *               noLinkedDevice:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
+  *                   message: "User has no linked device"
+  *       '401':
+  *         description: Authentication failed due to wrong password
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_WRONG_PASSWORD
+  *                 message:
+  *                   type: string
+  *                   example: "Wrong password"
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/authenticate').post(
   AccountsController.authenticateAccount
 );
 
-// --- VERIFICATION ---
-// Input: Token
-// Output: Whether token is valid or not
-
+/**
+  * @swagger
+  * /accounts/verify-sensor-token:
+  *   post:
+  *     summary: Tell a brgy whether a sensor's JWT came from this server
+  *     tags: [Accounts]
+  *     security:
+  *       - bearerAuth: []  # Indicates that bearer token in header is required
+  *     requestBody:
+  *       description: Sensor's token that the client (must be a brgy) asks to be verified
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               token:
+  *                 type: string
+  *                 description: JWT string
+  *                 example: "valid.jsonwebtoken.string"
+  *     responses:
+  *       '200':
+  *         description: Sensor verification successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.INBEHALF_VERIFICATION_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Sensor is a valid streamer"
+  *                 sensorInfo:
+  *                   type: object
+  *                   properties:
+  *                     username:
+  *                       type: string
+  *                       example: "username_this_sensor_is_linked_to"
+  *                     role:
+  *                       type: string
+  *                       example: "sensor"
+  *                     streamIds:
+  *                       type: array
+  *                       items:
+  *                         type: string
+  *                       description: Follows the pattern of NET_STAT_.*&#8205;/MSEED
+  *                       example: ["NET_STAT1_.* /MSEED", "NET_STAT2_.* /MSEED"]
+  *                     tokenExp:
+  *                       type: number
+  *                       example: 1678912345
+  *       '400':
+  *         description: Sensor verification failed due to invalid request or internal error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.INBEHALF_VERIFICATION_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Internal error"
+  *       '403':
+  *         description: Sensor verification failed due to token-related issues
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               invalidToken:
+  *                 value:
+  *                   status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN
+  *                   message: "Sender token invalid"
+  *               expiredToken:
+  *                 value:
+  *                   status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN
+  *                   message: "Sender token expired"
+  *               invalidRole:
+  *                 value:
+  *                   status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE
+  *                   message: "Role in token invalid"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
 router.route('/verify-sensor-token').post(
   Middleware.getTokenFromBearer,          // Brgy token should be assigned to Bearer in request header
   Middleware.verifyTokenWithRole('brgy'), // This endpoint should only be accessed by Brgy Accounts

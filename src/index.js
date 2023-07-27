@@ -23,6 +23,15 @@ const options = {
       version: '1.0.0',
       description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
     },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        }
+      }
+    },
   },
   apis: ['./src/routes/*.js'], // Path to the API routes in your project
 };
