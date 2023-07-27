@@ -24,7 +24,7 @@ const options = {
       description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
     },
   },
-  apis: ['./routes/*.js'], // Path to the API routes in your project
+  apis: ['./src/routes/*.js'], // Path to the API routes in your project
 };
 
 const specs = swaggerJsDoc(options);
