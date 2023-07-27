@@ -38,15 +38,6 @@ services:
         ipv4_address: 172.22.0.4
     command: --quiet # reduce logs
 
-  redis:
-    container_name: redis
-    image: "redis:6.2.5"
-    expose:
-      - "6379"
-    networks:
-      app-network:
-        ipv4_address: 172.22.0.5
-
 volumes:
   earthquake-hub-mongodb-data:
     external: true # same volume used by other containers

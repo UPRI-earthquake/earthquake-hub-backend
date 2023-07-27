@@ -24,7 +24,7 @@
     
     > ℹ️ Useful docker recipes
     1. Start the (pre-built) containers in background: `docker compose start`
-    2. See the logs of the services: `docker compose logs -f [backend, redis, etc]`
+    2. See the logs of the services: `docker compose logs -f [backend, mongodb etc]`
     3. Stop the containers `docker compose stop`
     4. Add or remove npm packages (⚠️ Don't use npm command locally to avoid package-lock.json issues, use it inside docker like in the following command)
         ```bash
