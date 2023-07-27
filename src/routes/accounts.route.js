@@ -265,16 +265,41 @@ router.route('/authenticate').post(
   * @swagger
   * /accounts/signout:
   *   post:
-  *     summary: Endpoint for signing out a user by clearing the access token cookie
-  *     tags:
-  *       - Accounts
+  *     summary: Clear citizen's accessToken in cookie
+  *     tags: [Accounts]
   *     security:
   *       - cookieAuth: []
   *     responses:
-  *       200:
+  *       '200':
   *         description: Sign out successful
-  *       500:
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.SIGNOUT_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Sign out successful"
+  *         headers: 
+  *           Set-Cookie:
+  *             description: This endpoints clears the accessToken cookie
+  *
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/signout').post(
   Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
@@ -397,12 +422,13 @@ router.route('/verify-sensor-token').post(
   * @swagger
   * /accounts/profile:
   *   get:
-  *     summary: Endpoint for getting the profile information of a citizen user
-  *     tags:
-  *       - Accounts
+  *     summary: Return user information if accessToken is in cookie
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
   *     responses:
   *       200:
-  *         description: Successful response with user profile information sent as payload
+  *         description: User profile information sent as payload
   *         content:
   *           application/json:
   *             schema:
@@ -410,23 +436,58 @@ router.route('/verify-sensor-token').post(
   *               properties:
   *                 status:
   *                   type: number
-  *                   description: HTTP status code
+  *                   example: responseCodes.AUTHENTICATION_SUCCESS
   *                 message:
   *                   type: string
-  *                   description: A descriptive message
+  *                   example: "Token is valid"
   *                 payload:
   *                   type: object
   *                   properties:
   *                     username:
   *                       type: string
-  *                       description: Username of the user
+  *                       example: "john_doe"
   *                     email:
   *                       type: string
-  *                       description: Email of the user
-  *       400:
-  *         description: User not found
-  *       500:
-  *         description: Error checking token in cookie
+  *                       example: "john.doe@example.com"
+  *       '400':
+  *         description: Account doesn't exist
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                 message:
+  *                   type: string
+  *                   example: "User not found"
+  *       '403':
+  *         description: When no token is present in sent cookie
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 403
+  *                 message:
+  *                   type: string
+  *                   example: "Token in cookie missing"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/profile').get(
   Middleware.getTokenFromCookie,             // Citizen token is stored in cookie
