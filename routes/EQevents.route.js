@@ -50,24 +50,7 @@
 
 const express = require('express');
 const router = express.Router();
-const {getEventsList, addPlacesAttribute, addEQEvent} = require('../services/EQevents.service')
-
-// query database
-async function eventController(req, res, next) {
-  try {
-    // get data from db
-    var data = await getEventsList(req.query.startTime, 
-                                            req.query.endTime);
-    // append regional data 
-    var updatedData = await addPlacesAttribute(data)
-
-    res.json(updatedData)
-
-  }catch(err){
-    console.trace(`Getting EQevents unsuccessful \n ${err}`);
-    next(err)
-  }
-}
+const EQEventsController = require('../controllers/EQevents.controller');
 
 /**
   * @swagger
@@ -97,6 +80,8 @@ async function eventController(req, res, next) {
   *       200:
   *         description: Successful response with events
   */
-router.get('/', eventController);
+router.get('/',
+  EQEventsController.getEQEvents
+);
 
 module.exports = router;
