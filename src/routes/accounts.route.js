@@ -64,9 +64,9 @@ const AccountsController = require('../controllers/accounts.controller')
   * @swagger
   * /accounts/register:
   *   post:
-  *     summary: Endpoint for registering a new user to the earthquake-hub network
   *     tags:
   *       - Accounts
+  *     summary: Create a new account given user information
   *     requestBody:
   *       description: Account details for registration
   *       required: true
@@ -77,10 +77,10 @@ const AccountsController = require('../controllers/accounts.controller')
   *             properties:
   *               email:
   *                 type: string
-  *                 description: Email address of the user who wants to register to the network
+  *                 description: Valid email address of the user who wants to register to the network
   *               username:
   *                 type: string
-  *                 description: Account's username to be used
+  *                 description: Unique username to be used
   *               password:
   *                 type: string
   *                 description: Account's password
@@ -94,7 +94,38 @@ const AccountsController = require('../controllers/accounts.controller')
   *             confirmPassword: testpassword
   *     responses:
   *       200:
-  *         description: Account registered successfully
+  *         description: Registration successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: int
+  *                   example: responseCodes.REGISTRATION_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Successfully Created Account"
+  *       400:
+  *         description: Registration failed due to existing username or email
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: int
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               usernameExists:
+  *                 value:
+  *                   status: responseCodes.REGISTRATION_USERNAME_IN_USE
+  *                   message: "Username already in use"
+  *               emailExists:
+  *                 value:
+  *                   status: responseCodes.REGISTRATION_EMAIL_IN_USE
+  *                   message: "Email address already in use"
   *       500:
   *         description: Internal server error
   */
