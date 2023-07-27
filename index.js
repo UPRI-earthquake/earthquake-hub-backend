@@ -42,8 +42,6 @@ const mongodb = require('./services/mongodb')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
-const eventsRouter = require('./routes/events');
-
 const {
   responseCodes,
   responseMessages
@@ -66,7 +64,7 @@ app.use('/accounts', require('./routes/accounts.route'))
 app.use('/device', require('./routes/devices.route'))
 app.use('/messaging', require('./routes/messaging.route'))
 app.use('/notifications', require('./routes/notifications.route'))
-app.use('/eventsList', eventsRouter)
+app.use('/eq-events', require('./routes/EQevents.route'))
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
