@@ -10,10 +10,8 @@ const swaggerUi = require('swagger-ui-express')
 
 const MessagingService = require('./services/messaging.service')
 
-console.log('db-host: ' + process.env.MONGO_HOST)
+console.log('mongodb-host: ' + process.env.MONGO_HOST)
 require('./models/index');
-
-console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();
 

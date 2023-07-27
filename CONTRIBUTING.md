@@ -14,9 +14,6 @@
 3. Create a file named `.env` and set its values based on `.env.example`. You should be able to use the default values in the example file.
 4. Build and start the docker containers
     
-    > ⚠️ Because the compose file runs a `mysql` instance that binds to port `3306`, make sure to disable any running instance of `mysql` on the host machine. In Ubuntu, the command is `systemctl stop mysql`.
-    > 
-    
     ```bash
     docker compose up --build
     ```

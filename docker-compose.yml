@@ -47,22 +47,6 @@ services:
       app-network:
         ipv4_address: 172.22.0.5
 
-  mysql:
-    container_name: mysql
-    image: "mysql:8.0.32"
-    command: --default-authentication-plugin=mysql_native_password
-    environment:
-      MYSQL_RANDOM_ROOT_PASSWORD: yes
-      MYSQL_USER: ${MYSQL_USER} # will automatically be replaced by values in .env in the same dir
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_NAME}
-    volumes:
-      # init db contents by binding sample seiscomp data from host into docker-entrypoint-initdb.d
-      - ./dev/sample_data/seiscompDB.sql:/docker-entrypoint-initdb.d/seiscompDB.sql
-    ports:
-      - "3306:3306" # like in production, mysql should be connectable through "host.docker.internal:host-gateway"
-                    # this mirrors a mysql service running locally on host machine
-
 volumes:
   earthquake-hub-mongodb-data:
     external: true # same volume used by other containers
