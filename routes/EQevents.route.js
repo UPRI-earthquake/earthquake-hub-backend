@@ -50,7 +50,7 @@
 
 const express = require('express');
 const router = express.Router();
-const {getEventsList, addPlaces, addEQEvent} = require('../services/EQevents.service')
+const {getEventsList, addPlacesAttribute, addEQEvent} = require('../services/EQevents.service')
 
 // query database
 async function eventController(req, res, next) {
@@ -59,7 +59,7 @@ async function eventController(req, res, next) {
     var data = await getEventsList(req.query.startTime, 
                                             req.query.endTime);
     // append regional data 
-    var updatedData = await addPlaces(data)
+    var updatedData = await addPlacesAttribute(data)
 
     res.json(updatedData)
 
