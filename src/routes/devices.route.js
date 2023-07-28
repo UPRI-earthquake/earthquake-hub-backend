@@ -223,9 +223,8 @@ router.route('/my-devices').get(
   * @swagger
   * /device/status:
   *   get:
-  *     summary: Endpoint for getting the status of a specified device
-  *     tags:
-  *       - Devices
+  *     summary: Return the status of a specified device
+  *     tags: [Device]
   *     parameters:
   *       - in: query
   *         name: network
@@ -251,27 +250,48 @@ router.route('/my-devices').get(
   *               properties:
   *                 status:
   *                   type: number
-  *                   description: The HTTP status code
+  *                   description: The custom status code for the response as defined in responseCodes.js
+  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
-  *                   description: A descriptive message
+  *                   description: The message associated with the response.
+  *                   example: 'All device locations found'
   *                 payload:
   *                   type: object
   *                   properties:
   *                     network:
   *                       type: string
-  *                       description: The network code of the device
+  *                       description: The network of the device.
+  *                       example: 'AM'
   *                     station:
   *                       type: string
-  *                       description: The station code of the device
+  *                       description: Station code of the device  
+  *                       example: 'RE722'
   *                     status:
   *                       type: string
-  *                       description: The status of the device (Streaming, Not Streaming, Not Yet Linked)
+  *                       description: >
+  *                         Status of device's data transmission
+  *                          * `Streaming`      - ringserver is receiving data from device
+  *                          * `Not Streaming`  - ringserver is NOT receiving data from device
+  *                          * `Not Yet Linked` - device is added to account but physical sensor is not yet linked to the device record
+  *                       example: 'Streaming'
   *                     statusSince:
   *                       type: string
   *                       description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
-  *       500:
-  *         description: Station not found
+  *                       example: "Fri, 14 Jul 2023 12:40:37 GMT"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/status').get(
   DeviceController.getDeviceStatus
