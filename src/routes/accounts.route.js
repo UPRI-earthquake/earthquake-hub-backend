@@ -440,7 +440,7 @@ router.route('/verify-sensor-token').post(
   *       - cookieAuth: []
   *     responses:
   *       200:
-  *         description: User profile information sent as payload
+  *         description: Successfully added device to user account
   *         content:
   *           application/json:
   *             schema:
@@ -448,21 +448,12 @@ router.route('/verify-sensor-token').post(
   *               properties:
   *                 status:
   *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_SUCCESS
+  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
-  *                   example: "Token is valid"
-  *                 payload:
-  *                   type: object
-  *                   properties:
-  *                     username:
-  *                       type: string
-  *                       example: "john_doe"
-  *                     email:
-  *                       type: string
-  *                       example: "john.doe@example.com"
+  *                   example: "Successfully added device"
   *       '400':
-  *         description: Account doesn't exist
+  *         description: Device NETWORK and STATION codes are already used
   *         content:
   *           application/json:
   *             schema:
@@ -470,10 +461,10 @@ router.route('/verify-sensor-token').post(
   *               properties:
   *                 status:
   *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   example: responseCodes.GENERIC_ERROR
   *                 message:
   *                   type: string
-  *                   example: "User not found"
+  *                   example: "Device details already used"
   *       '403':
   *         description: When no token is present in sent cookie
   *         content:

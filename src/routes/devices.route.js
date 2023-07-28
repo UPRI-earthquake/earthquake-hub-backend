@@ -302,9 +302,8 @@ router.route('/status').get(
   * @swagger
   * /device/add:
   *   post:
-  *     summary: Endpoint for adding a device to the user's profile
-  *     tags:
-  *       - Devices
+  *     summary: Add a device to the user's account
+  *     tags: [Device]
   *     security:
   *       - cookieAuth: []
   *     requestBody:
