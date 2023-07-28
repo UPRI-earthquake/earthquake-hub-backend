@@ -409,7 +409,7 @@ router.route('/add').post( // Citizen users should have verified token to add de
   * @swagger
   * /device/link:
   *   post:
-  *     summary: Bind MAC address and streamId of a sensor to the user's device record
+  *     summary: Bind sensor's MAC address and streamId to the user's device record
   *     tags: [Device]
   *     security:
   *       - bearerAuth: []  # Indicates that bearer token in header is required
@@ -440,15 +440,45 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                 status:
   *                   type: number
   *                   description: The status code for the response.
-  *                   example: 200
+  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
   *                   example: 'Device-Account Linking Successful'
   *                 payload:
   *                   type: object
-  *                   description: Additional data returned as payload (if any).
-  *                   # Define the properties of the payload object here if known.
+  *                   description: The payload containing device information.
+  *                   properties:
+  *                     deviceInfo:
+  *                       type: object
+  *                       properties:
+  *                         network:
+  *                           type: string
+  *                           description: The network of the device.
+  *                           example: 'AM'
+  *                         station:
+  *                           type: string
+  *                           description: The code of the device station.
+  *                           example: 'RE722'
+  *                         longitude:
+  *                           type: number
+  *                           format: float
+  *                           description: The longitude of the device location.
+  *                           example: -122.4194
+  *                         latitude:
+  *                           type: number
+  *                           format: float
+  *                           description: The latitude of the device location.
+  *                           example: 37.7749
+  *                         elevation:
+  *                           type: number
+  *                           format: float
+  *                           description: The elevation of the device location in meters.
+  *                           example: 100.5
+  *                         streamId:
+  *                           type: string
+  *                           description: The stream ID of the device.
+  *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
   *       '400':
   *         description: Bad request
   *         content:
@@ -459,15 +489,26 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                 status:
   *                   type: number
   *                   description: The status code for the response.
-  *                   example: 400
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
-  *                   examples:
-  *                     alreadyLinked: "Device is already linked to an existing account"
-  *                     usernameNotFound: "User not found"
-  *                     deviceNotFound: "Device doesn't exist in the database!"
-  *                     deviceNotOwned: "Device is not yet added to user's device list"
+  *             examples:  # Provide multiple examples for different error cases
+  *               alreadyLinked:
+  *                 value: 
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device is already linked to an existing account"
+  *               usernameNotFound:
+  *                 value: 
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "User not found"
+  *               deviceNotFound:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device doesn't exist in the database!"
+  *               deviceNotOwned:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device is not yet added to user's device list"
   *       '500':
   *         description: Internal server error
   *         content:
