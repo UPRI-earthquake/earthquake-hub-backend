@@ -67,7 +67,7 @@ const router = express.Router();
   *               properties:
   *                 status:
   *                   type: number
-  *                   description: The custome status code for the response as defined in responseCodes.js
+  *                   description: The custom status code for the response as defined in responseCodes.js
   *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
@@ -137,16 +137,15 @@ router.route('/all').get(
 
 /**
   * @swagger
-  * /device/mydevices:
+  * /device/my-devices:
   *   get:
-  *     summary: Endpoint for getting list of devices associated with the authenticated user (citizen)
-  *     tags:
-  *       - Devices
+  *     summary: Return list of devices belonging to the authenticated (citizen) user
+  *     tags: [Device]
   *     security:
   *       - cookieAuth: []
   *     responses:
-  *       200:
-  *         description: Successful response with a list of devices as objects in array
+  *       '200':
+  *         description: Success response with device locations
   *         content:
   *           application/json:
   *             schema:
@@ -154,30 +153,64 @@ router.route('/all').get(
   *               properties:
   *                 status:
   *                   type: number
-  *                   description: Status code indicating success
+  *                   description: The custom status code for the response as defined in responseCodes.js
+  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
-  *                   description: A descriptive message indicating success
+  *                   description: The message associated with the response.
+  *                   example: 'All device locations found'
   *                 payload:
   *                   type: array
-  *                   description: Array of devices associated with the authenticated user
+  *                   description: An array of device objects
   *                   items:
   *                     type: object
   *                     properties:
   *                       network:
   *                         type: string
-  *                         description: Network code of the device
+  *                         description: The network of the device.
+  *                         example: 'AM'
   *                       station:
   *                         type: string
   *                         description: Station code of the device  
+  *                         example: 'RE722'
   *                       status:
   *                         type: string
-  *                         description: Status of the device (Streaming, Not Streaming, Not Yet Linked)
+  *                         description: >
+  *                           Status of device's data transmission
+  *                            * `Streaming`      - ringserver is receiving data from device
+  *                            * `Not Streaming`  - ringserver is NOT receiving data from device
+  *                            * `Not Yet Linked` - device is added to account but physical sensor is not yet linked to the device record
+  *                         example: 'Streaming'
   *                       statusSince:
   *                         type: string
   *                         description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
-  *       500:
+  *                         example: "Fri, 14 Jul 2023 12:40:37 GMT"
+  *       '403':
+  *         description: When no token is present in sent cookie
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 403
+  *                 message:
+  *                   type: string
+  *                   example: "Token in cookie missing"
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/my-devices').get( 
   getTokenFromCookie,
