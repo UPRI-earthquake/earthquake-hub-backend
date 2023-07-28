@@ -286,7 +286,19 @@ router.route('/authenticate').post(
   *         headers: 
   *           Set-Cookie:
   *             description: This endpoints clears the accessToken cookie
-  *
+  *       '403':
+  *         description: When no token is present in sent cookie
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 403
+  *                 message:
+  *                   type: string
+  *                   example: "Token in cookie missing"
   *       '500':
   *         description: Internal server error
   *         content:
