@@ -51,6 +51,85 @@ const {
 
 const router = express.Router(); 
 
+/**
+  * @swagger
+  * /device/all:
+  *   get:
+  *     summary: Return all added (not necessarily linked) devices with their location
+  *     tags: [Device]
+  *     responses:
+  *       '200':
+  *         description: Success response with device locations
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The custome status code for the response as defined in responseCodes.js
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   example: 'All device locations found'
+  *                 payload:
+  *                   type: array
+  *                   description: An array of device objects containing device locations.
+  *                   items:
+  *                     type: object
+  *                     properties:
+  *                       network:
+  *                         type: string
+  *                         description: The network of the device.
+  *                         example: 'AM'
+  *                       code:
+  *                         type: string
+  *                         description: The code of the device station.
+  *                         example: 'RE722'
+  *                       latitude:
+  *                         type: number
+  *                         format: float
+  *                         description: The latitude of the device location.
+  *                         example: 37.7749
+  *                       longitude:
+  *                         type: number
+  *                         format: float
+  *                         description: The longitude of the device location.
+  *                         example: -122.4194
+  *                       description:
+  *                         type: string
+  *                         description: The description of the device.
+  *                         example: "username's device"
+  *       '400':
+  *         description: Error response when no devices are found in the database.
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The custome status code for the response as defined in responseCodes.js
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   example: 'No Devices found in DB!'
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
 router.route('/all').get(
   DeviceController.getAllDeviceLocations
 );
