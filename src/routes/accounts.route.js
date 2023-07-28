@@ -367,8 +367,8 @@ router.route('/signout').post(
   *                       type: array
   *                       items:
   *                         type: string
-  *                       description: Follows the pattern of NET_STAT_.*&#8205;/MSEED
-  *                       example: ["NET_STAT1_.* /MSEED", "NET_STAT2_.* /MSEED"]
+  *                         pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *                         description: Stream ID of the device (format XX_XXXXX_.*&#8205;/MSEED)
   *                     tokenExp:
   *                       type: number
   *                       example: 1678912345
