@@ -16,6 +16,7 @@ const restrictedPath = '/restricted'; // NGINX will deny public access to this p
   *       - This endpoint streams events to the client using Server-Sent Events (SSE).
   *       - The endpoint uses the `text/event-stream` content type.
   *       - Events are sent as STRINGS in the format: `event: <event_name>\ndata: <event_obj>\\id: <timestamp>\n\n`.
+  *       - `event` can be either SC_PICK or SC_EVENT
   *     responses:
   *       200:
   *         description: OK
@@ -23,16 +24,24 @@ const restrictedPath = '/restricted'; // NGINX will deny public access to this p
   *           text/event-stream:
   *             schema:
   *               type: string
-  *               description: The SSE data stream.
+  *               description: The SSE data stream. Note that 'place' attribute can be Unavailable if geoserve api isn't online.
   *             examples:
   *               # These are sent as streams!
   *               earthquakeEvent:
   *                 value: |
   *                   "event": "SC_EVENT"
   *                   "data": {
-  *                     "networkCode": "AM",
-  *                     "stationCode": "RE722",
-  *                     "timestamp": "2023-06-27T05:58:21.000Z"
+  *                     "eventType": "NEW",
+  *                     "publicID": "TEST4",
+  *                     "OT": "2023-06-09T14:39:21.000Z",
+  *                     "latitude_value": 21.317,
+  *                     "longitude_value": 118.998,
+  *                     "depth_value": 1.1,
+  *                     "magnitude_value": 6.1,
+  *                     "text": "Cagayan Valley, Philippines",
+  *                     "method": "LOCSAT",
+  *                     "last_modification": "2023-06-09T14:39:21.000Z",
+  *                     "place": "Unavailable"
   *                   }
   *                   "id": 1690534975637
   *               pickEvent:
