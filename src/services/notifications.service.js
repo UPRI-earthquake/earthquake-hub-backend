@@ -34,13 +34,14 @@ const notifySubscribersEQ = async (message) =>{
           .catch(response => {
             switch(response.statusCode){
               case 400:
+              case 404: // Not Found
               case 410:
                 console.log(`Subscription gone for ${subscriber._id}`)
                 Subscription.deleteOne(subscriber)
                 .then(console.log(`Deleted ${subscriber.id}`))
                 break;
               default:
-                console.log(JSON.parse(e.body))
+                console.log(`Unhandled response in of sendNotification(): ${response.statusCode}`)
             }
           })
       })
