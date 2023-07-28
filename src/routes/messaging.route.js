@@ -6,10 +6,50 @@ const MessagingController = require('../controllers/messaging.controller')
 
 const restrictedPath = '/restricted'; // NGINX will deny public access to this path
 
+/**
+  * @swagger
+  * /messaging:
+  *   get:
+  *     tags: [Messaging]
+  *     summary: SSE endpoint to stream SC_PICK or SC_EVENT messages to the client.
+  *     description: |
+  *       - This endpoint streams events to the client using Server-Sent Events (SSE).
+  *       - The endpoint uses the `text/event-stream` content type.
+  *       - Events are sent as STRINGS in the format: `event: <event_name>\ndata: <event_obj>\\id: <timestamp>\n\n`.
+  *     responses:
+  *       200:
+  *         description: OK
+  *         content:
+  *           text/event-stream:
+  *             schema:
+  *               type: string
+  *               description: The SSE data stream.
+  *             examples:
+  *               # These are sent as streams!
+  *               earthquakeEvent:
+  *                 value: |
+  *                   "event": "SC_EVENT"
+  *                   "data": {
+  *                     "networkCode": "AM",
+  *                     "stationCode": "RE722",
+  *                     "timestamp": "2023-06-27T05:58:21.000Z"
+  *                   }
+  *                   "id": 1690534975637
+  *               pickEvent:
+  *                 value: |
+  *                   "event": "SC_PICK"
+  *                   "data": {
+  *                     "networkCode": "AM",
+  *                     "stationCode": "RE722",
+  *                     "timestamp": "2023-06-27T05:58:21.000Z"
+  *                   }
+  *                   "id": 1690534975472
+  */
 router.get('/',
   MessagingMiddleware.SSEFormatting,
   MessagingMiddleware.missedEventsResender,
   MessagingController.setupSSEConnection
+  //                 value: '{"event": "SC_PICK","data": {"networkCode": "AM","stationCode": "RE722","timestamp": "2023-06-27T05:58:21.000Z"},"id": 1690534975472}'
 );
 
 
@@ -17,7 +57,10 @@ router.get('/',
   * @swagger
   * /messaging/restricted/new-event:
   *   post:
-  *     summary: (RESTRICTED ACCESS) Add new EQevent as message in SSE, entry in DB, and notif to subscribed clients
+  *     summary: Add new EQevent as message in SSE, entry in DB, and notif to subscribed clients.
+  *     description: >
+  *       !! Access to this endpoint is restricted to trusted network only, this is done via
+  *       the NGINX reverse-proxy (in deployment environment).
   *     tags: [Messaging]
   *     requestBody:
   *       description: Event data to be added
@@ -75,7 +118,10 @@ router.post(`${restrictedPath}/new-event`,
   * @swagger
   * /messaging/restricted/new-pick:
   *   post:
-  *     summary: (RESTRICTED ACCESS) Add new PICK as message in SSE
+  *     summary: Add new PICK as message to SSE.
+  *     description: >
+  *       !! Access to this endpoint is restricted to trusted network only, this is done via
+  *       the NGINX reverse-proxy (in deployment environment).
   *     tags: [Messaging]
   *     requestBody:
   *       description: Pick data from processor like SeisComP 
