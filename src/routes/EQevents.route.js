@@ -7,35 +7,37 @@
   *       properties:
   *         _id:
   *           type: string
-  *           description: The auto-generated ObjectId of the event
+  *           description: Auto-generated ObjectId (from SeisComP) of the event
   *         publicID:
   *           type: string
-  *           description: The public ID of the event
+  *           description: SeisComP public ID of the event
   *         OT:
   *           type: string
   *           format: date-time
-  *           description: The origin time of the event
+  *           description: Origin time of the event
   *         latitude_value:
   *           type: number
-  *           description: The latitude value of the event
+  *           description: Latitude value of the event
   *         longitude_value:
   *           type: number
-  *           description: The longitude value of the event
+  *           description: Longitude value of the event
   *         depth_value:
   *           type: number
-  *           description: The depth value of the event
+  *           description: Depth value of the event
   *         magnitude_value:
   *           type: number
-  *           description: The magnitude value of the event
+  *           description: Magnitude value of the event
   *         type:
   *           type: string
-  *           description: The type of the event (NEW, UPDATE)
+  *           description: >
+  *              * `NEW`  - Newly created event object from SeisComP
+  *              * `UPDATE` - An update of previously created event object
   *         text:
   *           type: string
-  *           description: The text description of the event
+  *           description: SeisComP's derived place name for the event
   *         place:
   *           type: string
-  *           description: The place of the event
+  *           description: An attribute added later-on via geoserve API
   *       example:
   *         _id: 6151ec04b417ad001ff7d346
   *         publicID: event123

@@ -15,11 +15,10 @@ router.get('/',
 
 /**
   * @swagger
-  * /messaging/new-event:
+  * /messaging/restricted/new-event:
   *   post:
-  *     summary: Endpoint for adding a new event to messaging sse and save this as an entry to database
-  *     tags:
-  *       - Events
+  *     summary: (RESTRICTED ACCESS) Add new EQevent as message in SSE, entry in DB, and notif to subscribed clients
+  *     tags: [Messaging]
   *     requestBody:
   *       description: Event data to be added
   *       required: true
@@ -41,8 +40,31 @@ router.get('/',
   *     responses:
   *       200:
   *         description: Event added successfully
-  *       500:
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+  *
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.post(`${restrictedPath}/new-event`,
   MessagingController.newEQEvent
@@ -51,11 +73,10 @@ router.post(`${restrictedPath}/new-event`,
 
 /**
   * @swagger
-  * /messaging/new-pick:
+  * /messaging/restricted/new-pick:
   *   post:
-  *     summary: Add a new pick to messaging sse and save this as an entry to database
-  *     tags:
-  *       - Picks
+  *     summary: (RESTRICTED ACCESS) Add new PICK as message in SSE
+  *     tags: [Messaging]
   *     requestBody:
   *       description: Pick data to be added
   *       required: true
