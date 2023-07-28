@@ -185,7 +185,6 @@ exports.linkDevice = async (req, res, next) => {
   const linkDeviceSchema = Joi.object().keys({
     macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
     streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
-
   });
 
   try {

@@ -337,13 +337,66 @@ router.route('/status').get(
   *             elevation: "50"
   *     responses:
   *       200:
-  *         description: Device added successfully
-  *       400:
-  *         description: Device is already added to the database
-  *       403:
-  *         description: Unauthorized - Invalid or missing token
-  *       500:
+  *         description: User profile information sent as payload
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Token is valid"
+  *                 payload:
+  *                   type: object
+  *                   properties:
+  *                     username:
+  *                       type: string
+  *                       example: "john_doe"
+  *                     email:
+  *                       type: string
+  *                       example: "john.doe@example.com"
+  *       '400':
+  *         description: Account doesn't exist
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                 message:
+  *                   type: string
+  *                   example: "User not found"
+  *       '403':
+  *         description: When no token is present in sent cookie
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 403
+  *                 message:
+  *                   type: string
+  *                   example: "Token in cookie missing"
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
   getTokenFromCookie,
@@ -352,6 +405,83 @@ router.route('/add').post( // Citizen users should have verified token to add de
 );
 
 
+/**
+  * @swagger
+  * /device/link:
+  *   post:
+  *     summary: Bind MAC address and streamId of a sensor to the user's device record
+  *     tags: [Device]
+  *     security:
+  *       - bearerAuth: []  # Indicates that bearer token in header is required
+  *     requestBody:
+  *       required: true
+  *       description: Physical identification of the device/sensor
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *                 description: MAC address of the device (format XX:XX:XX:XX:XX:XX)
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
+  *     responses:
+  *       '200':
+  *         description: Device-account linking successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The status code for the response.
+  *                   example: 200
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   example: 'Device-Account Linking Successful'
+  *                 payload:
+  *                   type: object
+  *                   description: Additional data returned as payload (if any).
+  *                   # Define the properties of the payload object here if known.
+  *       '400':
+  *         description: Bad request
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The status code for the response.
+  *                   example: 400
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   examples:
+  *                     alreadyLinked: "Device is already linked to an existing account"
+  *                     usernameNotFound: "User not found"
+  *                     deviceNotFound: "Device doesn't exist in the database!"
+  *                     deviceNotOwned: "Device is not yet added to user's device list"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
 router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
   getTokenFromBearer,
   verifyTokenWithRole('sensor'),
