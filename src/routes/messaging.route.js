@@ -78,7 +78,7 @@ router.post(`${restrictedPath}/new-event`,
   *     summary: (RESTRICTED ACCESS) Add new PICK as message in SSE
   *     tags: [Messaging]
   *     requestBody:
-  *       description: Pick data to be added
+  *       description: Pick data from processor like SeisComP 
   *       required: true
   *       content:
   *         application/json:
@@ -101,9 +101,32 @@ router.post(`${restrictedPath}/new-event`,
   *             timestamp: '2023-06-27T05:58:21.000Z'
   *     responses:
   *       200:
-  *         description: Pick added successfully
-  *       500:
+  *         description: Pick received successfully
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Pick received"
+  *
+  *       '500':
   *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
   */
 router.post(`${restrictedPath}/new-pick`,
   MessagingController.newPick
