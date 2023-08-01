@@ -2,6 +2,18 @@ const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
 
+/***************************************************************************
+  * getEventsList:
+  *     Retrieves a list of earthquake events from the database that occurred within the specified time range.
+  * 
+  * Inputs:
+  *     startTime: Date       // The start time of the desired time range to retrieve earthquake events.
+  *     endTime: Date         // The end time of the desired time range to retrieve earthquake events.
+  * 
+  * Outputs:
+  *     An array of earthquake event objects that occurred within the specified time range.
+  * 
+ ***************************************************************************/
 async function getEventsList(startTime, endTime){
   const response = await EQEvents.find({
     OT: { $gte: startTime, $lte: endTime }
@@ -10,6 +22,22 @@ async function getEventsList(startTime, endTime){
   return response;
 }
 
+/***************************************************************************
+  * distKM:
+  *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
+  * 
+  * Inputs:
+  *     lat1: number       // Latitude of the first point in degrees.
+  *     lon1: number       // Longitude of the first point in degrees.
+  *     lat2: number       // Latitude of the second point in degrees.
+  *     lon2: number       // Longitude of the second point in degrees.
+  * 
+  * Returns:
+  *     The calculated great-circle distance in kilometers between the two points rounded to the nearest whole number.
+  * 
+  * Note:
+  *     - The function returns the distance in kilometers rounded to the nearest whole number.
+ ***************************************************************************/
 function distKM(lat1, lon1, lat2, lon2){
   earth_rad = 6371 //km
   lat1 = lat1 * (Math.PI / 180)
@@ -28,6 +56,27 @@ function distKM(lat1, lon1, lat2, lon2){
   return (earth_rad*c).toFixed(0)
 }
 
+/***************************************************************************
+  * direction:
+  *     Calculates the cardinal direction from a reference point to a target point on the Earth's surface.
+  * 
+  * Inputs:
+  *     lat: number          // Latitude of the target point in degrees.
+  *     lon: number          // Longitude of the target point in degrees.
+  *     ref_lat: number      // Latitude of the reference point in degrees.
+  *     ref_lon: number      // Longitude of the reference point in degrees.
+  * 
+  * Returns:
+  *     A string representing the cardinal direction from the reference point to the target point.
+  * 
+  * Note:
+  *     - Based on the differences in latitude and longitude, the function determines the cardinal direction from the reference
+  *       point to the target point (e.g., "N" for North, "S" for South, "E" for East, "W" for West).
+  *     - The function returns a string representing the calculated cardinal direction. If the target point is within 10 degrees
+  *       of latitude or longitude from the reference point, it will return only the direction in which the greater difference
+  *       lies (e.g., if the latitude difference is greater, it will return "N" or "S"; if the longitude difference is greater,
+  *       it will return "E" or "W"; if both differences are greater, it will return a combination of both directions, e.g., "NE").
+ ***************************************************************************/
 function direction(lat, lon, ref_lat, ref_lon){
   dlat = lat - ref_lat
   dlon = lon - ref_lon
@@ -40,8 +89,31 @@ function direction(lat, lon, ref_lat, ref_lon){
   else {return lat_dir + lon_dir}
 }
 
+/***************************************************************************
+  * addPlacesAttribute:
+  *     Retrieves the location information for earthquake events and adds a 'place' attribute to each event in the eventsList.
+  * 
+  * Inputs:
+  *     eventsList: Array     // An array of earthquake event objects representing a list of events.
+  * 
+  * Outputs:
+  *     An array of earthquake event objects with an added 'place' attribute for each event.
+  * 
+  * Returns:
+  *     A Promise that resolves to an array of earthquake event objects with an added 'place' attribute.
+  * 
+  * Note:
+  *     - This function is asynchronous and returns a Promise that resolves to the updatedData array.
+  *     - The function takes an array of earthquake event objects as input (eventsList) and iterates through each event to
+  *       retrieve its location information.
+  *     - The location information is obtained by making an HTTP GET request to a geoserve API using the latitude and longitude
+  *       values of each event.
+  *     - The retrieved location information is used to construct a 'place' attribute for each event, which represents the
+  *       approximate location description (e.g., distance and direction from a reference point) of the earthquake event.
+  *     - The function then returns the updatedData array, where each event object contains the 'place' attribute.
+  *     - In case the geoserve API request fails, the function will use 'Unavailable' as the place attribute value for the event.
+ ***************************************************************************/
 async function addPlacesAttribute(eventsList){
-  /* returns eventsList with .place */
   var updatedData = [];
 
   await Promise.all(eventsList.map(async (event) => {
@@ -100,6 +172,31 @@ async function addPlacesAttribute(eventsList){
   return updatedData;
 }
 
+/***************************************************************************
+ * addEQEvent:
+ *     Adds or updates an earthquake event entry in the database based on the provided event details (from SeisComP).
+ * 
+ * Inputs:
+ *     publicID: string          // The unique public identifier of the earthquake event.
+ *     OT: Date                  // The origin time of the earthquake event.
+ *     latitude_value: number    // The latitude coordinate of the earthquake event.
+ *     longitude_value: number   // The longitude coordinate of the earthquake event.
+ *     depth_value: number       // The depth of the earthquake event.
+ *     magnitude_value: number   // The magnitude of the earthquake event.
+ *     eventType: string         // The type of event ('NEW' for a new event or 'UPDATE' for updating an existing event).
+ *     text: string              // Location description related to the earthquake event.
+ * 
+ * Outputs:
+ *     "success":                if the earthquake event was successfully added or updated in the database.
+ * 
+ * Returns:
+ *     A Promise that resolves to a string indicating the result status of the event addition or update.
+ * 
+ * Note:
+ *     - The function first checks the provided eventType. If it is 'UPDATE', the function finds the existing event in the
+ *       database based on the publicID and updates its information with the provided details (OT, latitude_value, etc.).
+ *       If the eventType is 'NEW', the function creates a new earthquake event entry in the database with the provided details.
+ ***************************************************************************/
 async function addEQEvent(publicID, OT, latitude_value, longitude_value, depth_value, magnitude_value, eventType, text){
   if (eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
     const eventToUpdate = await EQEvents.findOne({ publicID: publicID });
