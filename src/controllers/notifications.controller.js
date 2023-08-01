@@ -39,7 +39,6 @@ exports.subscribe = async (req, res, next) => {
         })
         break;
       case 'subscriptionExists':
-        console.log('insubexists')
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
           message: "Subscription already exists"

@@ -58,7 +58,7 @@ const EQEventsController = require('../controllers/EQevents.controller');
   * @swagger
   * /eq-events:
   *   get:
-  *     summary: Endpoint for getting recorded seismic events in the network within a specific time range
+  *     summary: Get recorded seismic events in the network within a specific time range
   *     tags: [EQ Events]
   *     parameters:
   *       - in: query
