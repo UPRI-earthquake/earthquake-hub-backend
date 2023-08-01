@@ -1,4 +1,4 @@
-const Subscription = require('../models/subscription');
+const Subscription = require('../models/subscription.model');
 const EQEventsService = require('../services/EQevents.service')
 
 const mongoose = require('mongoose');
