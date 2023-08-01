@@ -51,6 +51,239 @@ const {
 
 const router = express.Router(); 
 
+
+/**
+  * @swagger
+  * /device/add:
+  *   post:
+  *     summary: Add a device to the user's account
+  *     tags: [Device]
+  *     security:
+  *       - cookieAuth: []
+  *     requestBody:
+  *       description: Device data to be added
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               network:
+  *                 type: string
+  *                 description: The network code of the device
+  *               station:
+  *                 type: string
+  *                 description: The station code of the device
+  *               latitude:
+  *                 type: string
+  *                 description: The latitude of the device (in degree coordinates)
+  *               longitude:
+  *                 type: string
+  *                 description: The longitude of the device (in degree coordinates)
+  *               elevation:
+  *                 type: string
+  *                 description: The elevation of the device (in meters)
+  *           example:
+  *             network: "AM"
+  *             station: "R3B2D"
+  *             latitude: "40.123456"
+  *             longitude: "120.654321"
+  *             elevation: "50"
+  *     responses:
+  *       200:
+  *         description: User profile information sent as payload
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Token is valid"
+  *                 payload:
+  *                   type: object
+  *                   properties:
+  *                     username:
+  *                       type: string
+  *                       example: "john_doe"
+  *                     email:
+  *                       type: string
+  *                       example: "john.doe@example.com"
+  *       '400':
+  *         description: Account doesn't exist
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                 message:
+  *                   type: string
+  *                   example: "User not found"
+  *       '403':
+  *         description: When no token is present in sent cookie
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 403
+  *                 message:
+  *                   type: string
+  *                   example: "Token in cookie missing"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
+router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.addDevice
+);
+
+
+/**
+  * @swagger
+  * /device/link:
+  *   post:
+  *     summary: Bind sensor's MAC address and streamId to the user's device record
+  *     tags: [Device]
+  *     security:
+  *       - bearerAuth: []  # Indicates that bearer token in header is required
+  *     requestBody:
+  *       required: true
+  *       description: Physical identification of the device/sensor
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *                 description: MAC address of the device (format XX:XX:XX:XX:XX:XX)
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
+  *     responses:
+  *       '200':
+  *         description: Device-account linking successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The status code for the response.
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   example: 'Device-Account Linking Successful'
+  *                 payload:
+  *                   type: object
+  *                   description: The payload containing device information.
+  *                   properties:
+  *                     deviceInfo:
+  *                       type: object
+  *                       properties:
+  *                         network:
+  *                           type: string
+  *                           description: The network of the device.
+  *                           example: 'AM'
+  *                         station:
+  *                           type: string
+  *                           description: The code of the device station.
+  *                           example: 'RE722'
+  *                         longitude:
+  *                           type: number
+  *                           format: float
+  *                           description: The longitude of the device location.
+  *                           example: -122.4194
+  *                         latitude:
+  *                           type: number
+  *                           format: float
+  *                           description: The latitude of the device location.
+  *                           example: 37.7749
+  *                         elevation:
+  *                           type: number
+  *                           format: float
+  *                           description: The elevation of the device location in meters.
+  *                           example: 100.5
+  *                         streamId:
+  *                           type: string
+  *                           description: The stream ID of the device.
+  *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *       '400':
+  *         description: Bad request
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The status code for the response.
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *             examples:  # Provide multiple examples for different error cases
+  *               alreadyLinked:
+  *                 value: 
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device is already linked to an existing account"
+  *               usernameNotFound:
+  *                 value: 
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "User not found"
+  *               deviceNotFound:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device doesn't exist in the database!"
+  *               deviceNotOwned:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device is not yet added to user's device list"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
+router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.linkDevice
+);
+
+
 /**
   * @swagger
   * /device/all:
@@ -296,238 +529,6 @@ router.route('/my-devices').get(
 router.route('/status').get(
   DeviceController.getDeviceStatus
 )
-
-
-/**
-  * @swagger
-  * /device/add:
-  *   post:
-  *     summary: Add a device to the user's account
-  *     tags: [Device]
-  *     security:
-  *       - cookieAuth: []
-  *     requestBody:
-  *       description: Device data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               network:
-  *                 type: string
-  *                 description: The network code of the device
-  *               station:
-  *                 type: string
-  *                 description: The station code of the device
-  *               latitude:
-  *                 type: string
-  *                 description: The latitude of the device (in degree coordinates)
-  *               longitude:
-  *                 type: string
-  *                 description: The longitude of the device (in degree coordinates)
-  *               elevation:
-  *                 type: string
-  *                 description: The elevation of the device (in meters)
-  *           example:
-  *             network: "AM"
-  *             station: "R3B2D"
-  *             latitude: "40.123456"
-  *             longitude: "120.654321"
-  *             elevation: "50"
-  *     responses:
-  *       200:
-  *         description: User profile information sent as payload
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_SUCCESS
-  *                 message:
-  *                   type: string
-  *                   example: "Token is valid"
-  *                 payload:
-  *                   type: object
-  *                   properties:
-  *                     username:
-  *                       type: string
-  *                       example: "john_doe"
-  *                     email:
-  *                       type: string
-  *                       example: "john.doe@example.com"
-  *       '400':
-  *         description: Account doesn't exist
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
-  *                 message:
-  *                   type: string
-  *                   example: "User not found"
-  *       '403':
-  *         description: When no token is present in sent cookie
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: 403
-  *                 message:
-  *                   type: string
-  *                   example: "Token in cookie missing"
-  *       '500':
-  *         description: Internal server error
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Server error occured"
-  */
-router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  DeviceController.addDevice
-);
-
-
-/**
-  * @swagger
-  * /device/link:
-  *   post:
-  *     summary: Bind sensor's MAC address and streamId to the user's device record
-  *     tags: [Device]
-  *     security:
-  *       - bearerAuth: []  # Indicates that bearer token in header is required
-  *     requestBody:
-  *       required: true
-  *       description: Physical identification of the device/sensor
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               macAddress:
-  *                 type: string
-  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
-  *                 description: MAC address of the device (format XX:XX:XX:XX:XX:XX)
-  *               streamId:
-  *                 type: string
-  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
-  *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
-  *     responses:
-  *       '200':
-  *         description: Device-account linking successful
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   description: The status code for the response.
-  *                   example: responseCodes.GENERIC_SUCCESS
-  *                 message:
-  *                   type: string
-  *                   description: The message associated with the response.
-  *                   example: 'Device-Account Linking Successful'
-  *                 payload:
-  *                   type: object
-  *                   description: The payload containing device information.
-  *                   properties:
-  *                     deviceInfo:
-  *                       type: object
-  *                       properties:
-  *                         network:
-  *                           type: string
-  *                           description: The network of the device.
-  *                           example: 'AM'
-  *                         station:
-  *                           type: string
-  *                           description: The code of the device station.
-  *                           example: 'RE722'
-  *                         longitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The longitude of the device location.
-  *                           example: -122.4194
-  *                         latitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The latitude of the device location.
-  *                           example: 37.7749
-  *                         elevation:
-  *                           type: number
-  *                           format: float
-  *                           description: The elevation of the device location in meters.
-  *                           example: 100.5
-  *                         streamId:
-  *                           type: string
-  *                           description: The stream ID of the device.
-  *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
-  *       '400':
-  *         description: Bad request
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   description: The status code for the response.
-  *                 message:
-  *                   type: string
-  *                   description: The message associated with the response.
-  *             examples:  # Provide multiple examples for different error cases
-  *               alreadyLinked:
-  *                 value: 
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is already linked to an existing account"
-  *               usernameNotFound:
-  *                 value: 
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "User not found"
-  *               deviceNotFound:
-  *                 value:
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device doesn't exist in the database!"
-  *               deviceNotOwned:
-  *                 value:
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is not yet added to user's device list"
-  *       '500':
-  *         description: Internal server error
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Server error occured"
-  */
-router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
-  getTokenFromBearer,
-  verifyTokenWithRole('sensor'),
-  DeviceController.linkDevice
-);
 
 
 module.exports = router;
