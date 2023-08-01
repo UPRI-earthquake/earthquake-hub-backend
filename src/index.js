@@ -46,7 +46,7 @@ const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
 
-const mongodb = require('./services/mongodb')
+const mongodb = require('./services/mongodb.service')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
