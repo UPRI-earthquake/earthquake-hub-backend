@@ -3,17 +3,17 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/account.model');
 
 /***************************************************************************
- * createUniqueAccount:
- *     Creates a new account entry in DB if it doesn't yet exist. 
- * Inputs:
- *     username: valid username string
- *     email:    valid email string
- *     password: valid password string
- * Outputs:
- *     "success":        if account was successfully added
- *     "usernameExists": if username is already in use
- *     "emailExists":    if email is already in use
- *     
+  * createUniqueAccount:
+  *     Creates a new account entry in DB if it doesn't yet exist. 
+  * Inputs:
+  *     username: valid username string
+  *     email:    valid email string
+  *     password: valid password string
+  * Outputs:
+  *     "success":        if account was successfully added
+  *     "usernameExists": if username is already in use
+  *     "emailExists":    if email is already in use
+  *     
  ***************************************************************************/
 exports.createUniqueAccount = async (username, email, password) => {
   // Check if username is in use
@@ -40,20 +40,20 @@ exports.createUniqueAccount = async (username, email, password) => {
 }
 
 /***************************************************************************
- * loginAccountRole:
- *     Compares provided username/password & role with that in DB
- * Inputs:
- *     username: valid username string
- *     password: valid password string
- * Outputs:
- *     "accountNotExists":   if username doesn't exist in DB
- *     "wrongPassword":      if password does NOT match username's password in DB
- *     "invalidRole":        if claimed role is listed as user's role in DB
- *     "noLinkedDevice":     if Sensor/Brgy has no linked device
- *     "successSensorBrgy":  if Sensor/Brgy password matches their password in DB,
- *                           and they have linked devices
- *     "successCitizen":     if Citizen's password matches their's password in DB
- *     
+  * loginAccountRole:
+  *     Compares provided username/password & role with that in DB
+  * Inputs:
+  *     username: valid username string
+  *     password: valid password string
+  * Outputs:
+  *     "accountNotExists":   if username doesn't exist in DB
+  *     "wrongPassword":      if password does NOT match username's password in DB
+  *     "invalidRole":        if claimed role is listed as user's role in DB
+  *     "noLinkedDevice":     if Sensor/Brgy has no linked device
+  *     "successSensorBrgy":  if Sensor/Brgy password matches their password in DB,
+  *                           and they have linked devices
+  *     "successCitizen":     if Citizen's password matches their's password in DB
+  *     
  ***************************************************************************/
 exports.loginAccountRole = async (username, password, role) => {
   // get user with its devices array populated by device object (instead of device id)
@@ -95,24 +95,24 @@ exports.loginAccountRole = async (username, password, role) => {
 }
 
 /***************************************************************************
- * verifySensorToken:
- *     Verifies, in behalf of brgy, if a sensor token came from us and 
- *     has role = sensor or brgy.
- *     Also adds the device to the brgy's linked devices if not it's the 
- *     first time the brgy is verify it.
- * Inputs:
- *     token:         JSON web token
- *     brgyUsername:  brgy's username that is asking to verify the token
- * Outputs obj.str:
- *     "JsonWebTokenError": Generic JWT error
- *     "TokenExpiredError": Token expired
- *     "tokenRoleInvalid":  Role is not sensor or brgy
- *     "brgyNotFound":      Brgy account is valid but not found in DB!!
- *     "sensorIsValid":     Sensor owner of token is a valid streamer
- * Outputs obj.sensor:
- *     Will contain sensor info based on decoded JWT
- *     {username, role, streamIds, exp}
- *     
+  * verifySensorToken:
+  *     Verifies, in behalf of brgy, if a sensor token came from us and 
+  *     has role = sensor or brgy.
+  *     Also adds the device to the brgy's linked devices if not it's the 
+  *     first time the brgy is verify it.
+  * Inputs:
+  *     token:         JSON web token
+  *     brgyUsername:  brgy's username that is asking to verify the token
+  * Outputs obj.str:
+  *     "JsonWebTokenError": Generic JWT error
+  *     "TokenExpiredError": Token expired
+  *     "tokenRoleInvalid":  Role is not sensor or brgy
+  *     "brgyNotFound":      Brgy account is valid but not found in DB!!
+  *     "sensorIsValid":     Sensor owner of token is a valid streamer
+  * Outputs obj.sensor:
+  *     Will contain sensor info based on decoded JWT
+  *     {username, role, streamIds, exp}
+  *     
  ***************************************************************************/
 exports.verifySensorToken = async (token, brgyUsername) => {
   return new Promise((resolve, reject) => { // wrap in Promise so we can await jwt.verify
@@ -178,17 +178,17 @@ exports.verifySensorToken = async (token, brgyUsername) => {
 
 
 /***************************************************************************
- * getAccountProfile:
- *     Gets profile information for the account of 'username'
- * Inputs:
- *     username: citizen username of the account
- * Outputs obj.str:
- *     "accountNotExists": if username doesn't exist in DB
- *     "success":          if username is registered in DB
- * Outputs obj.profile:
- *     Will contain profile info based on ccount
- *     {username, email}
- *     
+  * getAccountProfile:
+  *     Gets profile information for the account of 'username'
+  * Inputs:
+  *     username: citizen username of the account
+  * Outputs obj.str:
+  *     "accountNotExists": if username doesn't exist in DB
+  *     "success":          if username is registered in DB
+  * Outputs obj.profile:
+  *     Will contain profile info based on ccount
+  *     {username, email}
+  *     
  ***************************************************************************/
 exports.getAccountProfile = async (username) => {
     const citizen = await User.findOne({ 'username': username });
