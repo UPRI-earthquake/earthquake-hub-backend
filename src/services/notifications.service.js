@@ -11,6 +11,26 @@ webpush.setVapidDetails(
 
 const minMagnitudeToNotify = 5.5 // Only notify when EQevent is stronger than this mag
 
+/***************************************************************************
+  * notifySubscribersEQ:
+  *     Notifies webpush subscribers about an earthquake event if its magnitude exceeds the minimum threshold set.
+  * 
+  * Inputs:
+  *     message: Object       // An object representing the earthquake event message to be sent to subscribers.
+  *                            // The object should have the following properties:
+  *                            // - magnitude_value: number (the magnitude of the earthquake event).
+  *                            // - text: string (additional text or description related to the earthquake event).
+  * 
+  * Outputs:
+  *     "success":            if notifications were successfully sent to all subscribers.
+  *     "dbNotAccessible":    if the function can't access subscriptions due to MongoDB not being connected.
+  * 
+  * Note:
+  *     - If the magnitude is greater than the minimum threshold, the function calls EQEventsService.addPlacesAttribute to
+  *       add location information to the earthquake event message.
+  *     - If the subscriber's subscription is no longer valid (response status code is 400, 404, or 410), the function deletes the
+  *       invalid subscription from the database.
+ ***************************************************************************/
 const notifySubscribersEQ = async (message) =>{
   if(message.magnitude_value > minMagnitudeToNotify){
     let updatedEvent = await EQEventsService.addPlacesAttribute([message])
@@ -53,6 +73,23 @@ const notifySubscribersEQ = async (message) =>{
   }
 }
 
+/***************************************************************************
+  * createSubscription:
+  *     Creates a new subscription entry in the database for webpush notifications.
+  * 
+  * Inputs:
+  *     subscriptionRequest: Object   // An object representing the subscription details for push notifications.
+  *                                   // The object should contain the following properties:
+  *                                   // - endpoint: string (the URL endpoint for push notifications).
+  *                                   // - keys: Object (an object containing the authentication keys for push notifications).
+  *                                   // See subscription model
+  * 
+  * Outputs:
+  *     "success":                   if a new subscription entry was successfully created in the database.
+  *     "subscriptionExists":        if a subscription entry with the same endpoint already exists in the database.
+  *     "dbNotAccessible":           if the function can't create a new subscription due to MongoDB not being connected.
+  * 
+ ***************************************************************************/
 const createSubscription = async (subscriptionRequest) =>{
   if(mongoose.connection.readyState === 1) { // connected to MongoDB
 
