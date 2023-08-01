@@ -2,7 +2,7 @@ const Joi = require('joi');
 const MessagingService = require('../services/messaging.service')
 const EQEventsService = require('../services/EQevents.service')
 const NotificationsService = require('../services/notifications.service')
-const {responseCodes} = require('../routes/responseCodes')
+const {responseCodes} = require('./responseCodes')
 
 exports.setupSSEConnection = async (req, res, next) => {
   try {

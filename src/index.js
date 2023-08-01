@@ -8,6 +8,7 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc')
 const swaggerUi = require('swagger-ui-express')
 
+const {responseCodes} = require('./controllers/responseCodes')
 const MessagingService = require('./services/messaging.service')
 
 console.log('mongodb-host: ' + process.env.MONGO_HOST)
@@ -50,10 +51,6 @@ const mongodb = require('./services/mongodb.service')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
 
-const {
-  responseCodes,
-  responseMessages
-} = require('./routes/responseCodes')
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST

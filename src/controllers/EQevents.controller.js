@@ -1,6 +1,6 @@
 const Joi = require('joi')
 const EQEventsService = require('../services/EQevents.service')
-const {responseCodes} = require('../routes/responseCodes')
+const {responseCodes} = require('./responseCodes')
 
 // query database
 exports.getEQEvents = async (req, res, next) => {

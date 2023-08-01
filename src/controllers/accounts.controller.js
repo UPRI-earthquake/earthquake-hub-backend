@@ -1,10 +1,7 @@
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
-const {
-  responseCodes,
-  responseMessages
-} = require('../routes/responseCodes')
+const {responseCodes} = require('./responseCodes')
 
 exports.registerAccount = async (req, res, next) => {
   console.log("Register account requested");

@@ -1,8 +1,5 @@
 const jwt = require('jsonwebtoken');
-const {
-  responseCodes,
-  responseMessages
-} = require('../routes/responseCodes')
+const {responseCodes} = require('../controllers/responseCodes')
 
 // Citizen role request sends tokens thru cookie in requests
 function getTokenFromCookie(req, res, next) {

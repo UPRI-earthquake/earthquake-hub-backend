@@ -1,6 +1,6 @@
 const Joi = require('joi')
 const NotificationsService = require('../services/notifications.service')
-const {responseCodes} = require('../routes/responseCodes')
+const {responseCodes} = require('./responseCodes')
 
 exports.subscribe = async (req, res, next) => {
   // Define validation Schema

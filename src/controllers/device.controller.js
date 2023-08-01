@@ -1,6 +1,6 @@
 const Joi = require('joi');
 const DeviceService = require('../services/device.service')
-const {responseCodes} = require('../routes/responseCodes')
+const {responseCodes} = require('./responseCodes')
 
 exports.getAllDeviceLocations = async (req, res, next) => {
   console.log("Locations of all devices requested");
