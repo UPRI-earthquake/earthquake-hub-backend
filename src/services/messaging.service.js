@@ -9,7 +9,39 @@ const EQEventsService = require('./EQevents.service')
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
 
-// define EQ event multiplexer/parse-cache-middleware
+/***************************************************************************
+  * EventCache:
+  *     A class representing an event cache with a fixed length that acts as a multiplexer and parse-cache-middleware for
+  *     earthquake events and picks.
+  * 
+  * Constructor Inputs:
+  *     maxEvents: number      // The maximum number of events that the cache can hold. Once the number of events exceeds this
+  *                            // limit, the oldest events will be removed from the cache.
+  * 
+  * Properties:
+  *     cache: Array          // An array representing the event cache with a fixed length (queue of events).
+  *     maxLength: number     // The maximum number of events that the cache can hold.
+  * 
+  * Methods:
+  *     push(event):          // Adds a new event to the cache. If the cache length exceeds the maxLength, the oldest event will
+  *                            // be removed from the cache (FIFO behavior).
+  *     newEvent(pattern, event, channel): 
+  *                           // Adds a new extended event to the cache based on the channel type and emit "newEvent" JS event. 
+  *                           // If the channel is 'SC_EVENT', it calls addPlacesAttribute to parse and add location info before pushing it 
+  *                           // the event to the cache. 
+  *                           // For 'SC_PICK', the event data is directly added without parsing.
+  * 
+  * Events:
+  *     newEvent:             // This event is emitted when a new extended event is added to the cache. The extended event
+  *                            // contains the following properties:
+  *                            // - name: string (channel name)
+  *                            // - id: number (int timestamp in milliseconds)
+  *                            // - data: Object (event data containing earthquake details with added location information
+  *                            //           for 'SC_EVENT' or direct event data for 'SC_PICK').
+  * 
+  * Note:
+  *     - This class extends EventEmitter to enable event emission.
+ ***************************************************************************/
 class EventCache extends EventEmitter {
   constructor(maxEvents) {
     super();
@@ -51,7 +83,27 @@ const eventCache = new EventCache(30); // will contain last 30 EQevents added vi
 
 /* --- External Event Sources --- */
 
-// Routine to subscribe to ringserver /sse-connections endpoint
+/***************************************************************************
+  * sseConnectionsEventListener:
+  *     Subscribe to the ringserver's /sse-connections endpoint to listen for real-time SSE (Server-Sent Events) updates 
+  *     about *socket* connection status.
+  * 
+  * Note:
+  *     - This function establishes a connection to the ringserver's /sse-connections endpoint using the EventSource API.
+  *     - The ringserver's IP address and port are obtained from environment variables (process.env.RINGSERVER_HOST and
+  *       process.env.RINGSERVER_PORT).
+  *     - The function listens for SSE events, specifically 'ringserver-connections-status', 'open', 'error', and 'close'.
+  *     - When the 'ringserver-connections-status' event is received, the function extracts the connections data from the event,
+  *       filters connections with the role 'sensor', and saves the current_time to the MongoDB for each sensor connection by
+  *       updating the 'updatedAt' property of the corresponding user in the Users collection.
+  *     - The function handles 'open' and 'close' events by logging messages to the console.
+  *     - For 'error' events, the function keeps track of the number of errors (sseConnectionsErrorFlag) and logs error messages.
+  *       If there are repeated errors (3 or more), it logs a specific message indicating that it will keep retrying the connection.
+  * 
+  * Caution:
+  *     - This function should be called with care as it establishes a persistent connection to the ringserver's SSE endpoint.
+  *       Frequent or unnecessary calls may lead to an excessive number of open connections.
+ ***************************************************************************/
 const sseConnectionsEventListener = async() => {
   const ringserver_ip = `http://${process.env.RINGSERVER_HOST}:${process.env.RINGSERVER_PORT}`;
   const source = new EventSource(`${ringserver_ip}/sse-connections`)
@@ -92,7 +144,29 @@ const sseConnectionsEventListener = async() => {
   });
 }
 
-// Routine to subscribe to ringserver /sse-streams endpoint
+/***************************************************************************
+  * sseStreamsEventListener:
+  *     Subscribe to the ringserver's /sse-streams endpoint to listen for SSE (Server-Sent Events) updates
+  *     about *device* (identified by a streamID) connection status.
+  * 
+  * Note:
+  *     - This function establishes a connection to the ringserver's /sse-streams endpoint using the EventSource API.
+  *     - The ringserver's IP address and port are obtained from environment variables (process.env.RINGSERVER_HOST and
+  *       process.env.RINGSERVER_PORT).
+  *     - The function listens for SSE events, specifically 'ringserver-streamids-status', 'open', 'error', and 'close'.
+  *     - When the 'ringserver-streamids-status' event is received, the function processes the received stream IDs and their latest
+  *       data end times to determine the activity status (active or inactive) of the corresponding devices. The function updates
+  *       the activity status and activityToggleTime of the devices in the Devices collection based on the stream data.
+  *     - The function handles 'open' and 'close' events by logging messages to the console.
+  *     - For 'error' events, the function keeps track of the number of errors (sseStreamsErrorFlag) and logs error messages. If
+  *       there are repeated errors (3 or more), it logs a specific message indicating that it will keep retrying the connection.
+  * 
+  * Caution:
+  *     - This function should be called with care as it establishes a persistent connection to the ringserver's SSE endpoint.
+  *       Frequent or unnecessary calls may lead to an excessive number of open connections.
+  *     - It is recommended to use this function only when SSE updates about stream IDs and their latest data end times are required
+  *       to determine the activity status of devices.
+ ***************************************************************************/
 const sseStreamsEventListener = async() => {
   const ringserver_ip = `http://${process.env.RINGSERVER_HOST}:${process.env.RINGSERVER_PORT}`;
   const source = new EventSource(`${ringserver_ip}/sse-streams`)

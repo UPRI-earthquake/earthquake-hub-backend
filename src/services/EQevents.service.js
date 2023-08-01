@@ -173,29 +173,29 @@ async function addPlacesAttribute(eventsList){
 }
 
 /***************************************************************************
- * addEQEvent:
- *     Adds or updates an earthquake event entry in the database based on the provided event details (from SeisComP).
- * 
- * Inputs:
- *     publicID: string          // The unique public identifier of the earthquake event.
- *     OT: Date                  // The origin time of the earthquake event.
- *     latitude_value: number    // The latitude coordinate of the earthquake event.
- *     longitude_value: number   // The longitude coordinate of the earthquake event.
- *     depth_value: number       // The depth of the earthquake event.
- *     magnitude_value: number   // The magnitude of the earthquake event.
- *     eventType: string         // The type of event ('NEW' for a new event or 'UPDATE' for updating an existing event).
- *     text: string              // Location description related to the earthquake event.
- * 
- * Outputs:
- *     "success":                if the earthquake event was successfully added or updated in the database.
- * 
- * Returns:
- *     A Promise that resolves to a string indicating the result status of the event addition or update.
- * 
- * Note:
- *     - The function first checks the provided eventType. If it is 'UPDATE', the function finds the existing event in the
- *       database based on the publicID and updates its information with the provided details (OT, latitude_value, etc.).
- *       If the eventType is 'NEW', the function creates a new earthquake event entry in the database with the provided details.
+  * addEQEvent:
+  *     Adds or updates an earthquake event entry in the database based on the provided event details (from SeisComP).
+  * 
+  * Inputs:
+  *     publicID: string          // The unique public identifier of the earthquake event.
+  *     OT: Date                  // The origin time of the earthquake event.
+  *     latitude_value: number    // The latitude coordinate of the earthquake event.
+  *     longitude_value: number   // The longitude coordinate of the earthquake event.
+  *     depth_value: number       // The depth of the earthquake event.
+  *     magnitude_value: number   // The magnitude of the earthquake event.
+  *     eventType: string         // The type of event ('NEW' for a new event or 'UPDATE' for updating an existing event).
+  *     text: string              // Location description related to the earthquake event.
+  * 
+  * Outputs:
+  *     "success":                if the earthquake event was successfully added or updated in the database.
+  * 
+  * Returns:
+  *     A Promise that resolves to a string indicating the result status of the event addition or update.
+  * 
+  * Note:
+  *     - The function first checks the provided eventType. If it is 'UPDATE', the function finds the existing event in the
+  *       database based on the publicID and updates its information with the provided details (OT, latitude_value, etc.).
+  *       If the eventType is 'NEW', the function creates a new earthquake event entry in the database with the provided details.
  ***************************************************************************/
 async function addEQEvent(publicID, OT, latitude_value, longitude_value, depth_value, magnitude_value, eventType, text){
   if (eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
