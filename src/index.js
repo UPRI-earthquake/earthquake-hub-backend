@@ -11,7 +11,6 @@ const swaggerUi = require('swagger-ui-express')
 const {responseCodes} = require('./controllers/responseCodes')
 const MessagingService = require('./services/messaging.service')
 
-console.log('mongodb-host: ' + process.env.MONGO_HOST)
 
 const app = express();
 
@@ -33,12 +32,10 @@ const options = {
       }
     },
   },
-  apis: ['./src/routes/*.js'], // Path to the API routes in your project
+  apis: ['./src/routes/*.js', './src/models/*.js'], // Path to the API routes and models in your project
   failOnErrors: true,
 };
-
 const specs = swaggerJsDoc(options);
-
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 
@@ -49,6 +46,7 @@ const port = process.env.NODE_ENV === 'production'
 const mongodb = require('./services/mongodb.service')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
+console.log('mongodb-host: ' + process.env.MONGO_HOST)
 
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
