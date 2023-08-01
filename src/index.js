@@ -12,7 +12,6 @@ const {responseCodes} = require('./controllers/responseCodes')
 const MessagingService = require('./services/messaging.service')
 
 console.log('mongodb-host: ' + process.env.MONGO_HOST)
-require('./models/index');
 
 const app = express();
 
