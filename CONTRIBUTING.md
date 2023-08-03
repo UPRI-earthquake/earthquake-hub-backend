@@ -1,67 +1,53 @@
-# CONTRIBUTING.md
+## Prerequisites
+1. Make sure you have `git` installed.
+2. Make sure you have `docker` installed.
 
-## Setting Up for Local (in Docker) Development
-
-1. Prerequisites
-    1. Make sure you have `git` installed
-    2. Make sure you have `docker` installed
-2. Download the repository
+## Setting Up The Repository On Your Local Machine
+1. Clone the repository
     
     ```bash
     git clone git@github.com:prokorpio/UPRI-DC-back-end.git
     ```
-    
-3. Create a file named `.env` and set its values based on `.env.example`. You should be able to use the default values in the example file.
-4. Build and start the docker containers
-    
+2. Create a file named `.env` and set its values based on `.env.example`. You should be able to use the default values in the example file.
+3. Install all dependencies via:
     ```bash
-    docker compose up --build
+    npm install
     ```
+4. Build the image via:
+    ```bash
+    docker build -t ghcr.io/upri-earthquake/earthquake-hub-backend:latest .
+    ```
+5. Start the docker containers via:
+    ```bash
+    docker compose up
+    ```
+
+## Publishing container image (For admins)
+1. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
+    > Note: replace X.Y.Z, and you should be at the same directory as the Dockerfile
+
+    ```bash
+    docker build -t ghcr.io/upri-earthquake/earthquake-hub-frontend:X.Y.Z .
+    ```
+2. Push the image to ghcr.io:
+    ```bash
+    docker push ghcr.io/upri-earthquake/earthquake-hub-frontend:X.Y.Z
+    ```
+    > ℹ️ Note: You need an access token to publish, install, and delete private, internal, and public packages in Github Packages. Refer to this [tutorial](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry) on how to authenticate to the container registry.
     
     The above command shall show the logs of all the containers (see the `docker-compose.yml` file to check the container names) spun up by `docker compose`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
     
-    Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers
+    Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers.
+
+    Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
     
-    > ℹ️ Useful docker recipes
-    1. Start the (pre-built) containers in background: `docker compose start`
-    2. See the logs of the services: `docker compose logs -f [backend, mongodb etc]`
-    3. Stop the containers `docker compose stop`
-    4. Add or remove npm packages (⚠️ Don't use npm command locally to avoid package-lock.json issues, use it inside docker like in the following command)
-        ```bash
-        # Example, installing jest as a dependency
-        docker exec earthquake-hub-backend-dev npm install --save-dev jest
-        # edit the npm command as needed
-        ```
-    5. Remove node_modules via docker exec as well
-        ```bash
-        docker exec earthquake-hub-backend-dev rm -rf node_modules
-        ```
-    > 
-## Git Practices
-1. It is encouraged to use atomic commits on your branches. 
-2. Follow these for your commit messages:
-    1. `feat`: The new feature you're adding to a particular application
-    2. `fix`: A bug fix
-    3. `style`: Feature and updates related to styling
-    4. `refactor`: Refactoring a specific section of the codebase
-    5. `test`: Everything related to testing
-    6. `docs`: Everything related to documentation
-    7. `chore`: Regular code maintenance.
- 
+    See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
 
-## Pull Request Process
 
-1. PR your branch into `dev`
-2. Follow the PR document template. Be as detailed as possible. Minimize the need for the reviewers to ask further questions.
-3. Use the this format for the PR Title: `type: [TASK ID] SHORTENED TASK TITLE`
-4. PR types:
-    1. `draft`: to be completed PR
-    2. `feat`: new feature
-    3. `fix`: bug fixes
-    4. `test`: unit or integration tests
-    5. `chore`: (aka housekeeping) cleaning/styling/refactor code, documentations, adding comments
+## Development Workflow: Create New Feature
+Please refer to the [contributing guide](https://upri-earthquake.github.io/dev-guide-contributing) to the entire EarthquakeHub suite.
 
 ## Miscellaneous Notes
 
-1. If you want to develop locally (outside of Docker) you need to install and use `node:14.17.6` and `npm:6.14.15`. The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to docker compose. 
+1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (as of writing we are running from node v15.11 to v20.0). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
 2. There are test files available in the __test__/ directory, and this repo uses `jest` as test runner.

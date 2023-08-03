@@ -1,45 +1,6 @@
 # earthquake-hub-backend
-Backend code for the EarthquakeHub web app
+earthquake-hub-backend program is the server-side component of the EarthquakeHub web application. For more details, you may refer to the [repository overview and API](https://upri-earthquake.github.io).  
 
-## Local development
-1. Install the package manager `npm 9.6.6` via:
-    ```bash
-    npm install -g npm@9.6.6
-    ```
-2. Install the code base dependencies via
-    ```bash
-    npm clean-install
-    ```
-3. Run all the containers using the following command
-    ```bash
-    docker compose up --attach backend
-    ```
-
-## Publishing container image
-1. Make sure that any changes from the env-file are also reflected in the commons repository docker-compose (TODO: predefine the env vars in the Dockerfile itself, instead of only on the env-file). This will ensure that when the commons uses this repository, it is using the env-vars that are expected by the image.
-2. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
-    > Note: replace X.Y.Z, and you should be at the same directory as the Dockerfile
-
-    ```bash
-    docker build -t ghcr.io/upri-earthquake/earthquake-hub-backend:X.Y.Z .
-    ```
-3. Push the image to ghcr.io:
-    ```bash
-    docker push ghcr.io/upri-earthquake/earthquake-hub-backend:X.Y.Z
-    ```
-
-
-## ----- The following info is outdated -----
-
-This repo contains the backend code for UPRI earthquake monitoring system
-This branch is for development.
-
-Steps to setup
-1. Clone frontend, backend, and sc-api repositories.
-2. On sc-api, install services on /etc/systemd/system, then enable.
-3. On frontend, create certs folder with pem keys
-3. On frontend, create .env from .env.example
-4. On backend, setup config.js from config.example.js
-5. On backend, setup .env from .env.example
-6. On host mysql, add ",172.17.0.1" on to bind-address on /etc/mysql/mysql.conf.d/mysqld.cnf, assuming MySQLv8.0.13+
+## Development Setup
+To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
