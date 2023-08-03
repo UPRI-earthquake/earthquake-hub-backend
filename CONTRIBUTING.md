@@ -21,6 +21,13 @@
     ```bash
     docker compose up
     ```
+    The above command shall show the logs of all the containers (see the `docker-compose.yml` file to check the container names) spun up by `docker compose`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
+    
+    Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers.
+
+    Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
+    
+    See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
 
 ## Publishing container image (For admins)
 1. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
@@ -34,14 +41,6 @@
     docker push ghcr.io/upri-earthquake/earthquake-hub-frontend:X.Y.Z
     ```
     > ℹ️ Note: You need an access token to publish, install, and delete private, internal, and public packages in Github Packages. Refer to this [tutorial](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry) on how to authenticate to the container registry.
-    
-    The above command shall show the logs of all the containers (see the `docker-compose.yml` file to check the container names) spun up by `docker compose`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
-    
-    Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers.
-
-    Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
-    
-    See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
 
 
 ## Development Workflow: Create New Feature
