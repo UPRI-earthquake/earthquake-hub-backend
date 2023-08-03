@@ -7,6 +7,7 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc')
 const swaggerUi = require('swagger-ui-express')
+const fs = require('fs')
 
 const {responseCodes} = require('./controllers/responseCodes')
 const MessagingService = require('./services/messaging.service')
@@ -14,29 +15,33 @@ const MessagingService = require('./services/messaging.service')
 
 const app = express();
 
-const options = {
-  swaggerDefinition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'UPRI Earthquake-Hub APIs',
-      version: '1.0.0',
-      description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
+if(process.env.NODE_ENV !== 'production'){
+  const options = {
+    swaggerDefinition: {
+      openapi: '3.0.0',
+      info: {
+        title: 'UPRI EarthquakeHub APIs',
+        version: '1.0.0',
+        description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: { //arbitrary name for the security scheme; will be used in the "security" key later
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+          },
+        }
+      },
     },
-    components: {
-      securitySchemes: {
-        bearerAuth: { //arbitrary name for the security scheme; will be used in the "security" key later
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-        },
-      }
-    },
-  },
-  apis: ['./src/routes/*.js', './src/models/*.js'], // Path to the API routes and models in your project
-  failOnErrors: true,
-};
-const specs = swaggerJsDoc(options);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+    apis: ['./src/routes/*.js', './src/models/*.js'], // Path to the API routes and models in your project
+    failOnErrors: true,
+  };
+  const specs = swaggerJsDoc(options);
+  const swaggerJson = JSON.stringify(specs, null, 2); // Convert to JSON with 2 spaces as indent
+  fs.writeFileSync('./docs/ehub-backend-api-docs.json', swaggerJson, 'utf8'); // Write the JSON data to a file (e.g., api-docs.json)
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+}
 
 
 const port = process.env.NODE_ENV === 'production'

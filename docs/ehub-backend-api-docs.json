@@ -1,0 +1,1919 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "UPRI EarthquakeHub APIs",
+    "version": "1.0.0",
+    "description": "These are the API endpoints used for UPRI earthquake-hub-backend"
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "The auto-generated ObjectId of the account"
+          },
+          "email": {
+            "type": "string",
+            "description": "The email address of the account"
+          },
+          "username": {
+            "type": "string",
+            "description": "The username of the account"
+          },
+          "password": {
+            "type": "string",
+            "description": "The password of the account"
+          },
+          "accountStatus": {
+            "type": "string",
+            "description": "The status of the account",
+            "enum": [
+              "Inactive",
+              "Active"
+            ]
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The roles associated with the account",
+            "enum": [
+              "sensor",
+              "citizen",
+              "admin",
+              "brgy"
+            ]
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "objectId"
+            },
+            "description": "The devices associated with the account"
+          }
+        },
+        "example": {
+          "_id": "6151ec04b417ad001ff7d343",
+          "email": "test@gmail.com",
+          "username": "testuser",
+          "password": "testpassword",
+          "roles": [
+            "sensor",
+            "citizen"
+          ],
+          "accountStatus": "inactive",
+          "devices": [
+            "6151ec04b417ad001ff7d345",
+            "6151ec04b417ad001ff7d346"
+          ]
+        }
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "The auto-generated ObjectId of the device"
+          },
+          "description": {
+            "type": "string",
+            "description": "The description of the device"
+          },
+          "streamId": {
+            "type": "string",
+            "description": "The stream ID of the device (e.g. AM_RE722\\.*\\/MSEED)",
+            "pattern": "^[A-Z]{2}_[A-Z0-9]{5}_\\.\\*\\/MSEED$"
+          },
+          "network": {
+            "type": "string",
+            "description": "The network of the device"
+          },
+          "station": {
+            "type": "string",
+            "description": "The station of the device"
+          },
+          "latitude": {
+            "type": "number",
+            "description": "The latitude of the device"
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude of the device"
+          },
+          "elevation": {
+            "type": "number",
+            "description": "The elevation of the device"
+          },
+          "macAddress": {
+            "type": "string",
+            "description": "The MAC address of the device",
+            "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+          },
+          "activity": {
+            "type": "string",
+            "description": "The activity status of the device (active, inactive, INTERNAL_ERROR)"
+          },
+          "activityToggleTime": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The time when the device's activity last changed"
+          }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "Auto-generated ObjectId (from SeisComP) of the event"
+          },
+          "publicID": {
+            "type": "string",
+            "description": "SeisComP public ID of the event"
+          },
+          "OT": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Origin time of the event"
+          },
+          "latitude_value": {
+            "type": "number",
+            "description": "Latitude value of the event"
+          },
+          "longitude_value": {
+            "type": "number",
+            "description": "Longitude value of the event"
+          },
+          "depth_value": {
+            "type": "number",
+            "description": "Depth value of the event"
+          },
+          "magnitude_value": {
+            "type": "number",
+            "description": "Magnitude value of the event"
+          },
+          "type": {
+            "type": "string",
+            "description": "* `NEW`  - Newly created event object from SeisComP * `UPDATE` - An update of previously created event object\n"
+          },
+          "text": {
+            "type": "string",
+            "description": "SeisComP's derived place name for the event"
+          },
+          "place": {
+            "type": "string",
+            "description": "An attribute added later-on via geoserve API"
+          }
+        },
+        "example": {
+          "_id": "6151ec04b417ad001ff7d346",
+          "publicID": "event123",
+          "OT": "2022-01-01T00:00:00.000Z",
+          "latitude_value": 40.123456,
+          "longitude_value": -120.654321,
+          "depth_value": 10,
+          "magnitude_value": 5.7,
+          "type": "earthquake",
+          "text": "Mindoro, Philippines"
+        }
+      }
+    }
+  },
+  "paths": {
+    "/accounts/register": {
+      "post": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Create a new account given user information",
+        "requestBody": {
+          "description": "Account details for registration",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "Valid email address of the user who wants to register to the network"
+                  },
+                  "username": {
+                    "type": "string",
+                    "description": "Unique username to be used"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Account's password"
+                  },
+                  "confirmPassword": {
+                    "type": "string",
+                    "description": "Account's repeat password"
+                  }
+                }
+              },
+              "example": {
+                "email": "citizen123@gmail.com",
+                "username": "citizen123",
+                "password": "testpassword",
+                "confirmPassword": "testpassword"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registration successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.REGISTRATION_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Successfully Created Account"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Registration failed due to existing username or email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "usernameExists": {
+                    "value": {
+                      "status": "responseCodes.REGISTRATION_USERNAME_IN_USE",
+                      "message": "Username already in use"
+                    }
+                  },
+                  "emailExists": {
+                    "value": {
+                      "status": "responseCodes.REGISTRATION_EMAIL_IN_USE",
+                      "message": "Email address already in use"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/authenticate": {
+      "post": {
+        "summary": "Return a JWT in exchange for username, password, & role",
+        "tags": [
+          "Accounts"
+        ],
+        "requestBody": {
+          "description": "User credentials for authentication",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Registered username"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Account's password"
+                  },
+                  "role": {
+                    "type": "enum[string]",
+                    "description": "Account role, depends on where to auth from:\n * `sensor`  - when authenticating from rshake device\n * `citizen` - when authenticating from webapp frontend\n * `admin`   - when authenticating from webapp admin-frontend\n * `brgy`    - when authenticating from ringserver\n"
+                  }
+                }
+              },
+              "example": {
+                "username": "citizen",
+                "password": "testpassword",
+                "role": "citizen"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful. ! Varies depending on account role !",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_TOKEN_PAYLOAD"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication successful"
+                    },
+                    "accessToken": {
+                      "type": "string",
+                      "example": "sensor-or-brgy-access-token",
+                      "description": "JWT for auth user, this is either in payload/cookie depending on role\n * `sensor`  - returned in JSON response\n * `citizen` - returned in cookie\n * `admin`   - returned in cookie\n * `brgy`    - returned in JSON response\n"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "If role is citizen or admin, JWT is returned as cookie",
+                "schema": {
+                  "type": "string",
+                  "example": "accessToken=abcde12345; Path=/; HttpOnly"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Authentication failed due to various reasons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "accountNotExists": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_USER_NOT_EXIST",
+                      "message": "User doesn't exists!"
+                    }
+                  },
+                  "invalidRole": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_INVALID_ROLE",
+                      "message": "Invalid role"
+                    }
+                  },
+                  "noLinkedDevice": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_NO_LINKED_DEVICE",
+                      "message": "User has no linked device"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed due to wrong password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_WRONG_PASSWORD"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Wrong password"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/signout": {
+      "post": {
+        "summary": "Clear citizen's accessToken in cookie",
+        "tags": [
+          "Accounts"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sign out successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.SIGNOUT_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Sign out successful"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "This endpoints clears the accessToken cookie"
+              }
+            }
+          },
+          "403": {
+            "description": "When no token is present in sent cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 403
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Token in cookie missing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/verify-sensor-token": {
+      "post": {
+        "summary": "Tell a brgy whether a sensor's JWT came from this server",
+        "tags": [
+          "Accounts"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "description": "Sensor's token that the client (must be a brgy) asks to be verified",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "JWT string",
+                    "example": "valid.jsonwebtoken.string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sensor verification successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.INBEHALF_VERIFICATION_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Sensor is a valid streamer"
+                    },
+                    "sensorInfo": {
+                      "type": "object",
+                      "properties": {
+                        "username": {
+                          "type": "string",
+                          "example": "username_this_sensor_is_linked_to"
+                        },
+                        "role": {
+                          "type": "string",
+                          "example": "sensor"
+                        },
+                        "streamIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}_[A-Z0-9]{5}_\\.\\*\\/MSEED$",
+                            "description": "Stream ID of the device (format XX_XXXXX_.*&#8205;/MSEED)"
+                          }
+                        },
+                        "tokenExp": {
+                          "type": "number",
+                          "example": 1678912345
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Sensor verification failed due to invalid request or internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.INBEHALF_VERIFICATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Internal error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sensor verification failed due to token-related issues",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "invalidToken": {
+                    "value": {
+                      "status": "responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN",
+                      "message": "Sender token invalid"
+                    }
+                  },
+                  "expiredToken": {
+                    "value": {
+                      "status": "responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN",
+                      "message": "Sender token expired"
+                    }
+                  },
+                  "invalidRole": {
+                    "value": {
+                      "status": "responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE",
+                      "message": "Role in token invalid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/profile": {
+      "get": {
+        "summary": "Return user information if accessToken is in cookie",
+        "tags": [
+          "Accounts"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully added device to user account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Successfully added device"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Device NETWORK and STATION codes are already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Device details already used"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "When no token is present in sent cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 403
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Token in cookie missing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/add": {
+      "post": {
+        "summary": "Add a device to the user's account",
+        "tags": [
+          "Device"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "description": "Device data to be added",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "network": {
+                    "type": "string",
+                    "description": "The network code of the device"
+                  },
+                  "station": {
+                    "type": "string",
+                    "description": "The station code of the device"
+                  },
+                  "latitude": {
+                    "type": "string",
+                    "description": "The latitude of the device (in degree coordinates)"
+                  },
+                  "longitude": {
+                    "type": "string",
+                    "description": "The longitude of the device (in degree coordinates)"
+                  },
+                  "elevation": {
+                    "type": "string",
+                    "description": "The elevation of the device (in meters)"
+                  }
+                }
+              },
+              "example": {
+                "network": "AM",
+                "station": "R3B2D",
+                "latitude": "40.123456",
+                "longitude": "120.654321",
+                "elevation": "50"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User profile information sent as payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Token is valid"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "username": {
+                          "type": "string",
+                          "example": "john_doe"
+                        },
+                        "email": {
+                          "type": "string",
+                          "example": "john.doe@example.com"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Account doesn't exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_USER_NOT_EXIST"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "User not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "When no token is present in sent cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 403
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Token in cookie missing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/link": {
+      "post": {
+        "summary": "Bind sensor's MAC address and streamId to the user's device record",
+        "tags": [
+          "Device"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Physical identification of the device/sensor",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "macAddress": {
+                    "type": "string",
+                    "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$",
+                    "description": "MAC address of the device (format XX:XX:XX:XX:XX:XX)"
+                  },
+                  "streamId": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{2}_[A-Z0-9]{5}_\\.\\*\\/MSEED$",
+                    "description": "Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Device-account linking successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Device-Account Linking Successful"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "description": "The payload containing device information.",
+                      "properties": {
+                        "deviceInfo": {
+                          "type": "object",
+                          "properties": {
+                            "network": {
+                              "type": "string",
+                              "description": "The network of the device.",
+                              "example": "AM"
+                            },
+                            "station": {
+                              "type": "string",
+                              "description": "The code of the device station.",
+                              "example": "RE722"
+                            },
+                            "longitude": {
+                              "type": "number",
+                              "format": "float",
+                              "description": "The longitude of the device location.",
+                              "example": -122.4194
+                            },
+                            "latitude": {
+                              "type": "number",
+                              "format": "float",
+                              "description": "The latitude of the device location.",
+                              "example": 37.7749
+                            },
+                            "elevation": {
+                              "type": "number",
+                              "format": "float",
+                              "description": "The elevation of the device location in meters.",
+                              "example": 100.5
+                            },
+                            "streamId": {
+                              "type": "string",
+                              "description": "The stream ID of the device.",
+                              "pattern": "^[A-Z]{2}_[A-Z0-9]{5}_\\.\\*\\/MSEED$"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response."
+                    }
+                  }
+                },
+                "examples": {
+                  "alreadyLinked": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Device is already linked to an existing account"
+                    }
+                  },
+                  "usernameNotFound": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "User not found"
+                    }
+                  },
+                  "deviceNotFound": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Device doesn't exist in the database!"
+                    }
+                  },
+                  "deviceNotOwned": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Device is not yet added to user's device list"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/all": {
+      "get": {
+        "summary": "Return all added (not necessarily linked) devices with their location",
+        "tags": [
+          "Device"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response with device locations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The custom status code for the response as defined in responseCodes.js",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "All device locations found"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "description": "An array of device objects containing device locations.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "network": {
+                            "type": "string",
+                            "description": "The network of the device.",
+                            "example": "AM"
+                          },
+                          "code": {
+                            "type": "string",
+                            "description": "The code of the device station.",
+                            "example": "RE722"
+                          },
+                          "latitude": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The latitude of the device location.",
+                            "example": 37.7749
+                          },
+                          "longitude": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The longitude of the device location.",
+                            "example": -122.4194
+                          },
+                          "description": {
+                            "type": "string",
+                            "description": "The description of the device.",
+                            "example": "username's device"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error response when no devices are found in the database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The custome status code for the response as defined in responseCodes.js",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "No Devices found in DB!"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/my-devices": {
+      "get": {
+        "summary": "Return list of devices belonging to the authenticated (citizen) user",
+        "tags": [
+          "Device"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success response with device locations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The custom status code for the response as defined in responseCodes.js",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "All device locations found"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "description": "An array of device objects",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "network": {
+                            "type": "string",
+                            "description": "The network of the device.",
+                            "example": "AM"
+                          },
+                          "station": {
+                            "type": "string",
+                            "description": "Station code of the device",
+                            "example": "RE722"
+                          },
+                          "status": {
+                            "type": "string",
+                            "description": "Status of device's data transmission\n * `Streaming`      - ringserver is receiving data from device\n * `Not Streaming`  - ringserver is NOT receiving data from device\n * `Not Yet Linked` - device is added to account but physical sensor is not yet linked to the device record\n",
+                            "example": "Streaming"
+                          },
+                          "statusSince": {
+                            "type": "string",
+                            "description": "Timestamp indicating when the device status changed (Not Available if Not Yet Linked)",
+                            "example": "Fri, 14 Jul 2023 12:40:37 GMT"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "When no token is present in sent cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 403
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Token in cookie missing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/status": {
+      "get": {
+        "summary": "Return the status of a specified device",
+        "tags": [
+          "Device"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "network",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The network code of the device",
+            "required": true,
+            "example": "AM"
+          },
+          {
+            "in": "query",
+            "name": "station",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The station code of the device",
+            "required": true,
+            "example": "RE722"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with device network, station, status, and statusSince sent back as payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The custom status code for the response as defined in responseCodes.js",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "All device locations found"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "network": {
+                          "type": "string",
+                          "description": "The network of the device.",
+                          "example": "AM"
+                        },
+                        "station": {
+                          "type": "string",
+                          "description": "Station code of the device",
+                          "example": "RE722"
+                        },
+                        "status": {
+                          "type": "string",
+                          "description": "Status of device's data transmission\n * `Streaming`      - ringserver is receiving data from device\n * `Not Streaming`  - ringserver is NOT receiving data from device\n * `Not Yet Linked` - device is added to account but physical sensor is not yet linked to the device record\n",
+                          "example": "Streaming"
+                        },
+                        "statusSince": {
+                          "type": "string",
+                          "description": "Timestamp indicating when the device status changed (Not Available if Not Yet Linked)",
+                          "example": "Fri, 14 Jul 2023 12:40:37 GMT"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/eq-events": {
+      "get": {
+        "summary": "Get recorded seismic events in the network within a specific time range",
+        "tags": [
+          "EQ Events"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "startTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "The start time of the events (yyyy-MM-dd HH:mm:ss.S)",
+            "required": true,
+            "example": "2022-09-09 14:30:00.0"
+          },
+          {
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "The start time of the events (yyyy-MM-dd HH:mm:ss.S)",
+            "required": true,
+            "example": "2023-09-09 14:30:00.0"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "EQ events acquired successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "EQ events acquired successfully"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "description": "The array containing earthquake event data as detected by SeisComP.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": {
+                            "type": "string",
+                            "description": "The unique identifier of the earthquake event."
+                          },
+                          "publicID": {
+                            "type": "string",
+                            "description": "The public ID of the earthquake event."
+                          },
+                          "OT": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "The occurrence time of the earthquake event."
+                          },
+                          "latitude_value": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The latitude value of the earthquake event."
+                          },
+                          "longitude_value": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The longitude value of the earthquake event."
+                          },
+                          "depth_value": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The depth value of the earthquake event."
+                          },
+                          "magnitude_value": {
+                            "type": "number",
+                            "format": "float",
+                            "description": "The magnitude value of the earthquake event."
+                          },
+                          "type": {
+                            "type": "string",
+                            "description": "The type of the earthquake event."
+                          },
+                          "text": {
+                            "type": "string",
+                            "description": "Default location text as generated from SeisComP"
+                          },
+                          "place": {
+                            "type": "string",
+                            "description": "More specific location acquired via Geoserve API"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "example1": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_SUCCESS",
+                      "message": "EQ events acquired successfully",
+                      "payload": [
+                        {
+                          "_id": "649ad196820cffdfa3fa48cb",
+                          "publicID": "result.value.publicID",
+                          "OT": "2022-09-09T14:39:21.000Z",
+                          "latitude_value": 14.123,
+                          "longitude_value": 123.123,
+                          "depth_value": 1.1,
+                          "magnitude_value": 2.1,
+                          "type": "M",
+                          "text": "Quezon City, Philippines",
+                          "place": "40km North of Manila"
+                        },
+                        {
+                          "_id": "649ad1b2820cffdfa3fa48d0",
+                          "publicID": "result.value.publicID",
+                          "OT": "2023-06-09T14:39:21.000Z",
+                          "latitude_value": 14.123,
+                          "longitude_value": 123.123,
+                          "depth_value": 1.1,
+                          "magnitude_value": 2.1,
+                          "type": "M",
+                          "text": "Quezon City, Philippines",
+                          "place": "Unavailable"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messaging": {
+      "get": {
+        "tags": [
+          "Messaging"
+        ],
+        "summary": "SSE endpoint to stream SC_PICK or SC_EVENT messages to the client.",
+        "description": "- This endpoint streams events to the client using Server-Sent Events (SSE).\n- The endpoint uses the `text/event-stream` content type.\n- Events are sent as STRINGS in the format: `event: <event_name>\\ndata: <event_obj>\\\\id: <timestamp>\\n\\n`.\n- `event` can be either SC_PICK or SC_EVENT\n",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "The SSE data stream. Note that 'place' attribute can be Unavailable if geoserve api isn't online."
+                },
+                "examples": {
+                  "earthquakeEvent": {
+                    "value": "\"event\": \"SC_EVENT\"\n\"data\": {\n  \"eventType\": \"NEW\",\n  \"publicID\": \"TEST4\",\n  \"OT\": \"2023-06-09T14:39:21.000Z\",\n  \"latitude_value\": 21.317,\n  \"longitude_value\": 118.998,\n  \"depth_value\": 1.1,\n  \"magnitude_value\": 6.1,\n  \"text\": \"Cagayan Valley, Philippines\",\n  \"method\": \"LOCSAT\",\n  \"last_modification\": \"2023-06-09T14:39:21.000Z\",\n  \"place\": \"Unavailable\"\n}\n\"id\": 1690534975637\n"
+                  },
+                  "pickEvent": {
+                    "value": "\"event\": \"SC_PICK\"\n\"data\": {\n  \"networkCode\": \"AM\",\n  \"stationCode\": \"RE722\",\n  \"timestamp\": \"2023-06-27T05:58:21.000Z\"\n}\n\"id\": 1690534975472\n"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messaging/restricted/new-event": {
+      "post": {
+        "summary": "Add new EQevent as message in SSE, entry in DB, and notif to subscribed clients.",
+        "description": "!! Access to this endpoint is restricted to trusted network only, this is done via the NGINX reverse-proxy (in deployment environment).\n",
+        "tags": [
+          "Messaging"
+        ],
+        "requestBody": {
+          "description": "Event data to be added",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event"
+              },
+              "example": {
+                "eventType": "NEW",
+                "publicID": "TEST4",
+                "OT": "2023-06-09T14:39:21.000Z",
+                "latitude_value": 21.317,
+                "longitude_value": 118.998,
+                "depth_value": 1.1,
+                "magnitude_value": 6.1,
+                "text": "Cagayan Valley, Philippines",
+                "method": "LOCSAT",
+                "last_modification": "2023-06-09T14:39:21.000Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event added successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messaging/restricted/new-pick": {
+      "post": {
+        "summary": "Add new PICK as message to SSE.",
+        "description": "!! Access to this endpoint is restricted to trusted network only, this is done via the NGINX reverse-proxy (in deployment environment).\n",
+        "tags": [
+          "Messaging"
+        ],
+        "requestBody": {
+          "description": "Pick data from processor like SeisComP",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "networkCode": {
+                    "type": "string",
+                    "description": "The network code of the device"
+                  },
+                  "stationCode": {
+                    "type": "string",
+                    "description": "The station code of the device"
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "format": "$date-time",
+                    "description": "The timestamp when the pick was recorded"
+                  }
+                }
+              },
+              "example": {
+                "networkCode": "AM",
+                "stationCode": "RE722",
+                "timestamp": "2023-06-27T05:58:21.000Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pick received successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Pick received"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/subscribe": {
+      "post": {
+        "summary": "Subscribe to web-push notifications.",
+        "description": "This endpoint should be accessed using client browser's webpush API",
+        "tags": [
+          "Notifications"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The push notification endpoint.",
+                    "example": "https://updates.push.services.mozilla.com/wpush/v2/XXX"
+                  },
+                  "expirationTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "The expiration time of the subscription (optional).",
+                    "example": "2023-07-31T12:00:00Z"
+                  },
+                  "keys": {
+                    "type": "object",
+                    "properties": {
+                      "auth": {
+                        "type": "string",
+                        "description": "The authentication key for the subscription.",
+                        "example": "qIwUJpYMw1E2Xa9vXOH-_Q"
+                      },
+                      "p256dh": {
+                        "type": "string",
+                        "description": "The P-256 Diffie-Hellman public key for the subscription.",
+                        "example": "BLuuTRceHGlpTdepbGlthyMlQM_I1WvqcLLONsg-zQ7aaAlRFO6DfmSSMGU"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "endpoint",
+                  "keys"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Subscription already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Subscription already exists"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Subscription created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Subscription created"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request or internal error such as DB not accessible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Internal error encountered"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": []
+}
