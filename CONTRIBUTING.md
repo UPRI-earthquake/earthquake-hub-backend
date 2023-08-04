@@ -6,7 +6,7 @@
 1. Clone the repository
     
     ```bash
-    git clone git@github.com:upri-earthquake/earthquake-hub-backend.git
+    git clone git@github.com:UPRI-earthquake/earthquake-hub-backend.git
     ```
 2. Create a file named `.env` and set its values based on `.env.example`. You should be able to use the default values in the example file.
 3. Install all dependencies via:
