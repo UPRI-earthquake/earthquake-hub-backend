@@ -48,5 +48,5 @@ Please refer to the [contributing guide](https://upri-earthquake.github.io/dev-g
 
 ## Miscellaneous Notes
 
-1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (as of writing we are running from node v15.11 to v20.0). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
+1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (as of writing we are running node v18). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
 2. There are test files available in the __test__/ directory, and this repo uses `jest` as test runner.
