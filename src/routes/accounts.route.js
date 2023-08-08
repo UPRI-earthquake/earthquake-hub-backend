@@ -259,9 +259,7 @@ router.route('/authenticate').post(
   *                   example: "Server error occured"
   */
 router.route('/signout').post(
-  Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
-  Middleware.verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.removeCookies            // Get profile information and respond accordingly
+  AccountsController.removeCookies            // Remove accessToken saved in browser's cookie
 );
 
 
