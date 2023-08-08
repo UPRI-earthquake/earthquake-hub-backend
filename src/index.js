@@ -5,30 +5,54 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const swaggerJsDoc = require('swagger-jsdoc')
+const swaggerUi = require('swagger-ui-express')
+const fs = require('fs')
 
-console.log('db-host: ' + process.env.MONGO_HOST)
-require('./models/index');
+const {responseCodes} = require('./controllers/responseCodes')
+const MessagingService = require('./services/messaging.service')
 
-console.log('mysql-host: ' + process.env.MYSQL_HOST)
 
 const app = express();
+
+if(process.env.NODE_ENV !== 'production'){
+  const options = {
+    swaggerDefinition: {
+      openapi: '3.0.0',
+      info: {
+        title: 'UPRI EarthquakeHub APIs',
+        version: '1.0.0',
+        description: 'These are the API endpoints used for UPRI earthquake-hub-backend',
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: { //arbitrary name for the security scheme; will be used in the "security" key later
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+          },
+        }
+      },
+    },
+    apis: ['./src/routes/*.js', './src/models/*.js'], // Path to the API routes and models in your project
+    failOnErrors: true,
+  };
+  const specs = swaggerJsDoc(options);
+  const swaggerJson = JSON.stringify(specs, null, 2); // Convert to JSON with 2 spaces as indent
+  fs.writeFileSync('./docs/ehub-backend-api-docs.json', swaggerJson, 'utf8'); // Write the JSON data to a file (e.g., api-docs.json)
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+}
+
+
 const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
 
-const mongodb = require('./services/mongodb')
+const mongodb = require('./services/mongodb.service')
 mongodb.connect(); // Required by notifs router
                    // TODO: await this before using notifs endpoint...
+console.log('mongodb-host: ' + process.env.MONGO_HOST)
 
-const stationsRouter = require('./routes/stations');
-const eventsRouter = require('./routes/events');
-const messaging = require('./routes/messaging');
-const notifs  = require('./routes/notifications');
-
-const {
-  responseCodes,
-  responseMessages
-} = require('./routes/responseCodes')
 
 app.use(cors({origin : process.env.NODE_ENV === 'production'
   ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -43,17 +67,11 @@ app.use(cookieParser());
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
 })
-app.use('/stationLocations', stationsRouter)
-app.use('/eventsList', eventsRouter)
-app.use('/messaging', messaging.router)
-messaging.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
-messaging.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
-// TODO: await the redisProxy calls...
-// TODO: quit() the redisProxy calls...
-app.use('/notifications', notifs.router)
-notifs.redisProxy() // forwards events from redis to web-push
 app.use('/accounts', require('./routes/accounts.route'))
 app.use('/device', require('./routes/devices.route'))
+app.use('/messaging', require('./routes/messaging.route'))
+app.use('/notifications', require('./routes/notifications.route'))
+app.use('/eq-events', require('./routes/EQevents.route'))
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
@@ -103,6 +121,8 @@ if (process.env.NODE_ENV === 'production'){
         'Production client expected (by CORS) at '
       + `https://${process.env.CLIENT_PROD_HOST}`);
     });
+  MessagingService.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
+  MessagingService.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
 }else{
   // Run http server (for local development)
   http.createServer(app)
@@ -116,4 +136,6 @@ if (process.env.NODE_ENV === 'production'){
       + `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`);
       })
     });
+  MessagingService.sseConnectionsEventListener() // listen for ringserver-connections-status events from ringserver
+  MessagingService.sseStreamsEventListener() // listen for ringserver-streamids-status events from ringserver
 }

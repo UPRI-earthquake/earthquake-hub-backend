@@ -21,7 +21,7 @@ COPY --chown=node:node package*.json ./
 RUN npm ci --only=production --loglevel=verbose
 
 # copy codebase
-COPY --chown=node:node . ./
+COPY --chown=node:node ./src ./src
 
 USER node
 CMD ["dumb-init", "npm", "run", "start"]

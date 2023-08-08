@@ -4,9 +4,9 @@
   "description": "This repo contains the backend code for UPRI earthquake monitoring system",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node src/index.js",
     "start:help": "echo 'Runs node server index.js, and expects process.env to be runtime-export-ed in the environment'",
-    "start:dev": "nodemon -r dotenv/config index.js",
+    "start:dev": "nodemon --ignore docs/ -r dotenv/config src/index.js",
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
     "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'"
@@ -32,8 +32,8 @@
     "joi": "^17.9.1",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0",
-    "mysql2": "^3.2.0",
-    "redis": "^4.6.5",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
     "web-push": "^3.4.5"
   },
   "devDependencies": {
