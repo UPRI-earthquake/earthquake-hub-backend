@@ -218,7 +218,8 @@ exports.getAccountProfile = async (username) => {
       str: 'success',
       profile: {
         username: citizen.username,
-        email: citizen.email
+        email: citizen.email,
+        role: citizen.role
       }
     }
 }
