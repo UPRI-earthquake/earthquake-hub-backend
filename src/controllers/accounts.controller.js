@@ -8,11 +8,13 @@ exports.registerAccount = async (req, res, next) => {
 
   // Define validation schema
   const registerSchema = Joi.object({
+    role: Joi.string().valid('brgy', 'citizen').required(),
     username: Joi.string().required(),
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     confirmPassword: Joi.equal(Joi.ref('password')).required()
                      .messages({"any.only": "Passwords should match."}),
-    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
+    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required(), 
+    ringserverUrl: Joi.string()
   });
 
   try {
@@ -29,9 +31,11 @@ exports.registerAccount = async (req, res, next) => {
 
     // Perform task
     returnStr = await AccountsService.createUniqueAccount(
+      result.value.role,
       result.value.username,
       result.value.email,
-      result.value.password
+      result.value.password,
+      result.value.ringserverUrl
     )
 
     // Respond based on returned value

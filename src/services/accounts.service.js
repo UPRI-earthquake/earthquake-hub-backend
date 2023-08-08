@@ -15,7 +15,7 @@ const User = require('../models/account.model');
   *     "emailExists":    if email is already in use
   *     
  ***************************************************************************/
-exports.createUniqueAccount = async (username, email, password) => {
+exports.createUniqueAccount = async (role, username, email, password, ringserverUrl) => {
   // Check if username is in use
   if (await User.findOne({ username: username })) {
     return 'usernameExists';
@@ -28,12 +28,29 @@ exports.createUniqueAccount = async (username, email, password) => {
 
   // save inputs to database
   const hashedPassword = bcrypt.hashSync(password, 10); // hash the password before saving to database
-  const newAccount = new User({
-    username: username,
-    email: email,
-    password: hashedPassword,
-    roles: ["citizen", "sensor"] // TODO: Make this an attribute to POST route too
-  });
+  let newAccount = null;
+
+  switch (role) {
+    case 'brgy':
+      newAccount = new User({
+        username: username,
+        email: email,
+        password: hashedPassword,
+        roles: ["brgy"], // TODO: Make this an attribute to POST route too
+        ringserverUrl: ringserverUrl
+      });
+      break;
+  
+    case 'citizen':
+      newAccount = new User({
+        username: username,
+        email: email,
+        password: hashedPassword,
+        roles: ["citizen", "sensor"] // TODO: Make this an attribute to POST route too
+      });
+      break;
+  }
+
   await newAccount.save();
 
   return "success";
