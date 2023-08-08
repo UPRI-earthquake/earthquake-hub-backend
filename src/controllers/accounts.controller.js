@@ -137,15 +137,38 @@ exports.authenticateAccount = async (req, res, next) => {
         });
         break;
       case "successSensorBrgy":
-        res.status(200).json({
-          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
-          message: 'Authentication successful',
-          // return access token as part of json payload
-          accessToken: generateAccessToken({
-            'username': result.value.username,
-            'role': result.value.role
-          }),
-        });
+        const origin = req.get('origin');
+        const allowedOrigin = process.env.NODE_ENV === 'production'
+                              ? 'https://' + process.env.CLIENT_PROD_HOST
+                              : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT;
+        
+        if (origin === allowedOrigin) { // origin is from web app
+          res.status(200)
+          // return access token in http cookie (so it's hidden from browser js)
+          .cookie(
+            "accessToken",
+            generateAccessToken({'username': result.value.username, 'role': 'brgy'}),
+            {
+              httpOnly: true, // set to be accessible only by web browser
+              secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
+            }
+          )
+          .json({
+            status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
+            message: "Authentication successful"
+          })
+        } else { // origin is not from web app
+          res.status(200).json({
+            status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
+            message: 'Authentication successful',
+            // return access token as part of json payload
+            accessToken: generateAccessToken({
+              'username': result.value.username,
+              'role': result.value.role
+            }),
+          });
+        }
+        
         break;
       case "successCitizen":
         res.status(200)
