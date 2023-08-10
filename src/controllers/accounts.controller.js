@@ -320,3 +320,42 @@ exports.removeCookies = async (req, res, next) => {
   }
 }
 
+exports.getBrgyToken = async (req, res, next) => {
+  console.log("Brgy access token requested");
+
+  // Define validation schema
+  const authenticateSchema = Joi.object().keys({
+    username: Joi.string().required(),
+    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
+    role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
+  });
+
+  // Define local functions
+  function generateAccessToken(payload){
+    return jwt.sign(
+      payload, 
+      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
+      {expiresIn: process.env.JWT_EXPIRY} // Adds 'exp' in seconds since epoch
+    );
+  }
+
+  try {
+    // Perform Task
+    
+    // Respond
+    res.status(200).json({
+      status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
+      message: 'Authentication successful',
+      // return access token as part of json payload
+      accessToken: generateAccessToken({
+        'username': req.username,
+        'role': req.role
+      }),
+    });
+    
+  } catch (error) {
+    console.log(`Unable to get brgy token: \n ${error}`);
+    next(error)
+  }  
+}
+

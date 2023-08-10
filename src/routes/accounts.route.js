@@ -441,5 +441,11 @@ router.route('/profile').get(
   AccountsController.getAccountProfile       // Get profile information and respond accordingly
 );
 
+router.route('/acquire-brgy-token').post(    // This endpoint is used by brgy accounts for acquiring brgy token
+  Middleware.getTokenFromCookie,             // Brgy token is stored in cookie
+  Middleware.verifyTokenWithRole('brgy'),    // This endpoint should only be accessible to Brgy Accounts
+  AccountsController.getBrgyToken            // Get brgy token and respond accordingly
+);
+
 
 module.exports = router
