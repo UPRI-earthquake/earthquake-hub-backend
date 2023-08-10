@@ -136,6 +136,12 @@ exports.authenticateAccount = async (req, res, next) => {
           message: 'User has no linked device'
         });
         break;
+      case "brgyAccountInactive":
+        res.status(400).json({
+          status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
+          message: 'Account is not yet approved'
+        });
+        break;
       case "successSensorBrgy":
         const origin = req.get('origin');
         const allowedOrigin = process.env.NODE_ENV === 'production'

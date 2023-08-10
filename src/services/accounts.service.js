@@ -32,6 +32,8 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
 
   switch (role) {
     case 'brgy':
+      // TODO: check if ringserverUrl is already saved
+
       newAccount = new User({
         username: username,
         email: email,
@@ -101,6 +103,9 @@ exports.loginAccountRole = async (username, password, role) => {
       // check if sensor account has devices OR,
       // check if brgy account has devices (of their own, or that forwards to them)
       // that they can in turn forward to UP (main receiver)
+      if (user.accountStatus != 'Active') {
+        return 'brgyAccountInactive';
+      }
       if (user.devices.length === 0) {
         return 'noLinkedDevice';
       }
