@@ -316,7 +316,7 @@ exports.linkDevice = async(username, macAddress, streamId) => {
     }
   }
 
-  return {str:'success', deviceInfo: payload}
+  return {str:'success', payload: payload}
 }
 
 
