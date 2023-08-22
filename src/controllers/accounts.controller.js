@@ -12,7 +12,7 @@ exports.registerAccount = async (req, res, next) => {
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     confirmPassword: Joi.equal(Joi.ref('password')).required()
                      .messages({"any.only": "Passwords should match."}),
-    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
+    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: true } }).required()
   });
 
   try {
