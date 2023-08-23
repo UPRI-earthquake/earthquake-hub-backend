@@ -1,24 +1,36 @@
 const Joi = require('joi')
 const EQEventsService = require('../services/EQevents.service')
 const {responseCodes} = require('./responseCodes')
+const {formatErrorMessage} = require('./helpers')
 
 // query database
 exports.getEQEvents = async (req, res, next) => {
   console.log('List of EQ events requested')
   // Define validation schema
   const schema = Joi.object({
-    startTime: Joi.date().iso().required(),
-    endTime: Joi.date().iso().required(),
+    startTime: Joi.date().iso().required()
+    .messages({
+      "any.required": "Start time is required.",
+      "date.iso": "Invalid start time format. Please provide a valid ISO date format.",
+    }),
+    endTime: Joi.date().iso().required()
+    .messages({
+      "any.required": "End time is required.",
+      "date.iso": "Invalid end time format. Please provide a valid ISO date format.",
+    }),
   });
 
   try {
     // Validate query
     const {error, value} = schema.validate(req.query)
     if(error){
-      console.log(error.details[0].message)
+      const errorMessages = error.details.map(
+        (detail) => formatErrorMessage(detail.message)
+      );
+      console.error("Validation Errors:", errorMessages);
       res.status(400).json({
         status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
+        message: errorMessages[0]
       });
       return;
     }
