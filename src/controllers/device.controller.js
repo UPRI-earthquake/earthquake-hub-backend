@@ -4,8 +4,6 @@ const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
 
 exports.getAllDeviceLocations = async (req, res, next) => {
-  console.log("Locations of all devices requested");
-
   // No validation for GET request
 
   try {
@@ -39,7 +37,6 @@ exports.getAllDeviceLocations = async (req, res, next) => {
 }
 
 exports.getOwnedDevices = async (req, res, next) => {
-  console.log('Owned devices requested');
   try {
 
     // No validation for GET request
@@ -74,8 +71,6 @@ exports.getOwnedDevices = async (req, res, next) => {
 };
 
 exports.getDeviceStatus = async (req, res, next) => {
-  console.log('Device status requested');
-
   // Define validation schema
   const deviceStatusQuerySchema = Joi.object({
     network: Joi.string()
@@ -140,8 +135,6 @@ exports.getDeviceStatus = async (req, res, next) => {
 }
 
 exports.addDevice = async (req, res, next) => {
-  console.log("Add device requested");
-
   // Define validation schema
   const addDeviceSchema = Joi.object().keys({
     network: Joi.string()
@@ -230,8 +223,6 @@ exports.addDevice = async (req, res, next) => {
 }
 
 exports.linkDevice = async (req, res, next) => {
-  console.log('Link device requested');
-
   // Define validation schema
   const linkDeviceSchema = Joi.object().keys({
     macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/)

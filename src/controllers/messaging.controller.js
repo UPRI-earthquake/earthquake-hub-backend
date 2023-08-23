@@ -37,7 +37,6 @@ exports.setupSSEConnection = async (req, res, next) => {
 }
 
 exports.newEQEvent = async (req, res, next) => {
-    console.log('Received new EQEvent')
   /* NOTE: "EQEvent" is different from "event" as used in this codebase.
    *       "EQEvent" = an earthquake evenet detected from the data processing software, ie
    *                   SeisComp

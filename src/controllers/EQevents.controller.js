@@ -5,7 +5,6 @@ const {formatErrorMessage} = require('./helpers')
 
 // query database
 exports.getEQEvents = async (req, res, next) => {
-  console.log('List of EQ events requested')
   // Define validation schema
   const schema = Joi.object({
     startTime: Joi.date().iso().required()

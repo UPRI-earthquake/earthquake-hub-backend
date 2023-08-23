@@ -5,8 +5,6 @@ const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
-  console.log("Register account requested");
-
   // Define validation schema
   const registerSchema = Joi.object({
     username: Joi.string().required(),
@@ -91,8 +89,6 @@ exports.registerAccount = async (req, res, next) => {
 }
 
 exports.authenticateAccount = async (req, res, next) => {
-  console.log("Authenticate account requested");
-
   // Define validation schema
   const authenticateSchema = Joi.object().keys({
     username: Joi.string().required(),
@@ -209,8 +205,6 @@ exports.authenticateAccount = async (req, res, next) => {
 }
 
 exports.verifySensorToken = async (req, res, next) => {
-  console.log("Sensor token verification requested");
-
   // Define validation schema
   const verifySensorTokenSchema = Joi.object().keys({
     token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/)
@@ -292,8 +286,6 @@ exports.verifySensorToken = async (req, res, next) => {
 }
 
 exports.getAccountProfile = async (req, res, next) => {
-  console.log("Account profile requested");
-
   // No validation schema since this is for GET endpoint
 
   try {
@@ -330,7 +322,6 @@ exports.getAccountProfile = async (req, res, next) => {
 }
 
 exports.removeCookies = async (req, res, next) => {
-  console.log("Sign-out requested");
   try {
     res.clearCookie('accessToken').json({ 
       status: responseCodes.SIGNOUT_SUCCESS,
