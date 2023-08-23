@@ -205,3 +205,35 @@ exports.getAccountProfile = async (username) => {
       }
     }
 }
+
+
+/***************************************************************************
+  * getActiveRingserverHosts:
+  *     Gets list of registered brgy in the network
+  * Inputs:
+  *     none
+  * Outputs obj.str:
+  *     "noRingserverHostExists":   if no account with `brgy` role exists in DB
+  *     "success":                  if there is at least one registered brgy account in DB
+  * Outputs obj.hosts:
+  *     Will contain array of objects of registered brgy ringserver hosts
+  *     [{username, url}]
+  *     
+ ***************************************************************************/
+exports.getActiveRingserverHosts = async () => {
+  const ringserverHosts = await User.find({
+    'roles': 'brgy',                        // query all accounts with `brgy` role
+    'accountStatus': 'Active'               // get only accounts that are `Active`
+  }, 
+    'username ringserverUrl -_id'           // output the `username` and `ringserverUrl` fields only
+  );
+
+  if (!ringserverHosts) { // No registered brgy in DB
+    return {str: 'accountNotExists'};
+  }
+  
+  return {
+    str: 'success',
+    hosts: ringserverHosts
+  }
+}

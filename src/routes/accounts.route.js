@@ -444,4 +444,10 @@ router.route('/profile').get(
 );
 
 
+
+// TODO: Create Swagger UI Documentation for this endpoint
+router.route('/ringserver-hosts').get(
+  AccountsController.getActiveRingserverHosts       // Get list of active ringservers registered in the network
+)
+
 module.exports = router
