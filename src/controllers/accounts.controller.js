@@ -2,6 +2,7 @@ const Joi = require('joi');
 const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
+const {formatErrorMessage} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
   console.log("Register account requested");
@@ -9,21 +10,42 @@ exports.registerAccount = async (req, res, next) => {
   // Define validation schema
   const registerSchema = Joi.object({
     username: Joi.string().required(),
-    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-    confirmPassword: Joi.equal(Joi.ref('password')).required()
-                     .messages({"any.only": "Passwords should match."}),
-    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: true } }).required()
+    password: Joi.string()
+      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
+      .required()
+      .messages({
+        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
+      }),
+    confirmPassword: Joi.equal(Joi.ref("password"))
+      .required()
+      .messages({
+        "any.only": "Passwords should match.",
+      }),
+    email: Joi.string()
+      .email({ minDomainSegments: 2, tlds: { allow: true } })
+      .required()
+      .messages({
+        "string.email": "Please enter a valid email address.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   try {
     // Validate input
-    const result = registerSchema.validate(req.body);
+    const result = registerSchema.validate(req.body, {aborEarly: false});
     if(result.error){
-      console.log(result.error.details[0].message)
+      const errorMessages = result.error.details.map(
+        (detail) => formatErrorMessage(detail.message)
+      );
+      console.error("Validation Errors:", errorMessages);
+
       res.status(400).json({
         status: responseCodes.REGISTRATION_ERROR, 
-        message: result.error.details[0].message
+        message: errorMessages[0]
       });
+
       return;
     }
 
