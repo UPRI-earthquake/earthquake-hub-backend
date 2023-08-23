@@ -42,11 +42,13 @@ exports.getEQEvents = async (req, res, next) => {
 
     // Respond based on returned values
     if(updatedData){
+      let message = "EQ events acquired successfully";
       res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
-        message: "EQ events acquired successfully",
+        message: message,
         payload: updatedData
       });
+      res.message = message;
     }
   }catch(err){
     console.trace(`Getting EQevents unsuccessful \n ${err}`);
