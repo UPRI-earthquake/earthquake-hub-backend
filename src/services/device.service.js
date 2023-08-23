@@ -319,5 +319,64 @@ exports.linkDevice = async(username, macAddress, streamId) => {
   return {str:'success', payload: payload}
 }
 
+/***************************************************************************
+  * unlinkDevice:
+  *     Unlinks a physical device to a user account and updates the device record in the database.
+  * 
+  * Inputs:
+  *     username: string       // The username of the account to which the device will be unlinked.
+  *     macAddress: string     // The MAC address of the device for verification.
+  *     streamId: string       // The unique stream identifier of the device; also used for verification.
+  * 
+  * Output str:
+  *     "success":             if the device was successfully linked to the user account and device information updated.
+  *     "usernameNotFound":    if the provided username does not exist in the database.
+  *     "deviceNotFound":      if a device with the specified network and station is not found in the database.
+  *     "deviceNotOwned":      if the specified device is not owned by the provided username.
+  * 
+  * Returns:
+  *     An object with the following structure:
+  *     {
+  *         str: string,        // Status indicator ("success", "usernameNotFound", "deviceNotFound", or "deviceNotOwned").
+  *     }
+  * 
+  * Note:
+  *     - This function is asynchronous and returns a Promise that resolves to the output object.
+  *     - If the device is successfully unlinked to the user account and the device information is removed in the database, the function will return
+  *       "success".
+ ***************************************************************************/
+exports.unlinkDevice = async(username, macAddress, streamId) => {
+  const user = await Account.findOne({ 'username': username }).populate('devices')
+  if(!user){
+    return {str:'usernameNotFound'};
+  }
+
+  // Must be an existing user account to accept device unlinking request - update db.
+  // get device with same Network and Station
+  const [network, station, loc, channel] = streamId.split(",")[0].split("_")
+  const device = await Device.findOne({ network:network, station:station })
+
+  if(!device){
+    return {str:'deviceNotFound'};
+  }
+
+  // find the index of the device in the user.devices array
+  const index = user.devices.findIndex(dev => dev.id === device.id);
+
+  if (index === -1) {
+    // device not found in the account.devices array, handle error or return null
+    return {str:'deviceNotOwned'};
+  }
+
+  
+  user.devices.pull(device); // Delete the device._id from Accounts.devices array
+  await user.save(); // Save the user object to persist the changes
+
+
+  // Delete the device information in Devices collection
+  await Device.findOneAndDelete({ network:network, station:station })
+
+  return {str:'success'}
+}
 
 

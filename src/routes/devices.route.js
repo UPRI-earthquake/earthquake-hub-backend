@@ -488,4 +488,12 @@ router.route('/status').get(
 )
 
 
+// TODO: add swagger ui docu in this endpoint
+router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
+getTokenFromBearer,
+verifyTokenWithRole('sensor'),
+DeviceController.unlinkDevice
+)
+
+
 module.exports = router;

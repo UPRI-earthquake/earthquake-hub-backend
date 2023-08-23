@@ -249,3 +249,68 @@ exports.linkDevice = async (req, res, next) => {
     next(error)
   }
 }
+
+exports.unlinkDevice = async (req, res, next) => {
+  console.log('Unlink device requested');
+
+  // Define validation schema
+  const deviceUnlinkSchema = Joi.object().keys({
+    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
+    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
+  });
+
+  try {
+    // token verification should put username from token to req.username
+    if (!req.username){
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+    }
+
+    // Validate POST input
+    const {error, value} = deviceUnlinkSchema.validate(req.body)
+      if(error){
+        console.log(error.details[0].message)
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: error.details[0].message
+      });
+      return;
+    }
+    const {macAddress, streamId} = value
+
+    // Perform task
+    returnObj = await DeviceService.unlinkDevice(req.username, macAddress, streamId)
+
+    switch(returnObj.str){
+      case 'usernameNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "User not found"
+        });
+        break;
+      case 'deviceNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device doesn't exist in the database!"
+        });
+        break;
+      case 'deviceNotOwned':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: "Device does not belong to you"
+        });
+        break;
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Device-Account Unlinking Successful'
+        })
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from service.unlinkDevice()`);
+    }
+
+  } catch (error) {
+    console.log(`Unlink device unsuccessful: \n ${error}`);
+    next(error)
+  }
+}
