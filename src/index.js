@@ -93,21 +93,24 @@ app.use('/eq-events', require('./routes/EQevents.route'))
 /* Error handler middleware */
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
-  //console.trace(`Express error handler captured the following...\n ${err}`);
+
   if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
     res.status(statusCode).json({
       'status': responseCodes.GENERIC_ERROR,
       "message": "Server error occured"
     })
-    console.log('Server error occured:', err.stack)
   }else{
     res.status(statusCode).json({
     'status': responseCodes.GENERIC_ERROR,
     'err': err.stack,
     'note': 'This error will only appear on non-production env'
     });
-    console.log('Server error occured:', err.stack)
   }
+
+  logger.error(`Server error occured: ${err.stack}`, {
+    label: 'internalErrors',
+    ip: req.ip,
+  })
 
   return;
 });
