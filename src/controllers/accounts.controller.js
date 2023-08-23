@@ -96,8 +96,19 @@ exports.authenticateAccount = async (req, res, next) => {
   // Define validation schema
   const authenticateSchema = Joi.object().keys({
     username: Joi.string().required(),
-    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-    role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
+    password: Joi.string()
+      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
+      .required()
+      .messages({
+        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
+      }),
+    role: Joi.string().valid('sensor', 'citizen', 'brgy').required()
+      .messages({
+        "any.only": "Valid roles are only 'sensor', 'citizen', or 'brgy'.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   // Define local functions
@@ -111,13 +122,18 @@ exports.authenticateAccount = async (req, res, next) => {
 
   try{
     // Validate input
-    const result = authenticateSchema.validate(req.body);
+    const result = authenticateSchema.validate(req.body, {aborEarly: false});
     if(result.error){
-      console.log(result.error.details[0].message)
+      const errorMessages = result.error.details.map(
+        (detail) => formatErrorMessage(detail.message)
+      );
+      console.error("Validation Errors:", errorMessages);
+
       res.status(400).json({
         status: responseCodes.AUTHENTICATION_ERROR,
-        message: result.error.details[0].message
+        message: errorMessages[0]
       });
+
       return;
     }
 
@@ -197,15 +213,29 @@ exports.verifySensorToken = async (req, res, next) => {
 
   // Define validation schema
   const verifySensorTokenSchema = Joi.object().keys({
-    token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
+    token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/)
+      .required()
+      .messages({
+        "any.required": "Token string is required.",
+        "string.empty": "Token string cannot be empty.",
+        "string.pattern.base": "Invalid token string format.",
+      }),
   });
 
   try {
     // Validate input
     const result = verifySensorTokenSchema.validate(req.body);
     if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: responseCodes.INBEHALF_VERIFICATION_ERROR, message: result.error.details[0].message});
+      const errorMessages = result.error.details.map(
+        (detail) => formatErrorMessage(detail.message)
+      );
+      console.error("Validation Errors:", errorMessages);
+
+      res.status(400).json({
+        status: responseCodes.INBEHALF_VERIFICATION_ERROR,
+        message: errorMessages[0]
+      });
+
       return;
     }
 
