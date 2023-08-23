@@ -108,11 +108,14 @@ exports.newEQEvent = async (req, res, next) => {
     )
 
     // Respond based on return value
+    let message = ""
     if (returnStrA === 'success' && returnStrB === 'success' && returnStrC === 'success') {
+      message = "New event sent to SSE, added to DB, and published as notif (if >minMag)"
       res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
-        message: "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+        message: message
       });
+      res.message = message
     }
     else{
       throw Error(`Not all tasks returned successfully: \n A:${returnStrA} B:${returnStrB} C:${returnStrC}`)
@@ -164,16 +167,18 @@ exports.newPick = async (req, res, next) => {
     let returnStr = await MessagingService.eventCache.newEvent("SC_*", value, "SC_PICK");
 
     // Respond based on returned value
+    let message = "";
     switch(returnStr){
       case 'success':
+        message = "Pick received";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Pick received"
+          message: message
         })
+        res.message = message
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from service.EventCache.newEvent()`)
-
     }
 
   } catch (error) {
