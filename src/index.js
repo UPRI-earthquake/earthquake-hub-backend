@@ -5,12 +5,13 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
-const swaggerJsDoc = require('swagger-jsdoc')
-const swaggerUi = require('swagger-ui-express')
-const fs = require('fs')
+const swaggerJsDoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+const fs = require('fs');
 
-const {responseCodes} = require('./controllers/responseCodes')
-const MessagingService = require('./services/messaging.service')
+const {responseCodes} = require('./controllers/responseCodes');
+const MessagingService = require('./services/messaging.service');
+const logger = require('./middlewares/logger.middleware');
 
 
 const app = express();
@@ -43,7 +44,6 @@ if(process.env.NODE_ENV !== 'production'){
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 }
 
-
 const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
@@ -64,6 +64,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // ROUTES
+app.use((req, _, next) => { // request logger middleware
+  logger.info(`${req.method} request to ${req.path}`, {
+    label: 'requests',
+    ip: req.ip,
+  })
+  next()
+})
+
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
 })
