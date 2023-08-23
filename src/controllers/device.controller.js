@@ -11,23 +11,29 @@ exports.getAllDeviceLocations = async (req, res, next) => {
     returnObj = await DeviceService.getAllDeviceLocations()
 
     // Respond based on returned value
+    let message = "";
+
     switch (returnObj.str) {
       case "noDevicesFound":
+        message = 'No Devices found in DB!';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: 'No Devices found in DB!'
+          message: message
         });
         break;
       case "success":
+        message = 'All device locations found';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: 'All device locations found', 
+          message: message, 
           payload: returnObj.devices
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from service.getAllDeviceLocations()`)
+        throw Error(`Unhandled return value ${returnObj} from service.getAllDeviceLocations()`);
     }
+
+    res.message = message; // used by next middleware
 
     return;
   }catch(error){
@@ -38,30 +44,35 @@ exports.getAllDeviceLocations = async (req, res, next) => {
 
 exports.getOwnedDevices = async (req, res, next) => {
   try {
-
     // No validation for GET request
    
     // Perform Task
     const returnObj = await DeviceService.getAccountDevices(req.username);
 
     // Respond based on returned value
+    let message = "";
+    
     switch (returnObj.str) {
       case "usernameNotFound":
+        message = "Getting user record failed";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Getting user record failed",
+          message: message,
         });
         break;
       case "success":
+        message = "Get owned devices success";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Get owned devices success",
+          message: message,
           devices: returnObj.devices
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.getAccountDevices()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -109,23 +120,29 @@ exports.getDeviceStatus = async (req, res, next) => {
     const returnObj = await DeviceService.getDeviceStatus(network, station);
 
     // Respond based on returned value
+    let message = "";
+    
     switch (returnObj.str) {
       case "deviceNotFound":
+        message = "Device not found";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device not found",
+          message: message,
         });
         break;
       case "success":
+        message = "Get device status success";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Get device status success",
+          message: message,
           payload: returnObj.device
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.getDeviceStatus()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   }catch(error){
@@ -198,22 +215,28 @@ exports.addDevice = async (req, res, next) => {
     // Perform Task
     returnStr = await DeviceService.addDevice(req.username, network, station, elevation, latitude, longitude);
 
-    switch(returnStr) {
+    let message = "";
+    
+    switch (returnStr) {
       case "detailsAlreadyUsed":
+        message = "Device details already used";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device details already used",
+          message: message,
         });
         break;
       case "success":
+        message = "Successfully added device";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Successfully added device",
+          message: message,
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from service.addDevice()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -261,42 +284,52 @@ exports.linkDevice = async (req, res, next) => {
     // Perform task
     returnObj = await DeviceService.linkDevice(req.username, macAddress, streamId)
 
-    switch(returnObj.str){
+    let message = "";
+    
+    switch (returnObj.str) {
       case 'alreadyLinked':
+        message = 'Device is already linked to an existing account';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: 'Device is already linked to an existing account'
-        })
+          message: message
+        });
         break;
       case 'usernameNotFound':
+        message = 'User not found';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "User not found"
+          message: message
         });
         break;
       case 'deviceNotFound':
+        message = "Device doesn't exist in the database!";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device doesn't exist in the database!"
+          message: message
         });
         break;
       case 'deviceNotOwned':
+        message = "Device is not yet added to user's device list";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device is not yet added to user's device list"
+          message: message
         });
         break;
       case 'success':
+        message = 'Device-Account Linking Successful';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: 'Device-Account Linking Successful',
+          message: message,
           payload: returnObj.payload
-        })
+        });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.linkDevice()`);
     }
+    
+    res.message = message; // used by next middleware
 
+    return;
   } catch (error) {
     console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
