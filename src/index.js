@@ -54,9 +54,19 @@ mongodb.connect(); // Required by notifs router
 console.log('mongodb-host: ' + process.env.MONGO_HOST)
 
 
-app.use(cors({origin : process.env.NODE_ENV === 'production'
+const W1_host = (process.env.NODE_ENV === 'production')
   ? 'https://' + process.env.CLIENT_PROD_HOST
-  : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT,
+  : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT;
+const W3_host = (process.env.NODE_ENV === 'production')
+  ? 'http://' + process.env.W3_CLIENT_PROD_HOST
+  : 'http://' + process.env.W3_CLIENT_DEV_HOST;
+const allowedOrigins = [
+  W1_host,
+  W3_host
+]
+
+app.use(cors({
+  allowedOrigins,
   credentials: true
 }))
 app.use(bodyParser.json())
