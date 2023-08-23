@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
+const logger = require('../middlewares/logger.middleware');
 
 exports.registerAccount = async (req, res, next) => {
   // Define validation schema
@@ -55,31 +56,33 @@ exports.registerAccount = async (req, res, next) => {
     )
 
     // Respond based on returned value
+    let message = "";
     switch (returnStr) {
       case "success":
-        console.log(`Registration successful`);
+        message = "Succesfully created account"
         res.status(200).json({
           status: responseCodes.REGISTRATION_SUCCESS,
-          message: "Succesfully Created Account"
+          message: message
         });
         break;
       case "usernameExists":
-        console.log(`Registration failed: Username already exists!`);
+        message = 'Username already in use'
         res.status(400).json({
           status: responseCodes.REGISTRATION_USERNAME_IN_USE,
-          message: 'Username already in use'
+          message: message
         });
         break;
       case "emailExists":
-        console.log(`Registration failed: Email already exists!`);
+        message = 'Email address already in use'
         res.status(400).json({
           status: responseCodes.REGISTRATION_EMAIL_IN_USE,
-          message: 'Email address already in use'
+          message: message
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from createUniqueAccount()`)
     }
+    res.message = message // used by next middleware
 
     return ;
   } catch (error) {
@@ -141,35 +144,41 @@ exports.authenticateAccount = async (req, res, next) => {
     )
 
     // Respond based on returned value
+    let message = "";
     switch (returnStr) {
       case "accountNotExists":
-        res.status(400).json({ 
+        message = "User doesn't exists!";
+        res.status(400).json({
           status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: "User doesn't exists!"
+          message: message
         });
         break;
       case "wrongPassword":
+        message = 'Wrong password';
         res.status(401).json({
           status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
-          message: 'Wrong password'
+          message: message
         });
         break;
       case "invalidRole":
+        message = 'Invalid role';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_INVALID_ROLE,
-          message: 'Invalid role'
+          message: message
         });
         break;
       case "noLinkedDevice":
+        message = 'User has no linked device';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE,
-          message: 'User has no linked device'
+          message: message
         });
         break;
       case "successSensorBrgy":
+        message = 'Authentication successful';
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
-          message: 'Authentication successful',
+          message: message,
           // return access token as part of json payload
           accessToken: generateAccessToken({
             'username': result.value.username,
@@ -178,24 +187,26 @@ exports.authenticateAccount = async (req, res, next) => {
         });
         break;
       case "successCitizen":
+        message = "Authentication successful";
         res.status(200)
-        // return access token in http cookie (so it's hidden from browser js)
-        .cookie(
-          "accessToken",
-          generateAccessToken({'username': result.value.username, 'role': 'citizen'}),
-          {
-            httpOnly: true, // set to be accessible only by web browser
-            secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
-          }
-        )
-        .json({
-          status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
-          message: "Authentication successful"
-        })
+          // return access token in http cookie (so it's hidden from browser js)
+          .cookie(
+            "accessToken",
+            generateAccessToken({'username': result.value.username, 'role': 'citizen'}),
+            {
+              httpOnly: true, // set to be accessible only by web browser
+              secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
+            }
+          )
+          .json({
+            status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
+            message: message
+          });
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from loginAccountRole()`)
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch(error) {
@@ -237,35 +248,41 @@ exports.verifySensorToken = async (req, res, next) => {
     returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
 
     // Respond based on returned value
+    let message = "";
     switch (returnObj.str) {
       case "JsonWebTokenError":
+        message = "Sender token invalid";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN,
-          message: "Sender token invalid"
+          message: message
         });
         break;
       case "TokenExpiredError":
+        message = "Sender token expired";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN,
-          message: "Sender token expired"
+          message: message
         });
         break;
       case "tokenRoleInvalid":
+        message = "Role in token invalid";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE,
-          message: "Role in token invalid"
+          message: message
         });
         break;
       case "brgyNotFound":
+        message = 'Internal error';
         res.status(400).json({
           status: responseCodes.INBEHALF_VERIFICATION_ERROR,
-          message: 'Internal error'
+          message: message
         });
         break;
       case "sensorIsValid":
+        message = 'Sensor is a valid streamer';
         res.status(200).json({
           status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
-          message: 'Sensor is a valid streamer',
+          message: message,
           sensorInfo: {
             username: returnObj.sensor.username,
             role: returnObj.sensor.role, 
@@ -275,8 +292,9 @@ exports.verifySensorToken = async (req, res, next) => {
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`);
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch(error) {
@@ -293,17 +311,20 @@ exports.getAccountProfile = async (req, res, next) => {
     returnObj = await AccountsService.getAccountProfile(req.username)
 
     // Respond based on returned value
+    let message = "";
     switch (returnObj.str) {
       case "accountNotExists":
+        message = 'User not found';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: 'User not found'
+          message: message
         });
         break;
       case "success":
+        message = 'Token is valid';
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_SUCCESS,
-          message: 'Token is valid', 
+          message: message, 
           payload: { 
             username: returnObj.profile.username,
             email: returnObj.profile.email
@@ -311,8 +332,9 @@ exports.getAccountProfile = async (req, res, next) => {
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`);
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -323,10 +345,12 @@ exports.getAccountProfile = async (req, res, next) => {
 
 exports.removeCookies = async (req, res, next) => {
   try {
+    let message = "Sign out successful"
     res.clearCookie('accessToken').json({ 
       status: responseCodes.SIGNOUT_SUCCESS,
-      message: 'Sign out successful' 
+      message: message
     });
+    res.message = message
   } catch (error) {
     console.error('Error occurred during signout:', error);
     res.status(500).json({ 

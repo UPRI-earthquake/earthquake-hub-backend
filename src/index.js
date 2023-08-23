@@ -64,13 +64,30 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // ROUTES
-app.use((req, _, next) => { // request logger middleware
+// Middleware to log each client request
+app.use((req, _, next) => {
   logger.info(`${req.method} request to ${req.path}`, {
     label: 'requests',
     ip: req.ip,
   })
   next()
 })
+
+// Middleware to calculate processing time
+app.use((req, res, next) => {
+  const startTime = performance.now();
+  res.on('finish', () => {
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+    if (res.message){
+      logger.info(`Response sent after ${processingTime.toFixed(0)} ms: ${res.message}`, {
+        label: 'responses', 
+        ip: req.ip,
+      });
+    }
+  });
+  next();
+});
 
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
@@ -103,11 +120,11 @@ app.use((err, req, res, next) => {
     res.status(statusCode).json({
     'status': responseCodes.GENERIC_ERROR,
     'err': err.stack,
-    'note': 'This error will only appear on non-production env'
+      'note': 'This error will only appear on non-production env. In production message is: Server error occured'
     });
   }
 
-  logger.error(`Server error occured: ${err.stack}`, {
+  logger.error(`Server error occured: \n\t${err.stack}`, {
     label: 'internalErrors',
     ip: req.ip,
   })
