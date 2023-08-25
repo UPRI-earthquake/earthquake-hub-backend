@@ -61,6 +61,15 @@ exports.registerAccount = async (req, res, next) => {
           message: 'Email address already in use'
         });
         break;
+
+      case "ringserverUrlExists":
+        console.log(`Registration failed: Ringserver Url already exists!`);
+        res.status(400).json({
+          status: responseCodes.REGISTRATION_RINGSERVER_URL_IN_USE,
+          message: 'Ringserver Url already in use'
+        });
+        break;
+
       default:
         throw Error(`Unhandled return value ${returnStr} from createUniqueAccount()`)
     }

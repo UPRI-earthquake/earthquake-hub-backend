@@ -10,9 +10,10 @@ const User = require('../models/account.model');
   *     email:    valid email string
   *     password: valid password string
   * Outputs:
-  *     "success":        if account was successfully added
-  *     "usernameExists": if username is already in use
-  *     "emailExists":    if email is already in use
+  *     "success":                if account was successfully added
+  *     "usernameExists":         if username is already in use
+  *     "emailExists":            if email is already in use
+  *     "ringserverUrlExists":    if ringserverUrl is already in use
   *     
  ***************************************************************************/
 exports.createUniqueAccount = async (role, username, email, password, ringserverUrl) => {
@@ -32,7 +33,10 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
 
   switch (role) {
     case 'brgy':
-      // TODO: check if ringserverUrl is already saved
+      // Check if ringserverUrl is in use
+      if (await User.findOne({ ringserverUrl: ringserverUrl })) {
+        return 'ringserverUrlExists';
+      }
 
       newAccount = new User({
         username: username,
