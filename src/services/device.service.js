@@ -329,7 +329,7 @@ exports.linkDevice = async(username, macAddress, streamId) => {
   *     streamId: string       // The unique stream identifier of the device; also used for verification.
   * 
   * Output str:
-  *     "success":             if the device was successfully linked to the user account and device information updated.
+  *     "success":             if the device was successfully unlinked from the user account and device information updated.
   *     "usernameNotFound":    if the provided username does not exist in the database.
   *     "deviceNotFound":      if a device with the specified network and station is not found in the database.
   *     "deviceNotOwned":      if the specified device is not owned by the provided username.
