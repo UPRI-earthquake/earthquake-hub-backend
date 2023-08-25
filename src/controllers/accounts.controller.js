@@ -322,10 +322,7 @@ exports.getActiveRingserverHosts = async (req, res, next) => {
     }
   } catch (error) {
     console.error('Error getting active ringserver hosts:', error);
-    res.status(500).json({ 
-      status: responseCodes.GENERIC_ERROR,
-      message: 'Error getting active ringserver hosts' 
-    });
+    next(error)
   }
 
 }
