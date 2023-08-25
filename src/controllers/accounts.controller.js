@@ -320,12 +320,7 @@ exports.removeCookies = async (req, res, next) => {
 exports.getBrgyToken = async (req, res, next) => {
   console.log("Brgy access token requested");
 
-  // Define validation schema
-  const authenticateSchema = Joi.object().keys({
-    username: Joi.string().required(),
-    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-    role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
-  });
+  // No validation here (token is checked as middleware)
 
   try {
     // Perform Task
