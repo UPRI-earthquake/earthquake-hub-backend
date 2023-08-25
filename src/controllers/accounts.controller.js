@@ -1,18 +1,20 @@
 const Joi = require('joi');
-const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
+const {generateAccessToken} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
   console.log("Register account requested");
 
   // Define validation schema
   const registerSchema = Joi.object({
+    role: Joi.string().valid('brgy', 'citizen').required(),
     username: Joi.string().required(),
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     confirmPassword: Joi.equal(Joi.ref('password')).required()
                      .messages({"any.only": "Passwords should match."}),
-    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required()
+    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required(), 
+    ringserverUrl: Joi.string()
   });
 
   try {
@@ -29,9 +31,11 @@ exports.registerAccount = async (req, res, next) => {
 
     // Perform task
     returnStr = await AccountsService.createUniqueAccount(
+      result.value.role,
       result.value.username,
       result.value.email,
-      result.value.password
+      result.value.password,
+      result.value.ringserverUrl
     )
 
     // Respond based on returned value
@@ -57,6 +61,15 @@ exports.registerAccount = async (req, res, next) => {
           message: 'Email address already in use'
         });
         break;
+
+      case "ringserverUrlExists":
+        console.log(`Registration failed: Ringserver Url already exists!`);
+        res.status(400).json({
+          status: responseCodes.REGISTRATION_RINGSERVER_URL_IN_USE,
+          message: 'Ringserver Url already in use'
+        });
+        break;
+
       default:
         throw Error(`Unhandled return value ${returnStr} from createUniqueAccount()`)
     }
@@ -77,15 +90,6 @@ exports.authenticateAccount = async (req, res, next) => {
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
   });
-
-  // Define local functions
-  function generateAccessToken(payload){
-    return jwt.sign(
-      payload, 
-      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-      {expiresIn: process.env.JWT_EXPIRY} // Adds 'exp' in seconds since epoch
-    );
-  }
 
   try{
     // Validate input
@@ -132,16 +136,45 @@ exports.authenticateAccount = async (req, res, next) => {
           message: 'User has no linked device'
         });
         break;
-      case "successSensorBrgy":
-        res.status(200).json({
-          status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
-          message: 'Authentication successful',
-          // return access token as part of json payload
-          accessToken: generateAccessToken({
-            'username': result.value.username,
-            'role': result.value.role
-          }),
+      case "brgyAccountInactive":
+        res.status(400).json({
+          status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
+          message: 'Account is not yet approved'
         });
+        break;
+      case "successSensorBrgy":
+        const origin = req.get('origin');
+        const allowedOrigin = process.env.NODE_ENV === 'production'
+                              ? 'https://' + process.env.CLIENT_PROD_HOST
+                              : 'http://' + process.env.CLIENT_DEV_HOST +":"+ process.env.CLIENT_DEV_PORT;
+        
+        if (origin === allowedOrigin) { // origin is from web app
+          res.status(200)
+          // return access token in http cookie (so it's hidden from browser js)
+          .cookie(
+            "accessToken",
+            generateAccessToken({'username': result.value.username, 'role': 'brgy'}),
+            {
+              httpOnly: true, // set to be accessible only by web browser
+              secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
+            }
+          )
+          .json({
+            status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
+            message: "Authentication successful"
+          })
+        } else { // origin is not from web app
+          res.status(200).json({
+            status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
+            message: 'Authentication successful',
+            // return access token as part of json payload
+            accessToken: generateAccessToken({
+              'username': result.value.username,
+              'role': result.value.role
+            }),
+          });
+        }
+        
         break;
       case "successCitizen":
         res.status(200)
@@ -291,5 +324,30 @@ exports.removeCookies = async (req, res, next) => {
       message: 'Error occured during signout' 
     });
   }
+}
+
+exports.getBrgyToken = async (req, res, next) => {
+  console.log("Brgy access token requested");
+
+  // No validation here (token is checked as middleware)
+
+  try {
+    // Perform Task
+    
+    // Respond
+    res.status(200).json({
+      status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
+      message: 'Authentication successful',
+      // return access token as part of json payload
+      accessToken: generateAccessToken({
+        'username': req.username,
+        'role': req.role
+      }),
+    });
+    
+  } catch (error) {
+    console.log(`Unable to get brgy token: \n ${error}`);
+    next(error)
+  }  
 }
 

@@ -68,6 +68,7 @@ const AccountSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Device'
   },],
+  ringserverUrl: String,
 }, {
 
   timestamps: { //Mongoose automatic timestamps
