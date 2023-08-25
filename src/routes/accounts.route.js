@@ -453,6 +453,71 @@ router.route('/profile').get(
   AccountsController.getAccountProfile       // Get profile information and respond accordingly
 );
 
+
+/**
+  * @swagger
+  * /accounts/acquire-brgy-token:
+  *   post:
+  *     summary: Return a brgy token in payload
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Successfully acquired a brgy token
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD
+  *                 message:
+  *                   type: string
+  *                   example: "Authentication successful"
+  *       '400':
+  *         description: Authentication failed due to various reasons
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               accountNotExists:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   message: "User doesn't exists!"
+  *               invalidRole:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_INVALID_ROLE
+  *                   message: "Invalid role"
+  *               noLinkedDevice:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
+  *                   message: "User has no linked device"
+  *               brgyAccountInactive:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE
+  *                   message: "Account is not yet approved"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
 router.route('/acquire-brgy-token').post(    // This endpoint is used by brgy accounts for acquiring brgy token
   Middleware.getTokenFromCookie,             // Brgy token is stored in cookie
   Middleware.verifyTokenWithRole('brgy'),    // This endpoint should only be accessible to Brgy Accounts
