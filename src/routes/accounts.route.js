@@ -143,7 +143,8 @@ router.route('/register').post(
   *                      * `sensor`  - returned in JSON response
   *                      * `citizen` - returned in cookie
   *                      * `admin`   - returned in cookie
-  *                      * `brgy`    - returned in JSON response
+  *                      * `brgy`    - returned in JSON response or cookie depending on
+  *                      where the auth request came from
   *         headers: 
   *           Set-Cookie:  # If citizen or admin role
   *             description: If role is citizen or admin, JWT is returned as cookie
@@ -174,6 +175,10 @@ router.route('/register').post(
   *                 value:
   *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
   *                   message: "User has no linked device"
+  *               brgyAccountInactive:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE
+  *                   message: "Account is not yet approved"
   *       '401':
   *         description: Authentication failed due to wrong password
   *         content:

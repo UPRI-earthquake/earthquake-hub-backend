@@ -362,7 +362,7 @@
                     "accessToken": {
                       "type": "string",
                       "example": "sensor-or-brgy-access-token",
-                      "description": "JWT for auth user, this is either in payload/cookie depending on role\n * `sensor`  - returned in JSON response\n * `citizen` - returned in cookie\n * `admin`   - returned in cookie\n * `brgy`    - returned in JSON response\n"
+                      "description": "JWT for auth user, this is either in payload/cookie depending on role\n * `sensor`  - returned in JSON response\n * `citizen` - returned in cookie\n * `admin`   - returned in cookie\n * `brgy`    - returned in JSON response or cookie depending on\n where the auth request came from\n"
                     }
                   }
                 }
@@ -410,6 +410,12 @@
                     "value": {
                       "status": "responseCodes.AUTHENTICATION_NO_LINKED_DEVICE",
                       "message": "User has no linked device"
+                    }
+                  },
+                  "brgyAccountInactive": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE",
+                      "message": "Account is not yet approved"
                     }
                   }
                 }
