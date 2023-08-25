@@ -66,7 +66,7 @@ const allowedOrigins = [
 ]
 
 app.use(cors({
-  allowedOrigins,
+  origin : allowedOrigins,
   credentials: true
 }))
 app.use(bodyParser.json())
