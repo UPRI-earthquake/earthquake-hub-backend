@@ -332,6 +332,10 @@
                   "role": {
                     "type": "enum[string]",
                     "description": "Account role, depends on where to auth from:\n * `sensor`  - when authenticating from rshake device\n * `citizen` - when authenticating from webapp frontend\n * `admin`   - when authenticating from webapp admin-frontend\n * `brgy`    - when authenticating from ringserver\n"
+                  },
+                  "ringserverUrl": {
+                    "type": "string",
+                    "description": "Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy."
                   }
                 }
               },

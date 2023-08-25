@@ -117,6 +117,9 @@ router.route('/register').post(
   *                    * `citizen` - when authenticating from webapp frontend
   *                    * `admin`   - when authenticating from webapp admin-frontend
   *                    * `brgy`    - when authenticating from ringserver
+  *               ringserverUrl:
+  *                 type: string
+  *                 description: Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy.
   *           example:
   *             username: citizen
   *             password: testpassword
