@@ -456,6 +456,69 @@ router.route('/profile').get(
 
 /**
   * @swagger
+  * /accounts/ringserver-hosts:
+  *   get:
+  *     summary: Get active ringserver hosts
+  *     tags: [Accounts]
+  *     responses:
+  *       200:
+  *         description: Successful retrieval of active ringserver hosts
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Get active ringserver hosts successful"
+  *                 payload:
+  *                   type: array
+  *                   items:
+  *                     type: object
+  *                     properties:
+  *                       username:
+  *                         type: string
+  *                         example: "QC Brgy Hall"
+  *                       url:
+  *                         type: string
+  *                         example: "QC-ringserver1.example.com"
+  *       400:
+  *         description: Account does not exist
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                 message:
+  *                   type: string
+  *                   example: "User not found"
+  *       500:
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occurred"
+  */
+router.route('/ringserver-hosts').get(
+  AccountsController.getActiveRingserverHosts       // Get list of active ringservers registered in the network
+)
+
+
+/**
+  * @swagger
   * /accounts/acquire-brgy-token:
   *   post:
   *     summary: Return a brgy token in payload
@@ -523,6 +586,5 @@ router.route('/acquire-brgy-token').post(    // This endpoint is used by brgy ac
   Middleware.verifyTokenWithRole('brgy'),    // This endpoint should only be accessible to Brgy Accounts
   AccountsController.getBrgyToken            // Get brgy token and respond accordingly
 );
-
 
 module.exports = router

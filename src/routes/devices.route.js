@@ -243,6 +243,86 @@ router.route('/link').post( // Sensor devices that will request for linking with
 
 /**
   * @swagger
+  * /devices/unlink:
+  *   post:
+  *     summary: Unlink a device from an account
+  *     tags: [Devices]
+  *     requestBody:
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *             required:
+  *               - macAddress
+  *               - streamId
+  *     responses:
+  *       200:
+  *         description: Device-Account Unlinking Successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Device-Account Unlinking Successful"
+  *       400:
+  *         description: Error cases
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               usernameNotFound:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Username not found"
+  *               deviceNotFound:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device doesn't exist in the database!"
+  *               deviceNotOwned:
+  *                 value:
+  *                   status: responseCodes.GENERIC_ERROR
+  *                   message: "Device doesn't belong to you"
+  *       500:
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occurred"
+  */
+router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
+getTokenFromBearer,
+verifyTokenWithRole('sensor'),
+DeviceController.unlinkDevice
+)
+
+
+/**
+  * @swagger
   * /device/all:
   *   get:
   *     summary: Return all added (not necessarily linked) devices with their location
@@ -486,6 +566,5 @@ router.route('/my-devices').get(
 router.route('/status').get(
   DeviceController.getDeviceStatus
 )
-
 
 module.exports = router;

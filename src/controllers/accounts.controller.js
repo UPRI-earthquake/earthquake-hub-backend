@@ -326,6 +326,40 @@ exports.removeCookies = async (req, res, next) => {
   }
 }
 
+exports.getActiveRingserverHosts = async (req, res, next) => {
+  console.log("List of ringserver hosts requested");
+
+  // No validation schema since this is for GET endpoint
+
+  try {
+    // Perform Task
+    returnObj = await AccountsService.getActiveRingserverHosts()
+
+    // Respond based on returned value
+    switch (returnObj.str) {
+      case "accountNotExists":
+        res.status(400).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found'
+        });
+        break;
+      case "success":
+        res.status(200).json({ 
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Get active ringserver hosts successful',
+          payload: returnObj.hosts
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from getActiveRingserverHosts()`)
+    }
+  } catch (error) {
+    console.error('Error getting active ringserver hosts:', error);
+    next(error)
+  }
+
+}
+
 exports.getBrgyToken = async (req, res, next) => {
   console.log("Brgy access token requested");
 
