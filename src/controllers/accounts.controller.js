@@ -1,7 +1,7 @@
 const Joi = require('joi');
-const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
+const {generateAccessToken} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
   console.log("Register account requested");
@@ -81,15 +81,6 @@ exports.authenticateAccount = async (req, res, next) => {
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
   });
-
-  // Define local functions
-  function generateAccessToken(payload){
-    return jwt.sign(
-      payload, 
-      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-      {expiresIn: process.env.JWT_EXPIRY} // Adds 'exp' in seconds since epoch
-    );
-  }
 
   try{
     // Validate input
@@ -335,15 +326,6 @@ exports.getBrgyToken = async (req, res, next) => {
     password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
     role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
   });
-
-  // Define local functions
-  function generateAccessToken(payload){
-    return jwt.sign(
-      payload, 
-      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-      {expiresIn: process.env.JWT_EXPIRY} // Adds 'exp' in seconds since epoch
-    );
-  }
 
   try {
     // Perform Task
