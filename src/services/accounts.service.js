@@ -65,13 +65,14 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
   *     username: valid username string
   *     password: valid password string
   * Outputs:
-  *     "accountNotExists":   if username doesn't exist in DB
-  *     "wrongPassword":      if password does NOT match username's password in DB
-  *     "invalidRole":        if claimed role is listed as user's role in DB
-  *     "noLinkedDevice":     if Sensor/Brgy has no linked device
-  *     "successSensorBrgy":  if Sensor/Brgy password matches their password in DB,
-  *                           and they have linked devices
-  *     "successCitizen":     if Citizen's password matches their's password in DB
+  *     "accountNotExists":    if username doesn't exist in DB
+  *     "wrongPassword":       if password does NOT match username's password in DB
+  *     "invalidRole":         if claimed role is listed as user's role in DB
+  *     "noLinkedDevice":      if Sensor/Brgy has no linked device
+  *     "successSensorBrgy":   if Sensor/Brgy password matches their password in DB,
+  *                            and they have linked devices
+  *     "successCitizen":      if Citizen's password matches their's password in DB
+  *     "brgyAccountInactive": if Brgy is registered but not yet approved by admin
   *     
  ***************************************************************************/
 exports.loginAccountRole = async (username, password, role) => {
