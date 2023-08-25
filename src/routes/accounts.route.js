@@ -70,6 +70,10 @@ const AccountsController = require('../controllers/accounts.controller')
   *                 value:
   *                   status: responseCodes.REGISTRATION_EMAIL_IN_USE
   *                   message: "Email address already in use"
+  *               ringserverUrlExists:
+  *                 value:
+  *                   status: responseCodes.REGISTRATION_RINGSERVER_URL_IN_USE
+  *                   message: "Email address already in use"
   *       '500':
   *         description: Internal server error
   *         content:
@@ -117,6 +121,9 @@ router.route('/register').post(
   *                    * `citizen` - when authenticating from webapp frontend
   *                    * `admin`   - when authenticating from webapp admin-frontend
   *                    * `brgy`    - when authenticating from ringserver
+  *               ringserverUrl:
+  *                 type: string
+  *                 description: Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy.
   *           example:
   *             username: citizen
   *             password: testpassword
@@ -143,7 +150,8 @@ router.route('/register').post(
   *                      * `sensor`  - returned in JSON response
   *                      * `citizen` - returned in cookie
   *                      * `admin`   - returned in cookie
-  *                      * `brgy`    - returned in JSON response
+  *                      * `brgy`    - returned in JSON response or cookie depending on
+  *                      where the auth request came from
   *         headers: 
   *           Set-Cookie:  # If citizen or admin role
   *             description: If role is citizen or admin, JWT is returned as cookie
@@ -174,6 +182,10 @@ router.route('/register').post(
   *                 value:
   *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
   *                   message: "User has no linked device"
+  *               brgyAccountInactive:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE
+  *                   message: "Account is not yet approved"
   *       '401':
   *         description: Authentication failed due to wrong password
   *         content:
@@ -259,9 +271,7 @@ router.route('/authenticate').post(
   *                   example: "Server error occured"
   */
 router.route('/signout').post(
-  Middleware.getTokenFromCookie,              // Citizen token is stored in cookie
-  Middleware.verifyTokenWithRole('citizen'),  // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.removeCookies            // Get profile information and respond accordingly
+  AccountsController.removeCookies            // Remove accessToken saved in browser's cookie
 );
 
 
@@ -505,5 +515,76 @@ router.route('/profile').get(
 router.route('/ringserver-hosts').get(
   AccountsController.getActiveRingserverHosts       // Get list of active ringservers registered in the network
 )
+
+
+/**
+  * @swagger
+  * /accounts/acquire-brgy-token:
+  *   post:
+  *     summary: Return a brgy token in payload
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Successfully acquired a brgy token
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD
+  *                 message:
+  *                   type: string
+  *                   example: "Authentication successful"
+  *       '400':
+  *         description: Authentication failed due to various reasons
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *             examples:
+  *               accountNotExists:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   message: "User doesn't exists!"
+  *               invalidRole:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_INVALID_ROLE
+  *                   message: "Invalid role"
+  *               noLinkedDevice:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
+  *                   message: "User has no linked device"
+  *               brgyAccountInactive:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE
+  *                   message: "Account is not yet approved"
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occured"
+  */
+router.route('/acquire-brgy-token').post(    // This endpoint is used by brgy accounts for acquiring brgy token
+  Middleware.getTokenFromCookie,             // Brgy token is stored in cookie
+  Middleware.verifyTokenWithRole('brgy'),    // This endpoint should only be accessible to Brgy Accounts
+  AccountsController.getBrgyToken            // Get brgy token and respond accordingly
+);
 
 module.exports = router

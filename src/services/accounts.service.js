@@ -10,12 +10,13 @@ const User = require('../models/account.model');
   *     email:    valid email string
   *     password: valid password string
   * Outputs:
-  *     "success":        if account was successfully added
-  *     "usernameExists": if username is already in use
-  *     "emailExists":    if email is already in use
+  *     "success":                if account was successfully added
+  *     "usernameExists":         if username is already in use
+  *     "emailExists":            if email is already in use
+  *     "ringserverUrlExists":    if ringserverUrl is already in use
   *     
  ***************************************************************************/
-exports.createUniqueAccount = async (username, email, password) => {
+exports.createUniqueAccount = async (role, username, email, password, ringserverUrl) => {
   // Check if username is in use
   if (await User.findOne({ username: username })) {
     return 'usernameExists';
@@ -28,12 +29,34 @@ exports.createUniqueAccount = async (username, email, password) => {
 
   // save inputs to database
   const hashedPassword = bcrypt.hashSync(password, 10); // hash the password before saving to database
-  const newAccount = new User({
-    username: username,
-    email: email,
-    password: hashedPassword,
-    roles: ["citizen", "sensor"] // TODO: Make this an attribute to POST route too
-  });
+  let newAccount = null;
+
+  switch (role) {
+    case 'brgy':
+      // Check if ringserverUrl is in use
+      if (await User.findOne({ ringserverUrl: ringserverUrl })) {
+        return 'ringserverUrlExists';
+      }
+
+      newAccount = new User({
+        username: username,
+        email: email,
+        password: hashedPassword,
+        roles: ["brgy"], // TODO: Make this an attribute to POST route too
+        ringserverUrl: ringserverUrl
+      });
+      break;
+  
+    case 'citizen':
+      newAccount = new User({
+        username: username,
+        email: email,
+        password: hashedPassword,
+        roles: ["citizen", "sensor"] // TODO: Make this an attribute to POST route too
+      });
+      break;
+  }
+
   await newAccount.save();
 
   return "success";
@@ -46,13 +69,14 @@ exports.createUniqueAccount = async (username, email, password) => {
   *     username: valid username string
   *     password: valid password string
   * Outputs:
-  *     "accountNotExists":   if username doesn't exist in DB
-  *     "wrongPassword":      if password does NOT match username's password in DB
-  *     "invalidRole":        if claimed role is listed as user's role in DB
-  *     "noLinkedDevice":     if Sensor/Brgy has no linked device
-  *     "successSensorBrgy":  if Sensor/Brgy password matches their password in DB,
-  *                           and they have linked devices
-  *     "successCitizen":     if Citizen's password matches their's password in DB
+  *     "accountNotExists":    if username doesn't exist in DB
+  *     "wrongPassword":       if password does NOT match username's password in DB
+  *     "invalidRole":         if claimed role is listed as user's role in DB
+  *     "noLinkedDevice":      if Sensor/Brgy has no linked device
+  *     "successSensorBrgy":   if Sensor/Brgy password matches their password in DB,
+  *                            and they have linked devices
+  *     "successCitizen":      if Citizen's password matches their's password in DB
+  *     "brgyAccountInactive": if Brgy is registered but not yet approved by admin
   *     
  ***************************************************************************/
 exports.loginAccountRole = async (username, password, role) => {
@@ -84,6 +108,9 @@ exports.loginAccountRole = async (username, password, role) => {
       // check if sensor account has devices OR,
       // check if brgy account has devices (of their own, or that forwards to them)
       // that they can in turn forward to UP (main receiver)
+      if (user.accountStatus != 'Active') {
+        return 'brgyAccountInactive';
+      }
       if (user.devices.length === 0) {
         return 'noLinkedDevice';
       }
@@ -201,7 +228,8 @@ exports.getAccountProfile = async (username) => {
       str: 'success',
       profile: {
         username: citizen.username,
-        email: citizen.email
+        email: citizen.email,
+        role: citizen.role
       }
     }
 }
