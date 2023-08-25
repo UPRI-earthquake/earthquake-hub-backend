@@ -70,6 +70,10 @@ const AccountsController = require('../controllers/accounts.controller')
   *                 value:
   *                   status: responseCodes.REGISTRATION_EMAIL_IN_USE
   *                   message: "Email address already in use"
+  *               ringserverUrlExists:
+  *                 value:
+  *                   status: responseCodes.REGISTRATION_RINGSERVER_URL_IN_USE
+  *                   message: "Email address already in use"
   *       '500':
   *         description: Internal server error
   *         content:
