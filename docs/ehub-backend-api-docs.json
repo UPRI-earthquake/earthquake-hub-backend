@@ -279,6 +279,12 @@
                       "status": "responseCodes.REGISTRATION_EMAIL_IN_USE",
                       "message": "Email address already in use"
                     }
+                  },
+                  "ringserverUrlExists": {
+                    "value": {
+                      "status": "responseCodes.REGISTRATION_RINGSERVER_URL_IN_USE",
+                      "message": "Email address already in use"
+                    }
                   }
                 }
               }
@@ -332,6 +338,10 @@
                   "role": {
                     "type": "enum[string]",
                     "description": "Account role, depends on where to auth from:\n * `sensor`  - when authenticating from rshake device\n * `citizen` - when authenticating from webapp frontend\n * `admin`   - when authenticating from webapp admin-frontend\n * `brgy`    - when authenticating from ringserver\n"
+                  },
+                  "ringserverUrl": {
+                    "type": "string",
+                    "description": "Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy."
                   }
                 }
               },
@@ -362,7 +372,7 @@
                     "accessToken": {
                       "type": "string",
                       "example": "sensor-or-brgy-access-token",
-                      "description": "JWT for auth user, this is either in payload/cookie depending on role\n * `sensor`  - returned in JSON response\n * `citizen` - returned in cookie\n * `admin`   - returned in cookie\n * `brgy`    - returned in JSON response\n"
+                      "description": "JWT for auth user, this is either in payload/cookie depending on role\n * `sensor`  - returned in JSON response\n * `citizen` - returned in cookie\n * `admin`   - returned in cookie\n * `brgy`    - returned in JSON response or cookie depending on\n where the auth request came from\n"
                     }
                   }
                 }
@@ -410,6 +420,12 @@
                     "value": {
                       "status": "responseCodes.AUTHENTICATION_NO_LINKED_DEVICE",
                       "message": "User has no linked device"
+                    }
+                  },
+                  "brgyAccountInactive": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE",
+                      "message": "Account is not yet approved"
                     }
                   }
                 }
@@ -790,6 +806,191 @@
         }
       }
     },
+    "/accounts/ringserver-hosts": {
+      "get": {
+        "summary": "Get active ringserver hosts",
+        "tags": [
+          "Accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful retrieval of active ringserver hosts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Get active ringserver hosts successful"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string",
+                            "example": "QC Brgy Hall"
+                          },
+                          "url": {
+                            "type": "string",
+                            "example": "QC-ringserver1.example.com"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Account does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_USER_NOT_EXIST"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "User not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occurred"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/acquire-brgy-token": {
+      "post": {
+        "summary": "Return a brgy token in payload",
+        "tags": [
+          "Accounts"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully acquired a brgy token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.AUTHENTICATION_TOKEN_PAYLOAD"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication successful"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Authentication failed due to various reasons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "accountNotExists": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_USER_NOT_EXIST",
+                      "message": "User doesn't exists!"
+                    }
+                  },
+                  "invalidRole": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_INVALID_ROLE",
+                      "message": "Invalid role"
+                    }
+                  },
+                  "noLinkedDevice": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_NO_LINKED_DEVICE",
+                      "message": "User has no linked device"
+                    }
+                  },
+                  "brgyAccountInactive": {
+                    "value": {
+                      "status": "responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE",
+                      "message": "Account is not yet approved"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/device/add": {
       "post": {
         "summary": "Add a device to the user's account",
@@ -1066,6 +1267,117 @@
                     "message": {
                       "type": "string",
                       "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/unlink": {
+      "post": {
+        "summary": "Unlink a device from an account",
+        "tags": [
+          "Devices"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "macAddress": {
+                    "type": "string",
+                    "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+                  },
+                  "streamId": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{2}_[A-Z0-9]{5}_.*\\/MSEED$"
+                  }
+                },
+                "required": [
+                  "macAddress",
+                  "streamId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Device-Account Unlinking Successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Device-Account Unlinking Successful"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error cases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "usernameNotFound": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Username not found"
+                    }
+                  },
+                  "deviceNotFound": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Device doesn't exist in the database!"
+                    }
+                  },
+                  "deviceNotOwned": {
+                    "value": {
+                      "status": "responseCodes.GENERIC_ERROR",
+                      "message": "Device doesn't belong to you"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.GENERIC_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Server error occurred"
                     }
                   }
                 }
