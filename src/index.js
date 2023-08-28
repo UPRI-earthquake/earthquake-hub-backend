@@ -10,6 +10,7 @@ const swaggerUi = require('swagger-ui-express');
 const fs = require('fs');
 
 const {responseCodes} = require('./controllers/responseCodes');
+const {formatErrorMessage} = require('./controllers/helpers')
 const MessagingService = require('./services/messaging.service');
 const logger = require('./middlewares/logger.middleware');
 
@@ -83,7 +84,7 @@ app.use((req, _, next) => {
   next()
 })
 
-// Middleware to calculate processing time
+// Middleware to calculate processing time and log response after it's sent
 app.use((req, res, next) => {
   const startTime = performance.now();
   res.on('finish', () => {
@@ -116,28 +117,43 @@ app.use('/eq-events', require('./routes/EQevents.route'))
 //   );
 //   next();
 // });
+//
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
+  if(err.name == 'ValidationError'){
+    const errorMessages = err.details.map(
+      (detail) => formatErrorMessage(detail.message)
+    );
 
-  if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
-    res.status(statusCode).json({
-      'status': responseCodes.GENERIC_ERROR,
-      "message": "Server error occured"
-    })
-  }else{
-    res.status(statusCode).json({
-    'status': responseCodes.GENERIC_ERROR,
-    'err': err.stack,
-      'note': 'This error will only appear on non-production env. In production message is: Server error occured'
+    res.status(400).json({
+      status: responseCodes.VALIDATION_ERROR,
+      message: errorMessages[0]
     });
-  }
 
-  logger.error(`Server error occured: \n\t${err.stack}`, {
-    label: 'internalErrors',
-    ip: req.ip,
-  })
+    res.message = errorMessages; // used by res.on('finish') logger middleware
+  }else{
+    // Generic error handler
+    const statusCode = err.statusCode || 500;
+
+    if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
+      res.status(statusCode).json({
+        'status': responseCodes.GENERIC_ERROR,
+        "message": "Server error occured"
+      })
+    }else{
+      res.status(statusCode).json({
+      'status': responseCodes.GENERIC_ERROR,
+      'err': err.stack,
+        'note': 'This error will only appear on non-production env. In production message is: Server error occured'
+      });
+    }
+
+    logger.error(`Server error occured: \n\t${err.stack}`, {
+      label: 'internalErrors',
+      ip: req.ip,
+    })
+  }
 
   return;
 });

@@ -13,6 +13,7 @@ const responseCodes = {
 
   GENERIC_SUCCESS: 0,
   GENERIC_ERROR: 100,
+  VALIDATION_ERROR: 101,                            
 
   REGISTRATION_SUCCESS:                 10,
   REGISTRATION_ERROR:                   110,
@@ -50,6 +51,7 @@ const responseCodes = {
 const responseMessages = {
   GENERIC_SUCCESS: "Success",
   GENERIC_ERROR: "Error",
+  VALIDATION_ERROR: "Input string failed validation",                            
 
   REGISTRATION_SUCCESS: "Registration success",
   REGISTRATION_ERROR: "Registration error",

@@ -35,19 +35,7 @@ exports.registerAccount = async (req, res, next) => {
   try {
     // Validate input
     const result = registerSchema.validate(req.body, {aborEarly: false});
-    if(result.error){
-      const errorMessages = result.error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.REGISTRATION_ERROR, 
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(result.error){ throw result.error }
 
     // Perform task
     returnStr = await AccountsService.createUniqueAccount(
@@ -125,19 +113,7 @@ exports.authenticateAccount = async (req, res, next) => {
   try{
     // Validate input
     const result = authenticateSchema.validate(req.body, {aborEarly: false});
-    if(result.error){
-      const errorMessages = result.error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.AUTHENTICATION_ERROR,
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(result.error){ throw result.error }
 
     // Perform task
     returnStr = await AccountsService.loginAccountRole(
@@ -261,19 +237,7 @@ exports.verifySensorToken = async (req, res, next) => {
   try {
     // Validate input
     const result = verifySensorTokenSchema.validate(req.body);
-    if(result.error){
-      const errorMessages = result.error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.INBEHALF_VERIFICATION_ERROR,
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(result.error){ throw result.error }
 
     // Perform Task
     returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
@@ -426,8 +390,6 @@ exports.getActiveRingserverHosts = async (req, res, next) => {
 }
 
 exports.getBrgyToken = async (req, res, next) => {
-  console.log("Brgy access token requested");
-
   // No validation here (token is checked as middleware)
 
   try {

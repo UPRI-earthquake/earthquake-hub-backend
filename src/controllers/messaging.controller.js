@@ -73,21 +73,8 @@ exports.newEQEvent = async (req, res, next) => {
   });
 
   try {
-
     const {error, value} = schema.validate(req.body, {abortEarly: false})
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(error){ throw error }
 
     // Perform Task A: Notify subscribed clients
     let returnStrA = await NotificationsService.notifySubscribersEQ(value)
@@ -145,22 +132,9 @@ exports.newPick = async (req, res, next) => {
   });
 
   try {
-
     // Validate POST input
     const {error, value} = schema.validate(req.body)
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(error){ throw error }
 
     // Perform Task
     console.log('Adding new pick to SSE')

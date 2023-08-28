@@ -36,19 +36,7 @@ exports.subscribe = async (req, res, next) => {
   try {
     // Validate POST input
     const {error, value} = subscriptionSchema.validate(req.body, {abortEarly: false})
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: errorMessages[0]
-      });
-
-      return;
-    }
+    if(error){ throw error }
 
     // Perform Task
     let returnStr = await NotificationsService.createSubscription(value);

@@ -22,18 +22,9 @@ exports.getEQEvents = async (req, res, next) => {
   try {
     // Validate query
     const {error, value} = schema.validate(req.query)
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: errorMessages[0]
-      });
-      return;
-    }
+    if(error){ throw error }
     const {startTime, endTime} = value
+
     // Perform Task
     // get data from db
     var data = await EQEventsService.getEventsList(startTime, endTime);

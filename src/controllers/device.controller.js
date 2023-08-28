@@ -103,17 +103,7 @@ exports.getDeviceStatus = async (req, res, next) => {
   try {
     // Validate query params
     const {error, value} = deviceStatusQuerySchema.validate(req.query)
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: errorMessages[0]
-      });
-      return;
-    }
+    if(error){ throw error }
     const {network, station} = value
 
     // Perform Task
@@ -197,19 +187,7 @@ exports.addDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = addDeviceSchema.validate(req.body)
-    if(error){
-      const errorMessages = error.details.map(
-        (detail) => formatErrorMessage(detail.message)
-      );
-      console.error("Validation Errors:", errorMessages);
-
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-
-      return;
-    }
+    if(error){ throw error }
     const {network, station, elevation, latitude, longitude} = value
 
     // Perform Task
@@ -271,14 +249,7 @@ exports.linkDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = linkDeviceSchema.validate(req.body)
-      if(error){
-        console.log(error.details[0].message)
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {macAddress, streamId} = value
 
     // Perform task
@@ -353,14 +324,7 @@ exports.unlinkDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = deviceUnlinkSchema.validate(req.body)
-      if(error){
-        console.log(error.details[0].message)
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {macAddress, streamId} = value
 
     // Perform task
