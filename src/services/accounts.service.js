@@ -111,9 +111,6 @@ exports.loginAccountRole = async (username, password, role) => {
       if (!user.isApproved) {
         return 'brgyAccountInactive';
       }
-      if (user.devices.length === 0) {
-        return 'noLinkedDevice';
-      }
       return 'successSensorBrgy'
     case 'citizen':
       return 'successCitizen'
