@@ -21,6 +21,10 @@ exports.registerAccount = async (req, res, next) => {
       .messages({
         "any.only": "Passwords should match.",
       }),
+    ringserverUrl: Joi.string().domain()
+      .messages({
+        "string.domain": "Please enter a registered domain for your Ringserver URL"
+      }),
     email: Joi.string()
       .email({ minDomainSegments: 2, tlds: { allow: true } })
       .required()
