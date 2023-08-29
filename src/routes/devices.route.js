@@ -48,7 +48,7 @@ const router = express.Router();
   *             elevation: "50"
   *     responses:
   *       200:
-  *         description: User profile information sent as payload
+  *         description: Device added to records of the user account
   *         content:
   *           application/json:
   *             schema:
@@ -56,21 +56,12 @@ const router = express.Router();
   *               properties:
   *                 status:
   *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_SUCCESS
+  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
-  *                   example: "Token is valid"
-  *                 payload:
-  *                   type: object
-  *                   properties:
-  *                     username:
-  *                       type: string
-  *                       example: "john_doe"
-  *                     email:
-  *                       type: string
-  *                       example: "john.doe@example.com"
+  *                   example: "Successfully added device"
   *       '400':
-  *         description: Account doesn't exist
+  *         description: Device already belongs to an account
   *         content:
   *           application/json:
   *             schema:
@@ -78,23 +69,10 @@ const router = express.Router();
   *               properties:
   *                 status:
   *                   type: number
-  *                   example: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   example: responseCodes.GENERIC_ERROR
   *                 message:
   *                   type: string
-  *                   example: "User not found"
-  *       '403':
-  *         description: When no token is present in sent cookie
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: 403
-  *                 message:
-  *                   type: string
-  *                   example: "Token in cookie missing"
+  *                   example: "Device details already used"
   *       '500':
   *         description: Internal server error
   *         content:

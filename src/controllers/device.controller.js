@@ -1,10 +1,9 @@
 const Joi = require('joi');
 const DeviceService = require('../services/device.service')
 const {responseCodes} = require('./responseCodes')
+const {formatErrorMessage} = require('./helpers')
 
 exports.getAllDeviceLocations = async (req, res, next) => {
-  console.log("Locations of all devices requested");
-
   // No validation for GET request
 
   try {
@@ -12,23 +11,29 @@ exports.getAllDeviceLocations = async (req, res, next) => {
     returnObj = await DeviceService.getAllDeviceLocations()
 
     // Respond based on returned value
+    let message = "";
+
     switch (returnObj.str) {
       case "noDevicesFound":
+        message = 'No Devices found in DB!';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: 'No Devices found in DB!'
+          message: message
         });
         break;
       case "success":
+        message = 'All device locations found';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: 'All device locations found', 
+          message: message, 
           payload: returnObj.devices
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from service.getAllDeviceLocations()`)
+        throw Error(`Unhandled return value ${returnObj} from service.getAllDeviceLocations()`);
     }
+
+    res.message = message; // used by next middleware
 
     return;
   }catch(error){
@@ -38,30 +43,36 @@ exports.getAllDeviceLocations = async (req, res, next) => {
 }
 
 exports.getOwnedDevices = async (req, res, next) => {
-  console.log('Owned devices requested');
   try {
-
+    // No validation for GET request
+   
     // Perform Task
     const returnObj = await DeviceService.getAccountDevices(req.username);
 
     // Respond based on returned value
+    let message = "";
+    
     switch (returnObj.str) {
       case "usernameNotFound":
+        message = "Getting user record failed";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Getting user record failed",
+          message: message,
         });
         break;
       case "success":
+        message = "Get owned devices success";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Get owned devices success",
+          message: message,
           devices: returnObj.devices
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.getAccountDevices()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -71,48 +82,57 @@ exports.getOwnedDevices = async (req, res, next) => {
 };
 
 exports.getDeviceStatus = async (req, res, next) => {
-  console.log('Device status requested');
-
   // Define validation schema
   const deviceStatusQuerySchema = Joi.object({
-    network: Joi.string().regex(/^[A-Z]{2}$/).required(),
-    station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
+    network: Joi.string()
+      .regex(/^[A-Z]{2}$/)
+      .required()
+      .messages({
+        "any.required": "Network is required.",
+        "string.pattern.base": "Invalid network format. Please provide a valid 2-letter uppercase code.",
+      }),
+    station: Joi.string()
+      .regex(/^[A-Z0-9]{3,5}$/)
+      .required()
+      .messages({
+        "any.required": "Station is required.",
+        "string.pattern.base": "Invalid station format. Please provide a valid 3 to 5-character uppercase alphanumeric code.",
+      }),
   });
 
   try {
     // Validate query params
     const {error, value} = deviceStatusQuerySchema.validate(req.query)
-    if(error){
-      console.log(error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {network, station} = value
 
     // Perform Task
     const returnObj = await DeviceService.getDeviceStatus(network, station);
 
     // Respond based on returned value
+    let message = "";
+    
     switch (returnObj.str) {
       case "deviceNotFound":
+        message = "Device not found";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device not found",
+          message: message,
         });
         break;
       case "success":
+        message = "Get device status success";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Get device status success",
+          message: message,
           payload: returnObj.device
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.getDeviceStatus()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   }catch(error){
@@ -122,15 +142,41 @@ exports.getDeviceStatus = async (req, res, next) => {
 }
 
 exports.addDevice = async (req, res, next) => {
-  console.log("Add device requested");
-
   // Define validation schema
   const addDeviceSchema = Joi.object().keys({
-    network: Joi.string().regex(/^[A-Z]{2}$/).required(),
-    station: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
-    elevation: Joi.string().regex(/^[-+]?\d+(\.\d+)?$/).required(),
-    latitude: Joi.string().regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/).required(),
-    longitude: Joi.string().regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/).required()
+    network: Joi.string()
+      .regex(/^[a-zA-Z]{2}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid 2-letter network code.",
+      }),
+    station: Joi.string()
+      .regex(/^[a-zA-Z0-9]{3,5}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid 3 to 5-character alphanumeric station code.",
+      }),
+    elevation: Joi.string()
+      .regex(/^[-+]?\d+(\.\d+)?$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid elevation value.",
+      }),
+    latitude: Joi.string()
+      .regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid latitude value.",
+      }),
+    longitude: Joi.string()
+      .regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid longitude value.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   try {
@@ -141,35 +187,34 @@ exports.addDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = addDeviceSchema.validate(req.body)
-    if(error){
-      console.log(error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {network, station, elevation, latitude, longitude} = value
 
     // Perform Task
     returnStr = await DeviceService.addDevice(req.username, network, station, elevation, latitude, longitude);
 
-    switch(returnStr) {
+    let message = "";
+    
+    switch (returnStr) {
       case "detailsAlreadyUsed":
+        message = "Device details already used";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device details already used",
+          message: message,
         });
         break;
       case "success":
+        message = "Successfully added device";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Successfully added device",
+          message: message,
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from service.addDevice()`);
     }
+    
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -179,12 +224,21 @@ exports.addDevice = async (req, res, next) => {
 }
 
 exports.linkDevice = async (req, res, next) => {
-  console.log('Link device requested');
-
   // Define validation schema
   const linkDeviceSchema = Joi.object().keys({
-    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
-    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
+    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/)
+     .required()
+     .messages({
+        "string.pattern.base": "Please provide a valid MAC address string.",
+      }),
+    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/)
+     .required()
+     .messages({
+        "string.pattern.base": "Please provide a valid Stream ID string.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   try {
@@ -195,55 +249,58 @@ exports.linkDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = linkDeviceSchema.validate(req.body)
-      if(error){
-        console.log(error.details[0].message)
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {macAddress, streamId} = value
 
     // Perform task
     returnObj = await DeviceService.linkDevice(req.username, macAddress, streamId)
 
-    switch(returnObj.str){
+    let message = "";
+    
+    switch (returnObj.str) {
       case 'alreadyLinked':
+        message = 'Device is already linked to an existing account';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: 'Device is already linked to an existing account'
-        })
+          message: message
+        });
         break;
       case 'usernameNotFound':
+        message = 'User not found';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "User not found"
+          message: message
         });
         break;
       case 'deviceNotFound':
+        message = "Device doesn't exist in the database!";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device doesn't exist in the database!"
+          message: message
         });
         break;
       case 'deviceNotOwned':
+        message = "Device is not yet added to user's device list";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Device is not yet added to user's device list"
+          message: message
         });
         break;
       case 'success':
+        message = 'Device-Account Linking Successful';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: 'Device-Account Linking Successful',
+          message: message,
           payload: returnObj.payload
-        })
+        });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.linkDevice()`);
     }
+    
+    res.message = message; // used by next middleware
 
+    return;
   } catch (error) {
     console.log(`Link device unsuccessful: \n ${error}`);
     next(error)
@@ -267,14 +324,7 @@ exports.unlinkDevice = async (req, res, next) => {
 
     // Validate POST input
     const {error, value} = deviceUnlinkSchema.validate(req.body)
-      if(error){
-        console.log(error.details[0].message)
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
     const {macAddress, streamId} = value
 
     // Perform task

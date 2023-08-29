@@ -4,30 +4,40 @@ const {responseCodes} = require('./responseCodes')
 const {generateAccessToken} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
-  console.log("Register account requested");
-
   // Define validation schema
   const registerSchema = Joi.object({
     role: Joi.string().valid('brgy', 'citizen').required(),
     username: Joi.string().required(),
-    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-    confirmPassword: Joi.equal(Joi.ref('password')).required()
-                     .messages({"any.only": "Passwords should match."}),
-    email: Joi.string().email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } }).required(), 
-    ringserverUrl: Joi.string()
+    password: Joi.string()
+      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
+      .required()
+      .messages({
+        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
+      }),
+    confirmPassword: Joi.equal(Joi.ref("password"))
+      .required()
+      .messages({
+        "any.only": "Passwords should match.",
+      }),
+    ringserverUrl: Joi.string().domain()
+      .messages({
+        "string.domain": "Please enter a registered domain for your Ringserver URL"
+      }),
+    email: Joi.string()
+      .email({ minDomainSegments: 2, tlds: { allow: true } })
+      .required()
+      .messages({
+        "string.email": "Please enter a valid email address.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   try {
     // Validate input
-    const result = registerSchema.validate(req.body);
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.REGISTRATION_ERROR, 
-        message: result.error.details[0].message
-      });
-      return;
-    }
+    const result = registerSchema.validate(req.body, {aborEarly: false});
+    if(result.error){ throw result.error }
 
     // Perform task
     returnStr = await AccountsService.createUniqueAccount(
@@ -39,26 +49,27 @@ exports.registerAccount = async (req, res, next) => {
     )
 
     // Respond based on returned value
+    let message = "";
     switch (returnStr) {
       case "success":
-        console.log(`Registration successful`);
+        message = "Succesfully created account"
         res.status(200).json({
           status: responseCodes.REGISTRATION_SUCCESS,
-          message: "Succesfully Created Account"
+          message: message
         });
         break;
       case "usernameExists":
-        console.log(`Registration failed: Username already exists!`);
+        message = 'Username already in use'
         res.status(400).json({
           status: responseCodes.REGISTRATION_USERNAME_IN_USE,
-          message: 'Username already in use'
+          message: message
         });
         break;
       case "emailExists":
-        console.log(`Registration failed: Email already exists!`);
+        message = 'Email address already in use'
         res.status(400).json({
           status: responseCodes.REGISTRATION_EMAIL_IN_USE,
-          message: 'Email address already in use'
+          message: message
         });
         break;
 
@@ -73,6 +84,7 @@ exports.registerAccount = async (req, res, next) => {
       default:
         throw Error(`Unhandled return value ${returnStr} from createUniqueAccount()`)
     }
+    res.message = message // used by next middleware
 
     return ;
   } catch (error) {
@@ -82,26 +94,28 @@ exports.registerAccount = async (req, res, next) => {
 }
 
 exports.authenticateAccount = async (req, res, next) => {
-  console.log("Authenticate account requested");
-
   // Define validation schema
   const authenticateSchema = Joi.object().keys({
     username: Joi.string().required(),
-    password: Joi.string().pattern(new RegExp('^[a-zA-Z0-9]{6,30}$')).required(),
-    role: Joi.string().valid('sensor', 'citizen', 'brgy').required(),
+    password: Joi.string()
+      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
+      .required()
+      .messages({
+        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
+      }),
+    role: Joi.string().valid('sensor', 'citizen', 'brgy').required()
+      .messages({
+        "any.only": "Valid roles are only 'sensor', 'citizen', or 'brgy'.",
+      }),
+  }).messages({ // Default message if no custom message is set for the key
+    "any.required": "{#label} is required.",
+    "string.empty": "{#label} cannot be empty.",
   });
 
   try{
     // Validate input
-    const result = authenticateSchema.validate(req.body);
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.AUTHENTICATION_ERROR,
-        message: result.error.details[0].message
-      });
-      return;
-    }
+    const result = authenticateSchema.validate(req.body, {abortEarly: false});
+    if(result.error){ throw result.error }
 
     // Perform task
     returnStr = await AccountsService.loginAccountRole(
@@ -111,29 +125,34 @@ exports.authenticateAccount = async (req, res, next) => {
     )
 
     // Respond based on returned value
+    let message = "";
     switch (returnStr) {
       case "accountNotExists":
-        res.status(400).json({ 
+        message = "User doesn't exists!";
+        res.status(400).json({
           status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: "User doesn't exists!"
+          message: message
         });
         break;
       case "wrongPassword":
+        message = 'Wrong password';
         res.status(401).json({
           status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
-          message: 'Wrong password'
+          message: message
         });
         break;
       case "invalidRole":
+        message = 'Invalid role';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_INVALID_ROLE,
-          message: 'Invalid role'
+          message: message
         });
         break;
       case "noLinkedDevice":
+        message = 'User has no linked device';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE,
-          message: 'User has no linked device'
+          message: message
         });
         break;
       case "brgyAccountInactive":
@@ -177,24 +196,26 @@ exports.authenticateAccount = async (req, res, next) => {
         
         break;
       case "successCitizen":
+        message = "Authentication successful";
         res.status(200)
-        // return access token in http cookie (so it's hidden from browser js)
-        .cookie(
-          "accessToken",
-          generateAccessToken({'username': result.value.username, 'role': 'citizen'}),
-          {
-            httpOnly: true, // set to be accessible only by web browser
-            secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
-          }
-        )
-        .json({
-          status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
-          message: "Authentication successful"
-        })
+          // return access token in http cookie (so it's hidden from browser js)
+          .cookie(
+            "accessToken",
+            generateAccessToken({'username': result.value.username, 'role': 'citizen'}),
+            {
+              httpOnly: true, // set to be accessible only by web browser
+              secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
+            }
+          )
+          .json({
+            status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
+            message: message
+          });
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from loginAccountRole()`)
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch(error) {
@@ -204,55 +225,61 @@ exports.authenticateAccount = async (req, res, next) => {
 }
 
 exports.verifySensorToken = async (req, res, next) => {
-  console.log("Sensor token verification requested");
-
   // Define validation schema
   const verifySensorTokenSchema = Joi.object().keys({
-    token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/).required()
+    token: Joi.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]*$/)
+      .required()
+      .messages({
+        "any.required": "Token string is required.",
+        "string.empty": "Token string cannot be empty.",
+        "string.pattern.base": "Invalid token string format.",
+      }),
   });
 
   try {
     // Validate input
     const result = verifySensorTokenSchema.validate(req.body);
-    if(result.error){
-      console.log(result.error.details[0].message)
-      res.status(400).json({ status: responseCodes.INBEHALF_VERIFICATION_ERROR, message: result.error.details[0].message});
-      return;
-    }
+    if(result.error){ throw result.error }
 
     // Perform Task
     returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
 
     // Respond based on returned value
+    let message = "";
     switch (returnObj.str) {
       case "JsonWebTokenError":
+        message = "Sender token invalid";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_INVALID_TOKEN,
-          message: "Sender token invalid"
+          message: message
         });
         break;
       case "TokenExpiredError":
+        message = "Sender token expired";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_EXPIRED_TOKEN,
-          message: "Sender token expired"
+          message: message
         });
         break;
       case "tokenRoleInvalid":
+        message = "Role in token invalid";
         res.status(403).json({
           status: responseCodes.INBEHALF_VERIFICATION_INVALID_ROLE,
-          message: "Role in token invalid"
+          message: message
         });
         break;
       case "brgyNotFound":
+        message = 'Internal error';
         res.status(400).json({
           status: responseCodes.INBEHALF_VERIFICATION_ERROR,
-          message: 'Internal error'
+          message: message
         });
         break;
       case "sensorIsValid":
+        message = 'Sensor is a valid streamer';
         res.status(200).json({
           status: responseCodes.INBEHALF_VERIFICATION_SUCCESS,
-          message: 'Sensor is a valid streamer',
+          message: message,
           sensorInfo: {
             username: returnObj.sensor.username,
             role: returnObj.sensor.role, 
@@ -262,8 +289,9 @@ exports.verifySensorToken = async (req, res, next) => {
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`);
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch(error) {
@@ -273,8 +301,6 @@ exports.verifySensorToken = async (req, res, next) => {
 }
 
 exports.getAccountProfile = async (req, res, next) => {
-  console.log("Account profile requested");
-
   // No validation schema since this is for GET endpoint
 
   try {
@@ -282,17 +308,20 @@ exports.getAccountProfile = async (req, res, next) => {
     returnObj = await AccountsService.getAccountProfile(req.username)
 
     // Respond based on returned value
+    let message = "";
     switch (returnObj.str) {
       case "accountNotExists":
+        message = 'User not found';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: 'User not found'
+          message: message
         });
         break;
       case "success":
+        message = 'Token is valid';
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_SUCCESS,
-          message: 'Token is valid', 
+          message: message, 
           payload: { 
             username: returnObj.profile.username,
             email: returnObj.profile.email
@@ -300,8 +329,9 @@ exports.getAccountProfile = async (req, res, next) => {
         });
         break;
       default:
-        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`)
+        throw Error(`Unhandled return value ${returnObj} from verifySensorToken()`);
     }
+    res.message = message; // used by next middleware
 
     return;
   } catch (error) {
@@ -311,12 +341,13 @@ exports.getAccountProfile = async (req, res, next) => {
 }
 
 exports.removeCookies = async (req, res, next) => {
-  console.log("Sign-out requested");
   try {
+    let message = "Sign out successful"
     res.clearCookie('accessToken').json({ 
       status: responseCodes.SIGNOUT_SUCCESS,
-      message: 'Sign out successful' 
+      message: message
     });
+    res.message = message
   } catch (error) {
     console.error('Error occurred during signout:', error);
     res.status(500).json({ 
@@ -361,8 +392,6 @@ exports.getActiveRingserverHosts = async (req, res, next) => {
 }
 
 exports.getBrgyToken = async (req, res, next) => {
-  console.log("Brgy access token requested");
-
   // No validation here (token is checked as middleware)
 
   try {

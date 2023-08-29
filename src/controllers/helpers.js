@@ -8,7 +8,13 @@ function generateAccessToken(payload){
   );
 }
 
-module.exports = {
-  generateAccessToken,
+function formatErrorMessage(errorMessage) {
+  return errorMessage
+    .replace(/["\\]/g, "") // Strip double quotes and backslashes
+    .replace(/^\w/, (c) => c.toUpperCase()); // Uppercase the first letter
 }
 
+module.exports = {
+  generateAccessToken,
+  formatErrorMessage,
+}

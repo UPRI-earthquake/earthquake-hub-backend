@@ -1,58 +1,79 @@
 const Joi = require('joi')
 const NotificationsService = require('../services/notifications.service')
 const {responseCodes} = require('./responseCodes')
+const {formatErrorMessage} = require('./helpers')
 
 exports.subscribe = async (req, res, next) => {
   // Define validation Schema
   const subscriptionSchema = Joi.object({
-    endpoint: Joi.string().uri().required(),
-    expirationTime: Joi.date().allow(null).optional(),
+    endpoint: Joi.string()
+      .uri()
+      .required()
+      .messages({
+        "any.required": "Endpoint is required.",
+        "string.uri": "Endpoint must be a valid URI.",
+      }),
+    expirationTime: Joi.date()
+      .allow(null)
+      .optional()
+      .messages({
+        "date.base": "Expiration time must be a valid date.",
+      }),
     keys: Joi.object({
-      p256dh: Joi.string().required(),
-      auth: Joi.string().required()
-    }).required()
+      p256dh: Joi.string()
+        .required()
+        .messages({
+          "any.required": "p256dh key is required.",
+        }),
+      auth: Joi.string()
+        .required()
+        .messages({
+          "any.required": "Auth key is required.",
+        }),
+    }).required(),
   });
 
   try {
-
     // Validate POST input
-    const {error, value} = subscriptionSchema.validate(req.body)
-    if(error){
-      console.log(error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-      return;
-    }
+    const {error, value} = subscriptionSchema.validate(req.body, {abortEarly: false})
+    if(error){ throw error }
 
     // Perform Task
     let returnStr = await NotificationsService.createSubscription(value);
     console.log('after createSubscription');
 
     // Respond based on returned value
-    switch(returnStr){
+    let message = "";
+    
+    switch (returnStr) {
       case 'success':
+        message = 'Subscription created';
         res.status(201).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Subscription created"
-        })
+          message: message
+        });
         break;
       case 'subscriptionExists':
+        message = 'Subscription already exists';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Subscription already exists"
-        })
+          message: message
+        });
         break;
       case 'dbNotAccessible':
+        message = 'Internal error encountered';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: "Internal error encountered"
-        })
+          message: message
+        });
         break;
       default:
-        throw Error(`Unhandled return value ${returnStr} from service.createSubscription()`)
+        throw Error(`Unhandled return value ${returnStr} from service.createSubscription()`);
     }
+    
+    res.message = message; // used by next middleware
+
+    return;
   } catch (error) {
     console.log(`Adding new pick unsuccessful: \n ${error}`);
     next(error)

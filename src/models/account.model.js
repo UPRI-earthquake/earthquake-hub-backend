@@ -60,9 +60,9 @@ const AccountSchema = new mongoose.Schema({
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
-  accountStatus: { // inactive, active
-    type: String,
-    default: 'inactive'
+  isApproved: { // inactive, active
+    type: Boolean,
+    default: false
   },
   devices: [{
     type: mongoose.Schema.Types.ObjectId,

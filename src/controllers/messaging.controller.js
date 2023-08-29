@@ -3,6 +3,7 @@ const MessagingService = require('../services/messaging.service')
 const EQEventsService = require('../services/EQevents.service')
 const NotificationsService = require('../services/notifications.service')
 const {responseCodes} = require('./responseCodes')
+const {formatErrorMessage} = require('./helpers')
 
 exports.setupSSEConnection = async (req, res, next) => {
   try {
@@ -36,7 +37,6 @@ exports.setupSSEConnection = async (req, res, next) => {
 }
 
 exports.newEQEvent = async (req, res, next) => {
-    console.log('Received new EQEvent')
   /* NOTE: "EQEvent" is different from "event" as used in this codebase.
    *       "EQEvent" = an earthquake evenet detected from the data processing software, ie
    *                   SeisComp
@@ -47,27 +47,34 @@ exports.newEQEvent = async (req, res, next) => {
   const schema = Joi.object().keys({
     publicID: Joi.string().required(),
     OT: Joi.date().required(),
-    latitude_value: Joi.number().min(-90).max(90).required(),
-    longitude_value: Joi.number().min(-180).max(180).required(),
+    latitude_value: Joi.number().min(-90).max(90)
+      .required()
+      .messages({
+        "number.min": "Latitude must be greater than or equal to -90.",
+        "number.max": "Latitude must be less than or equal to 90.",
+      }),
+    longitude_value: Joi.number().min(-180).max(180)
+      .required()
+      .messages({
+        "number.min": "Longitude must be greater than or equal to -180.",
+        "number.max": "Longitude must be less than or equal to 180.",
+      }),
     depth_value: Joi.number().required(),
     magnitude_value: Joi.number().required(),
     eventType: Joi.string().required(),
     method: Joi.string().required(),
     text: Joi.string().required(),
-    last_modification: Joi.date().required(),
+    last_modification: Joi.date().required()
+      .messages({
+        "any.required": "Last modification date is required.",
+      }),
+  }).messages({
+    "any.required": "{#label} is required.",
   });
 
   try {
-
-    const {error, value} = schema.validate(req.body)
-    if(error){
-      console.log(error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-      return;
-    }
+    const {error, value} = schema.validate(req.body, {abortEarly: false})
+    if(error){ throw error }
 
     // Perform Task A: Notify subscribed clients
     let returnStrA = await NotificationsService.notifySubscribersEQ(value)
@@ -88,11 +95,14 @@ exports.newEQEvent = async (req, res, next) => {
     )
 
     // Respond based on return value
+    let message = ""
     if (returnStrA === 'success' && returnStrB === 'success' && returnStrC === 'success') {
+      message = "New event sent to SSE, added to DB, and published as notif (if >minMag)"
       res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
-        message: "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+        message: message
       });
+      res.message = message
     }
     else{
       throw Error(`Not all tasks returned successfully: \n A:${returnStrA} B:${returnStrB} C:${returnStrC}`)
@@ -108,39 +118,41 @@ exports.newEQEvent = async (req, res, next) => {
 exports.newPick = async (req, res, next) => {
   // Define validation Schema
   const schema = Joi.object({
-    networkCode: Joi.string().regex(/^[A-Z]{2}$/).required(),
-    stationCode: Joi.string().regex(/^[A-Z0-9]{3,5}$/).required(),
-    timestamp: Joi.string().isoDate().required()
+    networkCode: Joi.string().regex(/^[A-Z]{2}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid 2-letter network code.",
+      }),
+    stationCode: Joi.string().regex(/^[A-Z0-9]{3,5}$/)
+      .required()
+      .messages({
+        "string.pattern.base": "Please provide a valid 3 to 5-character alphanumeric station code.",
+      }),
+    timestamp: Joi.string().isoDate().required(),
   });
 
   try {
-
     // Validate POST input
     const {error, value} = schema.validate(req.body)
-    if(error){
-      console.log(error.details[0].message)
-      res.status(400).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: error.details[0].message
-      });
-      return;
-    }
+    if(error){ throw error }
 
     // Perform Task
     console.log('Adding new pick to SSE')
     let returnStr = await MessagingService.eventCache.newEvent("SC_*", value, "SC_PICK");
 
     // Respond based on returned value
+    let message = "";
     switch(returnStr){
       case 'success':
+        message = "Pick received";
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: "Pick received"
+          message: message
         })
+        res.message = message
         break;
       default:
         throw Error(`Unhandled return value ${returnStr} from service.EventCache.newEvent()`)
-
     }
 
   } catch (error) {

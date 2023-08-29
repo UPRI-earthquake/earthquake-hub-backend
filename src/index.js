@@ -5,12 +5,14 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
-const swaggerJsDoc = require('swagger-jsdoc')
-const swaggerUi = require('swagger-ui-express')
-const fs = require('fs')
+const swaggerJsDoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+const fs = require('fs');
 
-const {responseCodes} = require('./controllers/responseCodes')
-const MessagingService = require('./services/messaging.service')
+const {responseCodes} = require('./controllers/responseCodes');
+const {formatErrorMessage} = require('./controllers/helpers')
+const MessagingService = require('./services/messaging.service');
+const logger = require('./middlewares/logger.middleware');
 
 
 const app = express();
@@ -43,7 +45,6 @@ if(process.env.NODE_ENV !== 'production'){
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 }
 
-
 const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
@@ -74,6 +75,31 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // ROUTES
+// Middleware to log each client request
+app.use((req, _, next) => {
+  logger.info(`${req.method} request to ${req.path}`, {
+    label: 'requests',
+    ip: req.ip,
+  })
+  next()
+})
+
+// Middleware to calculate processing time and log response after it's sent
+app.use((req, res, next) => {
+  const startTime = performance.now();
+  res.on('finish', () => {
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+    if (res.message){
+      logger.info(`Response sent after ${processingTime.toFixed(0)} ms: ${res.message}`, {
+        label: 'responses', 
+        ip: req.ip,
+      });
+    }
+  });
+  next();
+});
+
 app.get('/', (req, res) => {
   res.json({'version': '1.0'});
 })
@@ -91,24 +117,42 @@ app.use('/eq-events', require('./routes/EQevents.route'))
 //   );
 //   next();
 // });
+//
 
 /* Error handler middleware */
 app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  //console.trace(`Express error handler captured the following...\n ${err}`);
-  if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
-    res.status(statusCode).json({
-      'status': responseCodes.GENERIC_ERROR,
-      "message": "Server error occured"
-    })
-    console.log('Server error occured:', err.stack)
-  }else{
-    res.status(statusCode).json({
-    'status': responseCodes.GENERIC_ERROR,
-    'err': err.stack,
-    'note': 'This error will only appear on non-production env'
+  if(err.name == 'ValidationError'){
+    const errorMessages = err.details.map(
+      (detail) => formatErrorMessage(detail.message)
+    );
+
+    res.status(400).json({
+      status: responseCodes.VALIDATION_ERROR,
+      message: errorMessages[0]
     });
-    console.log('Server error occured:', err.stack)
+
+    res.message = errorMessages; // used by res.on('finish') logger middleware
+  }else{
+    // Generic error handler
+    const statusCode = err.statusCode || 500;
+
+    if (process.env.NODE_ENV === 'production') { // Provide different error response on prod and dev
+      res.status(statusCode).json({
+        'status': responseCodes.GENERIC_ERROR,
+        "message": "Server error occured"
+      })
+    }else{
+      res.status(statusCode).json({
+      'status': responseCodes.GENERIC_ERROR,
+      'err': err.stack,
+        'note': 'This error will only appear on non-production env. In production message is: Server error occured'
+      });
+    }
+
+    logger.error(`Server error occured: \n\t${err.stack}`, {
+      label: 'internalErrors',
+      ip: req.ip,
+    })
   }
 
   return;
