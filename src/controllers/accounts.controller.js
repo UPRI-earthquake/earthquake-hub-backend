@@ -116,7 +116,7 @@ exports.authenticateAccount = async (req, res, next) => {
 
   try{
     // Validate input
-    const result = authenticateSchema.validate(req.body, {aborEarly: false});
+    const result = authenticateSchema.validate(req.body, {abortEarly: false});
     if(result.error){ throw result.error }
 
     // Perform task
