@@ -1,8 +1,6 @@
 const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
-const {formatErrorMessage} = require('./helpers')
-const logger = require('../middlewares/logger.middleware');
 const {generateAccessToken} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
