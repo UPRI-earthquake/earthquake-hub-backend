@@ -835,11 +835,15 @@
                         "properties": {
                           "username": {
                             "type": "string",
-                            "example": "QC Brgy Hall"
+                            "example": "UP-RingServer"
                           },
-                          "url": {
+                          "ringserverUrl": {
                             "type": "string",
-                            "example": "QC-ringserver1.example.com"
+                            "example": "earthquake.science.upd.edu.ph"
+                          },
+                          "ringserverPort": {
+                            "type": "Number",
+                            "example": 16000
                           }
                         }
                       }

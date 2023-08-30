@@ -248,8 +248,8 @@ exports.getAccountProfile = async (username) => {
  ***************************************************************************/
 exports.getActiveRingserverHosts = async () => {
   const ringserverHosts = await User.find({
-    'roles': 'brgy',                        // query all accounts with `brgy` role
-    'accountStatus': 'Active'               // get only accounts that are `Active`
+    'roles': 'brgy',   // query all accounts with `brgy` role
+    'isApproved': true, // get only accounts that are approved
   }, 
     'username ringserverUrl ringserverPort -_id'  // output the `username`, `ringserverUrl`, and `ringserverPort` but w/o id
   );
