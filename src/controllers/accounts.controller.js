@@ -23,6 +23,10 @@ exports.registerAccount = async (req, res, next) => {
       .messages({
         "string.domain": "Please enter a registered domain for your Ringserver URL"
       }),
+    ringserverPort: Joi.number().port()
+      .messages({
+        "number.port": "Please enter a valid TCP port for your Ringserver"
+      }),
     email: Joi.string()
       .email({ minDomainSegments: 2, tlds: { allow: true } })
       .required()
@@ -45,7 +49,8 @@ exports.registerAccount = async (req, res, next) => {
       result.value.username,
       result.value.email,
       result.value.password,
-      result.value.ringserverUrl
+      result.value.ringserverUrl,
+      result.value.ringserverPort
     )
 
     // Respond based on returned value
@@ -388,7 +393,6 @@ exports.getActiveRingserverHosts = async (req, res, next) => {
     console.error('Error getting active ringserver hosts:', error);
     next(error)
   }
-
 }
 
 exports.getBrgyToken = async (req, res, next) => {

@@ -16,7 +16,7 @@ const User = require('../models/account.model');
   *     "ringserverUrlExists":    if ringserverUrl is already in use
   *     
  ***************************************************************************/
-exports.createUniqueAccount = async (role, username, email, password, ringserverUrl) => {
+exports.createUniqueAccount = async (role, username, email, password, ringserverUrl, ringserverPort) => {
   // Check if username is in use
   if (await User.findOne({ username: username })) {
     return 'usernameExists';
@@ -43,7 +43,8 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
         email: email,
         password: hashedPassword,
         roles: ["brgy"], // TODO: Make this an attribute to POST route too
-        ringserverUrl: ringserverUrl
+        ringserverUrl: ringserverUrl,
+        ringserverPort: ringserverPort,
       });
       break;
   
@@ -242,7 +243,7 @@ exports.getAccountProfile = async (username) => {
   *     "success":                  if there is at least one registered brgy account in DB
   * Outputs obj.hosts:
   *     Will contain array of objects of registered brgy ringserver hosts
-  *     [{username, url}]
+  *     [{username: usernameStr, ringserverUrl: urlStr, ringserverPort: portNum}]
   *     
  ***************************************************************************/
 exports.getActiveRingserverHosts = async () => {
@@ -250,7 +251,7 @@ exports.getActiveRingserverHosts = async () => {
     'roles': 'brgy',                        // query all accounts with `brgy` role
     'accountStatus': 'Active'               // get only accounts that are `Active`
   }, 
-    'username ringserverUrl -_id'           // output the `username` and `ringserverUrl` fields only
+    'username ringserverUrl ringserverPort -_id'  // output the `username`, `ringserverUrl`, and `ringserverPort` but w/o id
   );
 
   if (!ringserverHosts) { // No registered brgy in DB

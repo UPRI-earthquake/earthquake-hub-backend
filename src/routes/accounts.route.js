@@ -481,10 +481,13 @@ router.route('/profile').get(
   *                     properties:
   *                       username:
   *                         type: string
-  *                         example: "QC Brgy Hall"
-  *                       url:
+  *                         example: "UP-RingServer"
+  *                       ringserverUrl:
   *                         type: string
-  *                         example: "QC-ringserver1.example.com"
+  *                         example: "earthquake.science.upd.edu.ph"
+  *                       ringserverPort:
+  *                         type: Number
+  *                         example: 16000
   *       400:
   *         description: Account does not exist
   *         content:
