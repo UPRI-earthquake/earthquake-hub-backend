@@ -105,6 +105,7 @@ exports.loginAccountRole = async (username, password, role) => {
 
   switch(role) {
     case 'sensor':
+      return 'successSensorBrgy'
     case 'brgy':
       // check if sensor account has devices OR,
       // check if brgy account has devices (of their own, or that forwards to them)
