@@ -1,11 +1,6 @@
-This repo contains the backend code for UPRI earthquake monitoring system
+# earthquake-hub-backend
+earthquake-hub-backend program is the server-side component of the EarthquakeHub web application. For more details, you may refer to the [repository overview and API](https://upri-earthquake.github.io).  
 
-Steps to setup
-1. Clone frontend, backend, and sc-api repositories.
-2. On sc-api, install services on /etc/systemd/system, then enable.
-3. On frontend, create certs folder with pem keys
-3. On frontend, create .env from .env.example
-4. On backend, setup config.js from config.example.js
-5. On backend, setup .env from .env.example
-6. On host mysql, add ",172.17.0.1" on to bind-address on /etc/mysql/mysql.conf.d/mysqld.cnf, assuming MySQLv8.0.13+
+## Development Setup
+To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
