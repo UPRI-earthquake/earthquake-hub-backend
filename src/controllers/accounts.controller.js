@@ -289,7 +289,7 @@ exports.verifySensorToken = async (req, res, next) => {
             username: returnObj.sensor.username,
             role: returnObj.sensor.role, 
             streamIds: returnObj.sensor.streamIds,
-            tokenExp: returnObj.sensor.exp,
+            tokenExp: returnObj.sensor.tokenExp,
           },
         });
         break;

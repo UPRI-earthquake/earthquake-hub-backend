@@ -137,7 +137,7 @@ exports.loginAccountRole = async (username, password, role) => {
   *     "sensorIsValid":     Sensor owner of token is a valid streamer
   * Outputs obj.sensor:
   *     Will contain sensor info based on decoded JWT
-  *     {username, role, streamIds, exp}
+  *     {username, role, streamIds, tokenExp}
   *     
  ***************************************************************************/
 exports.verifySensorToken = async (token, brgyUsername) => {
