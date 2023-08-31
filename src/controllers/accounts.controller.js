@@ -363,8 +363,6 @@ exports.removeCookies = async (req, res, next) => {
 }
 
 exports.getActiveRingserverHosts = async (req, res, next) => {
-  console.log("List of ringserver hosts requested");
-
   // No validation schema since this is for GET endpoint
 
   try {
