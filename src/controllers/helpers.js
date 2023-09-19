@@ -16,7 +16,7 @@ function formatErrorMessage(errorMessage) {
 
 function generateAMStationCode(macAddress) {
   // Remove any colons from the MAC address
-  const cleanMacAddress = macAddress.replace(/:/g, '');
+  const cleanMacAddress = macAddress.replace(/:/g, '').toUpperCase();
 
   // Extract the last 4 characters and prepend 'R'
   const stationCode = 'R' + cleanMacAddress.slice(-4);

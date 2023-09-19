@@ -213,9 +213,13 @@ exports.linkDevice = async (req, res, next) => {
 
     // Return accesstoken within the payload
     let message = 'Device-Account Linking Successful';
-    if (returnObj.str === 'alreadyLinked'){ message = 'Device-Account already linked'}
+    let status = responseCodes.LINKING_SUCCESS
+    if (returnObj.str === 'alreadyLinked'){ 
+      message = 'Device-Account already linked';
+      status = responseCodes.LINKING_ALREADY_DONE
+    }
     res.status(200).json({
-      status: responseCodes.GENERIC_SUCCESS,
+      status: status,
       message: message,
       payload: {
         ...returnObj.payload,
