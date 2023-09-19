@@ -2,7 +2,7 @@ const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const {responseCodes} = require('./responseCodes')
-const {formatErrorMessage} = require('./helpers')
+const {formatErrorMessage, generateAccessToken} = require('./helpers')
 
 exports.getAllDeviceLocations = async (req, res, next) => {
   // No validation for GET request
@@ -142,90 +142,6 @@ exports.getDeviceStatus = async (req, res, next) => {
   }
 }
 
-/*
-exports.addDevice = async (req, res, next) => {
-  // Define validation schema
-  const addDeviceSchema = Joi.object().keys({
-    network: Joi.string()
-      .regex(/^[a-zA-Z]{2}$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid 2-letter network code.",
-      }),
-    station: Joi.string()
-      .regex(/^[a-zA-Z0-9]{3,5}$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid 3 to 5-character alphanumeric station code.",
-      }),
-    elevation: Joi.string()
-      .regex(/^[-+]?\d+(\.\d+)?$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid elevation value.",
-      }),
-    latitude: Joi.string()
-      .regex(/^[-+]?(?:90(?:\.0{1,6})?|(?:[0-8]?\d(?:\.\d{1,6})?))$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid latitude value.",
-      }),
-    longitude: Joi.string()
-      .regex(/^[-+]?(?:180(?:\.0{1,6})?|(?:1[0-7]\d|0?\d{1,2})(?:\.\d{1,6})?)$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid longitude value.",
-      }),
-  }).messages({ // Default message if no custom message is set for the key
-    "any.required": "{#label} is required.",
-    "string.empty": "{#label} cannot be empty.",
-  });
-
-  try {
-    // token verification should put username from token to req.username
-    if (!req.username){
-      res.status(403).json({ status: responseCodes.GENERIC_ERROR, message: "Username of a logged-in user is required."});
-    }
-
-    // Validate POST input
-    const {error, value} = addDeviceSchema.validate(req.body)
-    if(error){ throw error }
-    const {network, station, elevation, latitude, longitude} = value
-
-    // Perform Task
-    returnStr = await DeviceService.addDevice(req.username, network, station, elevation, latitude, longitude);
-
-    let message = "";
-    
-    switch (returnStr) {
-      case "detailsAlreadyUsed":
-        message = "Device details already used";
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: message,
-        });
-        break;
-      case "success":
-        message = "Successfully added device";
-        res.status(200).json({
-          status: responseCodes.GENERIC_SUCCESS,
-          message: message,
-        });
-        break;
-      default:
-        throw Error(`Unhandled return value ${returnStr} from service.addDevice()`);
-    }
-    
-    res.message = message; // used by next middleware
-
-    return;
-  } catch (error) {
-    console.log(`Add device unsuccessful: \n ${error}`);
-    next(error)
-  }
-}
-*/
-
 exports.linkDevice = async (req, res, next) => {
   // Define validation schema
   const linkDeviceSchema = Joi.object().keys({
@@ -312,18 +228,17 @@ exports.linkDevice = async (req, res, next) => {
       throw new Error(returnObj.str)
     }
 
-    let message = "";
-    
-    message = 'Device-Account Linking Successful';
     // Return accesstoken within the payload
+    let message = "";
+    message = 'Device-Account Linking Successful';
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message: message,
       payload: {
         ...returnObj.payload,
         accessToken: generateAccessToken({
-          'username': result.value.username,
-          'role': result.value.role
+          'username': username,
+          'role': role
         })
       }
     });
@@ -331,6 +246,7 @@ exports.linkDevice = async (req, res, next) => {
 
     return;
   } catch (error) {
+    let message = "";
     switch (error.message) {
       // Login errors for a sensor
       case "accountNotExists":
@@ -389,6 +305,7 @@ exports.linkDevice = async (req, res, next) => {
 
       default:
         next(error)
+        return
     }
     res.message = message; // used by next middleware
   }
