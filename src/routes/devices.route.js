@@ -87,11 +87,13 @@ const router = express.Router();
   *                   type: string
   *                   example: "Server error occured"
   */
+/*
 router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
   DeviceController.addDevice
 );
+*/
 
 
 /**
@@ -212,9 +214,7 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
-  getTokenFromBearer,
-  verifyTokenWithRole('sensor'),
+router.route('/link').post(
   DeviceController.linkDevice
 );
 
