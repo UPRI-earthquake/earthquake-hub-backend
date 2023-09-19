@@ -178,10 +178,6 @@ router.route('/register').post(
   *                 value:
   *                   status: responseCodes.AUTHENTICATION_INVALID_ROLE
   *                   message: "Invalid role"
-  *               noLinkedDevice:
-  *                 value:
-  *                   status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE
-  *                   message: "User has no linked device"
   *               brgyAccountInactive:
   *                 value:
   *                   status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE
