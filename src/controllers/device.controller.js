@@ -156,18 +156,6 @@ exports.linkDevice = async (req, res, next) => {
       .messages({
         "any.only": "Only sensor role can request device linking",
       }),
-    network: Joi.string()
-      .regex(/^[a-zA-Z]{2}$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid 2-letter network code.",
-      }),
-    station: Joi.string()
-      .regex(/^[a-zA-Z0-9]{3,5}$/)
-      .required()
-      .messages({
-        "string.pattern.base": "Please provide a valid 3 to 5-character alphanumeric station code.",
-      }),
     elevation: Joi.string()
       .regex(/^[-+]?\d+(\.\d+)?$/)
       .required()
@@ -215,22 +203,17 @@ exports.linkDevice = async (req, res, next) => {
       console.log(`Adding device unsuccessful: ${returnStr}`);
       throw new Error(returnStr)
     }
-    // Perform task: add device to user's record
-    returnStr = await DeviceService.addDevice(username, network, station, elevation, latitude, longitude);
-    if (returnStr !== 'success'){
-      console.log(`Adding device unsuccessful: ${returnStr}`);
-      throw new Error(returnStr)
-    }
+
     // Perform task: link device
-    returnObj = await DeviceService.linkDevice(username, macAddress, streamId)
-    if (returnObj.str !== 'success'){
+    returnObj = await DeviceService.linkDevice(username, elevation, longitude, latitude, macAddress, streamId)
+    if (returnObj.str !== 'success' && returnObj.str !== 'alreadyLinked'){
       console.log(`Link device unsuccessful: ${returnObj.str}`);
       throw new Error(returnObj.str)
     }
 
     // Return accesstoken within the payload
-    let message = "";
-    message = 'Device-Account Linking Successful';
+    let message = 'Device-Account Linking Successful';
+    if (returnObj.str === 'alreadyLinked'){ message = 'Device-Account already linked'}
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message: message,
@@ -264,23 +247,7 @@ exports.linkDevice = async (req, res, next) => {
         });
         break;
 
-      // Adding device error for a sensor
-      case "detailsAlreadyUsed":
-        message = "Device details already used";
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: message,
-        });
-        break;
-
       // Linking device error
-      case 'alreadyLinked':
-        message = 'Device is already linked to an existing account';
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: message
-        });
-        break;
       case 'usernameNotFound':
         message = 'User not found';
         res.status(400).json({
@@ -288,15 +255,15 @@ exports.linkDevice = async (req, res, next) => {
           message: message
         });
         break;
-      case 'deviceNotFound':
-        message = "Device doesn't exist in the database!";
+      case 'alreadyLinkedToSomeone':
+        message = "Device is already linked to someone else!";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
           message: message
         });
         break;
-      case 'deviceNotOwned':
-        message = "Device is not yet added to user's device list";
+      case 'incorrectAMStation':
+        message = "Station code incorrect for an AM device";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
           message: message

@@ -11,99 +11,10 @@ const router = express.Router();
 
 /**
   * @swagger
-  * /device/add:
-  *   post:
-  *     summary: Add a device to the user's account
-  *     tags: [Device]
-  *     security:
-  *       - cookieAuth: []
-  *     requestBody:
-  *       description: Device data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               network:
-  *                 type: string
-  *                 description: The network code of the device
-  *               station:
-  *                 type: string
-  *                 description: The station code of the device
-  *               latitude:
-  *                 type: string
-  *                 description: The latitude of the device (in degree coordinates)
-  *               longitude:
-  *                 type: string
-  *                 description: The longitude of the device (in degree coordinates)
-  *               elevation:
-  *                 type: string
-  *                 description: The elevation of the device (in meters)
-  *           example:
-  *             network: "AM"
-  *             station: "R3B2D"
-  *             latitude: "40.123456"
-  *             longitude: "120.654321"
-  *             elevation: "50"
-  *     responses:
-  *       200:
-  *         description: Device added to records of the user account
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_SUCCESS
-  *                 message:
-  *                   type: string
-  *                   example: "Successfully added device"
-  *       '400':
-  *         description: Device already belongs to an account
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Device details already used"
-  *       '500':
-  *         description: Internal server error
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Server error occured"
-  */
-/*
-router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  DeviceController.addDevice
-);
-*/
-
-
-/**
-  * @swagger
   * /device/link:
   *   post:
-  *     summary: Bind sensor's MAC address and streamId to the user's device record
+  *     summary: Creates a device record under device list of a user
   *     tags: [Device]
-  *     security:
-  *       - bearerAuth: []  # Indicates that bearer token in header is required
   *     requestBody:
   *       required: true
   *       description: Physical identification of the device/sensor
@@ -112,6 +23,30 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *           schema:
   *             type: object
   *             properties:
+  *               username:
+  *                 type: string
+  *                 description: Registered username
+  *                 example: "user-name-123"
+  *               password:
+  *                 type: string
+  *                 description: Account's password
+  *                 example: "very_secure_password"
+  *               role:
+  *                 type: string
+  *                 description: Should be "sensor"
+  *                 example: "sensor"
+  *               latitude:
+  *                 type: string
+  *                 description: The latitude of the device (in degree coordinates)
+  *                 example: "1.123"
+  *               longitude:
+  *                 type: string
+  *                 description: The longitude of the device (in degree coordinates)
+  *                 example: "-11.123"
+  *               elevation:
+  *                 type: string
+  *                 description: The elevation of the device (in meters)
+  *                 example: "50"
   *               macAddress:
   *                 type: string
   *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
@@ -170,6 +105,9 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                           type: string
   *                           description: The stream ID of the device.
   *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *                     accessToken:
+  *                       type: string
+  *                       description: Valid JWT token
   *       '400':
   *         description: Bad request
   *         content:
