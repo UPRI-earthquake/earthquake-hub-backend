@@ -153,13 +153,6 @@ exports.authenticateAccount = async (req, res, next) => {
           message: message
         });
         break;
-      case "noLinkedDevice":
-        message = 'User has no linked device';
-        res.status(400).json({
-          status: responseCodes.AUTHENTICATION_NO_LINKED_DEVICE,
-          message: message
-        });
-        break;
       case "brgyAccountInactive":
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,

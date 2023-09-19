@@ -73,7 +73,6 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
   *     "accountNotExists":    if username doesn't exist in DB
   *     "wrongPassword":       if password does NOT match username's password in DB
   *     "invalidRole":         if claimed role is listed as user's role in DB
-  *     "noLinkedDevice":      if Sensor/Brgy has no linked device
   *     "successSensorBrgy":   if Sensor/Brgy password matches their password in DB,
   *                            and they have linked devices
   *     "successCitizen":      if Citizen's password matches their's password in DB
@@ -107,9 +106,7 @@ exports.loginAccountRole = async (username, password, role) => {
     case 'sensor':
       return 'successSensorBrgy'
     case 'brgy':
-      // check if sensor account has devices OR,
-      // check if brgy account has devices (of their own, or that forwards to them)
-      // that they can in turn forward to UP (main receiver)
+      // check if brgy account is approved
       if (!user.isApproved) {
         return 'brgyAccountInactive';
       }

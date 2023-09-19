@@ -46,6 +46,9 @@ const responseCodes = {
 
   SIGNOUT_SUCCESS:   50,
   SIGNOUT_ERROR:    150,
+
+  LINKING_SUCCESS:            60,
+  LINKING_ALREADY_DONE:       61,
 };
 
 const responseMessages = {

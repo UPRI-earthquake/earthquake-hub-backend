@@ -1,7 +1,8 @@
 const Joi = require('joi');
+const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const {responseCodes} = require('./responseCodes')
-const {formatErrorMessage} = require('./helpers')
+const {formatErrorMessage, generateAccessToken} = require('./helpers')
 
 exports.getAllDeviceLocations = async (req, res, next) => {
   // No validation for GET request
@@ -141,20 +142,19 @@ exports.getDeviceStatus = async (req, res, next) => {
   }
 }
 
-exports.addDevice = async (req, res, next) => {
+exports.linkDevice = async (req, res, next) => {
   // Define validation schema
-  const addDeviceSchema = Joi.object().keys({
-    network: Joi.string()
-      .regex(/^[a-zA-Z]{2}$/)
+  const linkDeviceSchema = Joi.object().keys({
+    username: Joi.string().required(),
+    password: Joi.string()
+      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
       .required()
       .messages({
-        "string.pattern.base": "Please provide a valid 2-letter network code.",
+        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
       }),
-    station: Joi.string()
-      .regex(/^[a-zA-Z0-9]{3,5}$/)
-      .required()
+    role: Joi.string().valid('sensor').required()
       .messages({
-        "string.pattern.base": "Please provide a valid 3 to 5-character alphanumeric station code.",
+        "any.only": "Only sensor role can request device linking",
       }),
     elevation: Joi.string()
       .regex(/^[-+]?\d+(\.\d+)?$/)
@@ -174,58 +174,6 @@ exports.addDevice = async (req, res, next) => {
       .messages({
         "string.pattern.base": "Please provide a valid longitude value.",
       }),
-  }).messages({ // Default message if no custom message is set for the key
-    "any.required": "{#label} is required.",
-    "string.empty": "{#label} cannot be empty.",
-  });
-
-  try {
-    // token verification should put username from token to req.username
-    if (!req.username){
-      res.status(403).json({ status: responseCodes.GENERIC_ERROR, message: "Username of a logged-in user is required."});
-    }
-
-    // Validate POST input
-    const {error, value} = addDeviceSchema.validate(req.body)
-    if(error){ throw error }
-    const {network, station, elevation, latitude, longitude} = value
-
-    // Perform Task
-    returnStr = await DeviceService.addDevice(req.username, network, station, elevation, latitude, longitude);
-
-    let message = "";
-    
-    switch (returnStr) {
-      case "detailsAlreadyUsed":
-        message = "Device details already used";
-        res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
-          message: message,
-        });
-        break;
-      case "success":
-        message = "Successfully added device";
-        res.status(200).json({
-          status: responseCodes.GENERIC_SUCCESS,
-          message: message,
-        });
-        break;
-      default:
-        throw Error(`Unhandled return value ${returnStr} from service.addDevice()`);
-    }
-    
-    res.message = message; // used by next middleware
-
-    return;
-  } catch (error) {
-    console.log(`Add device unsuccessful: \n ${error}`);
-    next(error)
-  }
-}
-
-exports.linkDevice = async (req, res, next) => {
-  // Define validation schema
-  const linkDeviceSchema = Joi.object().keys({
     macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/)
      .required()
      .messages({
@@ -242,29 +190,68 @@ exports.linkDevice = async (req, res, next) => {
   });
 
   try {
-    // token verification should put username from token to req.username
-    if (!req.username){
-      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
-    }
-
     // Validate POST input
     const {error, value} = linkDeviceSchema.validate(req.body)
     if(error){ throw error }
-    const {macAddress, streamId} = value
+    const {username, password, role,
+           network, station, elevation, latitude, longitude,
+           macAddress, streamId} = value
 
-    // Perform task
-    returnObj = await DeviceService.linkDevice(req.username, macAddress, streamId)
+    // Perform task: authenticate user
+    returnStr = await AccountsService.loginAccountRole(username, password, role)
+    if (returnStr !== 'successSensorBrgy'){
+      console.log(`Adding device unsuccessful: ${returnStr}`);
+      throw new Error(returnStr)
+    }
 
+    // Perform task: link device
+    returnObj = await DeviceService.linkDevice(username, elevation, longitude, latitude, macAddress, streamId)
+    if (returnObj.str !== 'success' && returnObj.str !== 'alreadyLinked'){
+      console.log(`Link device unsuccessful: ${returnObj.str}`);
+      throw new Error(returnObj.str)
+    }
+
+    // Return accesstoken within the payload
+    let message = 'Device-Account Linking Successful';
+    let status = responseCodes.LINKING_SUCCESS
+    if (returnObj.str === 'alreadyLinked'){ 
+      message = 'Device-Account already linked';
+      status = responseCodes.LINKING_ALREADY_DONE
+    }
+    res.status(200).json({
+      status: status,
+      message: message,
+      payload: {
+        ...returnObj.payload,
+        accessToken: generateAccessToken({
+          'username': username,
+          'role': role
+        })
+      }
+    });
+    res.message = message; // used by next middleware
+
+    return;
+  } catch (error) {
     let message = "";
-    
-    switch (returnObj.str) {
-      case 'alreadyLinked':
-        message = 'Device is already linked to an existing account';
+    switch (error.message) {
+      // Login errors for a sensor
+      case "accountNotExists":
+        message = "User doesn't exists!";
         res.status(400).json({
-          status: responseCodes.GENERIC_ERROR,
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
           message: message
         });
         break;
+      case "wrongPassword":
+        message = 'Wrong password';
+        res.status(401).json({
+          status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
+          message: message
+        });
+        break;
+
+      // Linking device error
       case 'usernameNotFound':
         message = 'User not found';
         res.status(400).json({
@@ -272,38 +259,26 @@ exports.linkDevice = async (req, res, next) => {
           message: message
         });
         break;
-      case 'deviceNotFound':
-        message = "Device doesn't exist in the database!";
+      case 'alreadyLinkedToSomeone':
+        message = "Device is already linked to someone else!";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
           message: message
         });
         break;
-      case 'deviceNotOwned':
-        message = "Device is not yet added to user's device list";
+      case 'incorrectAMStation':
+        message = "Station code incorrect for an AM device";
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
           message: message
         });
         break;
-      case 'success':
-        message = 'Device-Account Linking Successful';
-        res.status(200).json({
-          status: responseCodes.GENERIC_SUCCESS,
-          message: message,
-          payload: returnObj.payload
-        });
-        break;
-      default:
-        throw Error(`Unhandled return value ${returnObj} from service.linkDevice()`);
-    }
-    
-    res.message = message; // used by next middleware
 
-    return;
-  } catch (error) {
-    console.log(`Link device unsuccessful: \n ${error}`);
-    next(error)
+      default:
+        next(error)
+        return
+    }
+    res.message = message; // used by next middleware
   }
 }
 
