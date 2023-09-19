@@ -57,7 +57,7 @@ const router = express.Router();
   *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
   *     responses:
   *       '200':
-  *         description: Device-account linking successful
+  *         description: Device-account linking successful or Device-account already linked
   *         content:
   *           application/json:
   *             schema:
@@ -122,22 +122,35 @@ const router = express.Router();
   *                   type: string
   *                   description: The message associated with the response.
   *             examples:  # Provide multiple examples for different error cases
-  *               alreadyLinked:
+  *               accountNotExists:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   message: "User doesn't exists!"
+  *               alreadyLinkedToSomeone:
   *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is already linked to an existing account"
+  *                   message: "Device is already linked to someone else!"
   *               usernameNotFound:
   *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
   *                   message: "User not found"
-  *               deviceNotFound:
-  *                 value:
+  *               incorrectAMStation:
+  *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device doesn't exist in the database!"
-  *               deviceNotOwned:
-  *                 value:
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is not yet added to user's device list"
+  *                   message: "Station code incorrect for an AM device"
+  *       '401':
+  *         description: Linking failed due to wrong password
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_WRONG_PASSWORD
+  *                 message:
+  *                   type: string
+  *                   example: "Wrong password"
   *       '500':
   *         description: Internal server error
   *         content:
