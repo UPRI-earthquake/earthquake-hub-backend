@@ -57,7 +57,7 @@ const router = express.Router();
   *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
   *     responses:
   *       '200':
-  *         description: Device-account linking successful or Device-account already linked
+  *         description: Device-account linking response
   *         content:
   *           application/json:
   *             schema:
@@ -66,48 +66,37 @@ const router = express.Router();
   *                 status:
   *                   type: number
   *                   description: The status code for the response.
-  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
-  *                   example: 'Device-Account Linking Successful'
   *                 payload:
   *                   type: object
   *                   description: The payload containing device information.
-  *                   properties:
-  *                     deviceInfo:
-  *                       type: object
-  *                       properties:
-  *                         network:
-  *                           type: string
-  *                           description: The network of the device.
-  *                           example: 'AM'
-  *                         station:
-  *                           type: string
-  *                           description: The code of the device station.
-  *                           example: 'RE722'
-  *                         longitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The longitude of the device location.
-  *                           example: -122.4194
-  *                         latitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The latitude of the device location.
-  *                           example: 37.7749
-  *                         elevation:
-  *                           type: number
-  *                           format: float
-  *                           description: The elevation of the device location in meters.
-  *                           example: 100.5
-  *                         streamId:
-  *                           type: string
-  *                           description: The stream ID of the device.
-  *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
-  *                     accessToken:
-  *                       type: string
-  *                       description: Valid JWT token
+  *             examples:
+  *               success:
+  *                 value:
+  *                   status: responseCodes.LINKING_SUCCESS
+  *                   message: Device-account linking successful
+  *                   payload:
+  *                     network: 'AM'
+  *                     station: 'RE722'
+  *                     longitude: -122.4194
+  *                     latitude: 37.7749
+  *                     elevation: 100.5
+  *                     streamId: 'AM_RE722_LOC_CHANNEL/MSEED'
+  *                     accessToken: 'your-access-token-here'
+  *               alreadyLinked:
+  *                 value:
+  *                   status: responseCodes.LINKING_ALREADY_DONE
+  *                   message: Device-account already linked
+  *                   payload:
+  *                     network: 'AM'
+  *                     station: 'RE722'
+  *                     longitude: -122.4194
+  *                     latitude: 37.7749
+  *                     elevation: 100.5
+  *                     streamId: 'AM_RE722_LOC_CHANNEL/MSEED'
+  *                     accessToken: 'your-access-token-here'
   *       '400':
   *         description: Bad request
   *         content:
