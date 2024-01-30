@@ -209,7 +209,7 @@ router.route('/register').post(
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/authenticate').post(
+router.route('/authenticate-test').post(
   AccountsController.authenticateAccount
 );
 
