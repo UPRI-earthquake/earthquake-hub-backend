@@ -8,6 +8,14 @@ function generateAccessToken(payload){
   );
 }
 
+function _test_generateAccessToken(payload, expiry){
+  return jwt.sign(
+    payload, 
+    process.env.ACCESS_TOKEN_PRIVATE_KEY, 
+    {expiresIn: expiry} // Adds 'exp' in seconds since epoch
+  );
+}
+
 function formatErrorMessage(errorMessage) {
   return errorMessage
     .replace(/["\\]/g, "") // Strip double quotes and backslashes
@@ -28,4 +36,5 @@ module.exports = {
   generateAccessToken,
   formatErrorMessage,
   generateAMStationCode,
+  _test_generateAccessToken
 }

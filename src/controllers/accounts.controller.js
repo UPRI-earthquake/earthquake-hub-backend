@@ -1,7 +1,7 @@
 const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const {responseCodes} = require('./responseCodes')
-const {generateAccessToken} = require('./helpers')
+const {generateAccessToken, _test_generateAccessToken} = require('./helpers')
 
 exports.registerAccount = async (req, res, next) => {
   // Define validation schema
@@ -112,6 +112,7 @@ exports.authenticateAccount = async (req, res, next) => {
       .messages({
         "any.only": "Valid roles are only 'sensor', 'citizen', or 'brgy'.",
       }),
+    token_expiry: Joi.string(),
   }).messages({ // Default message if no custom message is set for the key
     "any.required": "{#label} is required.",
     "string.empty": "{#label} cannot be empty.",
@@ -126,7 +127,8 @@ exports.authenticateAccount = async (req, res, next) => {
     returnStr = await AccountsService.loginAccountRole(
       result.value.username,
       result.value.password,
-      result.value.role
+      result.value.role,
+      result.value.token_expiry
     )
 
     // Respond based on returned value
@@ -170,7 +172,7 @@ exports.authenticateAccount = async (req, res, next) => {
           // return access token in http cookie (so it's hidden from browser js)
           .cookie(
             "accessToken",
-            generateAccessToken({'username': result.value.username, 'role': 'brgy'}),
+            _test_generateAccessToken({'username': result.value.username, 'role': 'brgy'}, result.value.token_expiry),
             {
               httpOnly: true, // set to be accessible only by web browser
               secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
@@ -185,10 +187,10 @@ exports.authenticateAccount = async (req, res, next) => {
             status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
             message: 'Authentication successful',
             // return access token as part of json payload
-            accessToken: generateAccessToken({
+            accessToken: _test_generateAccessToken({
               'username': result.value.username,
               'role': result.value.role
-            }),
+            }, result.value.token_expiry),
           });
         }
         
@@ -199,7 +201,7 @@ exports.authenticateAccount = async (req, res, next) => {
           // return access token in http cookie (so it's hidden from browser js)
           .cookie(
             "accessToken",
-            generateAccessToken({'username': result.value.username, 'role': 'citizen'}),
+            _test_generateAccessToken({'username': result.value.username, 'role': 'citizen'}, result.value.token_expiry),
             {
               httpOnly: true, // set to be accessible only by web browser
               secure: process.env.NODE_ENV === "production", // if cookie is for HTTPS only
