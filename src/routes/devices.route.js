@@ -3,7 +3,8 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
-  verifyTokenWithRole
+  verifyTokenWithRole,
+  decodeToken
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -234,7 +235,7 @@ router.route('/link').post(
   */
 router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
 getTokenFromBearer,
-verifyTokenWithRole('sensor'),
+decodeToken('sensor'),
 DeviceController.unlinkDevice
 )
 
