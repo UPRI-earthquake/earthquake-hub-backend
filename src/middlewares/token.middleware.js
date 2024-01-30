@@ -76,8 +76,28 @@ function verifyTokenWithRole(role) { // wrapper for custom args
   } // end of standard middleware
 } // end of wrapper
 
+// Decode token information and cross check role in token is role in arg
+function decodeToken(role) { // wrapper for custom args
+  return (req, res, next) => {
+    const decodedToken = jwt.decode(req.token);
+
+    if (decodedToken.role !== role) {
+      res.status(403).json({
+        status: responseCodes.VERIFICATION_INVALID_ROLE,
+        message: "Role invalid"
+      });
+      return;
+    }
+
+    req.username = decodedToken.username;
+    req.role = decodedToken.role;
+    next();
+  } // end of standard middleware
+} // end of wrapper
+
 module.exports = {
   getTokenFromCookie,
   getTokenFromBearer,
-  verifyTokenWithRole
+  verifyTokenWithRole,
+  decodeToken
 }
