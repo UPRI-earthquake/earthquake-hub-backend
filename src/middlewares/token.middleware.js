@@ -37,9 +37,12 @@ function getTokenFromBearer(req, res, next) {
 }
 
 // Verify token is valid, and role in token is role in arg
-function verifyTokenWithRole(role) { // wrapper for custom args
+function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for custom args
   return (req, res, next) => {
-    jwt.verify(req.token, process.env.ACCESS_TOKEN_PRIVATE_KEY, (err, decodedToken) => {
+    jwt.verify(req.token, 
+      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
+      {ignoreExpiration: ignoreExpiration}, 
+      (err, decodedToken) => {
 
       if (err) {
         if (err.name == 'JsonWebTokenError'){

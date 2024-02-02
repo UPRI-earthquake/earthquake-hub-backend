@@ -234,7 +234,7 @@ router.route('/link').post(
   */
 router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
 getTokenFromBearer,
-verifyTokenWithRole('sensor'),
+verifyTokenWithRole('sensor', ignoreExpiration = true),
 DeviceController.unlinkDevice
 )
 
