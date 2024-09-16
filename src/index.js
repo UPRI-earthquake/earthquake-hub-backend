@@ -108,6 +108,7 @@ app.use('/device', require('./routes/devices.route'))
 app.use('/messaging', require('./routes/messaging.route'))
 app.use('/notifications', require('./routes/notifications.route'))
 app.use('/eq-events', require('./routes/EQevents.route'))
+app.use('/significant-eqs', require('./routes/significantEQs.route'))
 
 // TODO: Test for multiple origin 
 // app.use((req, res, next) => {
