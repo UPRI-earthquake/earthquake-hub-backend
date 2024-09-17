@@ -7,5 +7,9 @@ router.route('/all').get(
     SignificantEQsController.getAllSignificantEQs
 );
 
+router.route('/').post(
+    SignificantEQsController.getEarthquakeInfo
+);
+
 
 module.exports = router;
