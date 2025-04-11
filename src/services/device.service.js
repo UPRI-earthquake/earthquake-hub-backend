@@ -40,6 +40,7 @@ exports.getAllDeviceLocations = async () => {
     code: device.station,
     latitude: device.latitude,
     longitude: device.longitude,
+    activity: device.activity,
     description: device.description
   }));
 
