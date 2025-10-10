@@ -1789,8 +1789,8 @@
         "tags": [
           "Messaging"
         ],
-        "summary": "SSE endpoint to stream SC_PICK or SC_EVENT messages to the client.",
-        "description": "- This endpoint streams events to the client using Server-Sent Events (SSE).\n- The endpoint uses the `text/event-stream` content type.\n- Events are sent as STRINGS in the format: `event: <event_name>\\ndata: <event_obj>\\\\id: <timestamp>\\n\\n`.\n- `event` can be either SC_PICK or SC_EVENT\n",
+        "summary": "SSE endpoint to stream SC_EVENT, SC_PICK, and STATION_STATUS messages to the client.",
+        "description": "- This endpoint streams events to the client using Server-Sent Events (SSE).\n- The endpoint uses the `text/event-stream` content type.\n- Events are sent as STRINGS in the format: `event: <event_name>\\ndata: <event_obj>\\\\id: <timestamp>\\n\\n`.\n- `event` can be SC_EVENT, SC_PICK, or STATION_STATUS (station activity updates)\n",
         "responses": {
           "200": {
             "description": "OK",
@@ -1806,6 +1806,9 @@
                   },
                   "pickEvent": {
                     "value": "\"event\": \"SC_PICK\"\n\"data\": {\n  \"networkCode\": \"AM\",\n  \"stationCode\": \"RE722\",\n  \"timestamp\": \"2023-06-27T05:58:21.000Z\"\n}\n\"id\": 1690534975472\n"
+                  },
+                  "stationStatus": {
+                    "value": "\"event\": \"STATION_STATUS\"\n\"data\": {\n  \"network\": \"AM\",\n  \"station\": \"RE722\",\n  \"activity\": \"active\",\n  \"status\": \"Streaming\",\n  \"statusSince\": \"2025-10-09T02:31:22.000Z\"\n}\n\"id\": 1690534976000\n"
                   }
                 }
               }
@@ -1961,6 +1964,83 @@
                     "message": {
                       "type": "string",
                       "example": "Server error occured"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/messaging/restricted/station-status": {
+      "post": {
+        "summary": "Publish a station status event to SSE (admin/test only)",
+        "description": "!! Access to this endpoint is restricted to trusted network only (via reverse-proxy). Emits a `STATION_STATUS` message on the `/messaging` SSE stream and optionally updates the matching device's `activity` and `activityToggleTime` in MongoDB.\n",
+        "tags": [
+          "Messaging"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "network": {
+                    "type": "string",
+                    "example": "AM"
+                  },
+                  "station": {
+                    "type": "string",
+                    "example": "RE722"
+                  },
+                  "activity": {
+                    "type": "string",
+                    "description": "Canonical activity value",
+                    "enum": [
+                      "active",
+                      "inactive"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "Optional human label; will be derived from activity if omitted",
+                    "enum": [
+                      "Streaming",
+                      "Not Streaming"
+                    ]
+                  },
+                  "statusSince": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Optional toggle time; defaults to now"
+                  }
+                }
+              },
+              "example": {
+                "network": "AM",
+                "station": "RE722",
+                "activity": "active",
+                "status": "Streaming",
+                "statusSince": "2025-10-09T02:31:22.000Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status broadcasted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
                     }
                   }
                 }

@@ -1,4 +1,4 @@
-version: '3.9'
+#version: '3.9'
 
 services:
   backend:
@@ -16,6 +16,8 @@ services:
       - "mongodb"
     expose:
       - "5000"
+    ports:
+      - "5000:5000"
     extra_hosts:
        - "host.docker.internal:host-gateway"
     networks:
@@ -31,6 +33,8 @@ services:
       - earthquake-hub-mongodb-data:/data/db
     expose:
       - "27017"
+    ports:
+      - "27017:27017"
     networks:
       app-network:
         ipv4_address: 172.22.0.4

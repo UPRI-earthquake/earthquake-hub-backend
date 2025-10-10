@@ -159,7 +159,7 @@ async function addPlacesAttribute(eventsList){
         place: address
       })
     }catch(err){
-      console.log('Catch: No Geoserve')
+      // console.log('Catch: No Geoserve')
       var address = 'Unavailable'
       updatedData.push({
         ...eventData,
