@@ -92,7 +92,8 @@ exports.newEQEvent = async (req, res, next) => {
       value.depth_value,
       value.magnitude_value,
       value.eventType,
-      value.text
+      value.text,
+      value.last_modification
     )
 
     // Respond based on return value

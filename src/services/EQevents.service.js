@@ -197,35 +197,38 @@ async function addPlacesAttribute(eventsList){
   *       database based on the publicID and updates its information with the provided details (OT, latitude_value, etc.).
   *       If the eventType is 'NEW', the function creates a new earthquake event entry in the database with the provided details.
  ***************************************************************************/
-async function addEQEvent(publicID, OT, latitude_value, longitude_value, depth_value, magnitude_value, eventType, text){
-  if (eventType === 'UPDATE') { // if eventType === 'UPDATE', dont create new event entry
-    const eventToUpdate = await EQEvents.findOne({ publicID: publicID });
-
-    eventToUpdate.OT = OT,
-    eventToUpdate.latitude_value = latitude_value,
-    eventToUpdate.longitude_value = longitude_value,
-    eventToUpdate.depth_value =  depth_value,
-    eventToUpdate.magnitude_value = magnitude_value,
-    eventToUpdate.type = eventType,
-    eventToUpdate.text = text
-
-    eventToUpdate.save();
-  }
-  else{ // if eventType === 'NEW', add new entry
-    const newEQEvent = new EQEvents({
-      publicID: publicID,
-      OT: OT,
-      latitude_value: latitude_value,
-      longitude_value: longitude_value,
-      depth_value: depth_value,
-      magnitude_value: magnitude_value,
+async function addEQEvent(
+  publicID,
+  OT,
+  latitude_value,
+  longitude_value,
+  depth_value,
+  magnitude_value,
+  eventType,
+  text,
+  last_modification,
+){
+  // Idempotent upsert by publicID. This prevents duplicates when a previous
+  // bug or out-of-order messages would otherwise create separate NEW/UPDATE
+  // documents for the same quake. The unique index on publicID enforces this
+  // at the database level as well.
+  const filter = { publicID };
+  const update = {
+    $set: {
+      OT,
+      latitude_value,
+      longitude_value,
+      depth_value,
+      magnitude_value,
       type: eventType,
-      text: text
-    });
-    await newEQEvent.save(); // save new entry to event collections
-  }
+      text,
+      ...(last_modification ? { last_modification: last_modification } : {}),
+    },
+    $setOnInsert: { publicID },
+  };
 
-  return 'success'
+  await EQEvents.updateOne(filter, update, { upsert: true });
+  return 'success';
 }
 
 module.exports = {
