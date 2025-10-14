@@ -45,36 +45,31 @@ exports.getAllDeviceLocations = async (req, res, next) => {
 
 exports.getOwnedDevices = async (req, res, next) => {
   try {
-    // No validation for GET request
-   
-    // Perform Task
+    // No validation for GET request; auth already enforced by middleware
     const returnObj = await DeviceService.getAccountDevices(req.username);
 
-    // Respond based on returned value
-    let message = "";
-    
+    let message = '';
     switch (returnObj.str) {
-      case "usernameNotFound":
-        message = "Getting user record failed";
+      case 'usernameNotFound':
+        message = 'Getting user record failed';
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
-          message: message,
+          message,
         });
         break;
-      case "success":
-        message = "Get owned devices success";
+      case 'success':
+        message = 'Get owned devices success';
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
-          message: message,
-          devices: returnObj.devices
+          message,
+          devices: returnObj.devices,
         });
         break;
       default:
         throw Error(`Unhandled return value ${returnObj} from service.getAccountDevices()`);
     }
-    
-    res.message = message; // used by next middleware
 
+    res.message = message; // used by next middleware
     return;
   } catch (error) {
     console.log(`Error getting owned devices: \n ${error}`);

@@ -3,7 +3,7 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
-  verifyTokenWithRole
+  verifyTokenWithRole,
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -400,10 +400,11 @@ router.route('/all').get(
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/my-devices').get( 
+router.route('/my-devices').get(
+  // Strict auth: require citizen cookie and role
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
-  DeviceController.getOwnedDevices
+  DeviceController.getOwnedDevices,
 );
 
 
