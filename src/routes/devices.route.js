@@ -318,7 +318,10 @@ DeviceController.unlinkDevice
   *                   type: string
   *                   example: "Server error occured"
   */
+// Short cache lifetime is acceptable for station list (SSE updates will refine status)
+// TODO(perf): Revisit TTL if backend adds ETag/Last-Modified support
 router.route('/all').get(
+  require('../middlewares/cache.middleware').cacheSeconds(60),
   DeviceController.getAllDeviceLocations
 );
 
