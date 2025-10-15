@@ -2,6 +2,7 @@ const dns = require('dns');
 const os = require('os');
 const http = require('http');
 const express = require('express');
+const compression = require('compression');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
@@ -16,6 +17,17 @@ const logger = require('./middlewares/logger.middleware');
 
 
 const app = express();
+app.use(
+  compression({
+    filter: (req, res) => {
+      const type = res.getHeader('Content-Type');
+      if (type && String(type).includes('text/event-stream')) return false;
+      // fallback to standard filter
+      // eslint-disable-next-line global-require
+      return require('compression').filter(req, res);
+    },
+  }),
+);
 
 if(process.env.NODE_ENV !== 'production'){
   const options = {
