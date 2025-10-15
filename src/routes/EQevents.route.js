@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const EQEventsController = require('../controllers/EQevents.controller');
+const { cacheSeconds } = require('../middlewares/cache.middleware');
 
 /**
   * @swagger
@@ -122,8 +123,7 @@ const EQEventsController = require('../controllers/EQevents.controller');
   *                   type: string
   *                   example: "Server error occured"
   */
-router.get('/',
-  EQEventsController.getEQEvents
-);
+// Cache recent EQ events briefly to reduce load on repeat queries
+router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
 
 module.exports = router;

@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 
 const SignificantEQsController = require('../controllers/significantEQs.controller')
+const { cacheSeconds } = require('../middlewares/cache.middleware')
 
-router.route('/all').get(
+// Significant EQs list is relatively stable; allow a longer cache window
+router.route('/all').get(cacheSeconds(300),
     SignificantEQsController.getAllSignificantEQs
 );
 
