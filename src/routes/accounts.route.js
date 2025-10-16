@@ -444,9 +444,10 @@ router.route('/verify-sensor-token').post(
   *                   example: "Server error occured"
   */
 router.route('/profile').get(
-  Middleware.getTokenFromCookie,             // Citizen token is stored in cookie
-  Middleware.verifyTokenWithRole('citizen'), // This enpoint should only be accessible to Citizen Accounts
-  AccountsController.getAccountProfile       // Get profile information and respond accordingly
+  // Optional auth: do not emit 403 when cookie/token is missing or invalid
+  Middleware.getTokenFromCookieIfPresent,
+  Middleware.verifyTokenWithRoleOptional('citizen'),
+  AccountsController.getAccountProfile
 );
 
 

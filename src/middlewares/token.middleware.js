@@ -18,6 +18,20 @@ function getTokenFromCookie(req, res, next) {
   next();
 }
 
+// Optional cookie reader: does not error when cookie/token is missing
+function getTokenFromCookieIfPresent(req, res, next) {
+  // Normalize flags used by optional verifiers
+  req.isAuthenticated = false;
+
+  // If cookies are unavailable or token not present, proceed without setting req.token
+  if (!req.cookies || !req.cookies.accessToken) {
+    return next();
+  }
+
+  req.token = req.cookies.accessToken;
+  next();
+}
+
 // Brgy & sensor roles' request send tokens thru Authorization Bearer in requests
 function getTokenFromBearer(req, res, next) {
   const authHeader = req.headers["authorization"]
@@ -79,8 +93,50 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
   } // end of standard middleware
 } // end of wrapper
 
+// Verify token with role but do not error; sets req.isAuthenticated=false on failures
+function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
+  return (req, res, next) => {
+    // If no token provided, skip verification; treat as unauthenticated
+    if (!req.token) {
+      req.isAuthenticated = false;
+      return next();
+    }
+
+    jwt.verify(
+      req.token,
+      process.env.ACCESS_TOKEN_PRIVATE_KEY,
+      { ignoreExpiration },
+      (err, decodedToken) => {
+        if (err) {
+          // Invalid or expired token — treat as unauthenticated without responding
+          req.isAuthenticated = false;
+          return next();
+        }
+
+        if (decodedToken.role !== role) {
+          // Role mismatch — treat as unauthenticated without responding
+          req.isAuthenticated = false;
+          return next();
+        }
+
+        // Valid token and role
+        req.username = decodedToken.username;
+        req.role = decodedToken.role;
+        req.tokenExpiry = decodedToken.exp;
+        if (decodedToken.streamIds) {
+          req.streamIds = decodedToken.streamIds;
+        }
+        req.isAuthenticated = true;
+        next();
+      }
+    );
+  };
+}
+
 module.exports = {
   getTokenFromCookie,
+  getTokenFromCookieIfPresent,
   getTokenFromBearer,
-  verifyTokenWithRole
+  verifyTokenWithRole,
+  verifyTokenWithRoleOptional,
 }

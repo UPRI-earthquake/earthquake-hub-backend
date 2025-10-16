@@ -36,10 +36,16 @@ const notifySubscribersEQ = async (message) =>{
     let updatedEvent = await EQEventsService.addPlacesAttribute([message])
     updatedEvent = updatedEvent[0]
 
-    let address = ''
-    updatedEvent.place === 'Nominatim unavailable'
-    ? address = updatedEvent.text
-    : address = updatedEvent.place
+    const place = updatedEvent.place
+    const hasUsablePlace =
+      place &&
+      place.toString().trim().length > 0 &&
+      place.toLowerCase() !== 'unavailable' &&
+      place.toLowerCase() !== 'nominatim unavailable'
+
+    const address = hasUsablePlace
+      ? place
+      : (updatedEvent.text || 'Unknown location')
 
     const payload = JSON.stringify({
       title: 'Earthquake Alert',
@@ -49,19 +55,33 @@ const notifySubscribersEQ = async (message) =>{
     if(mongoose.connection.readyState === 1) { // connected to MongoDB
       const subscribers = await Subscription.find({});
       subscribers.forEach(subscriber => {
-        webpush.sendNotification(subscriber, payload)
-          .then(console.log(`Sent notif to ${subscriber._id}`))
-          .catch(response => {
-            switch(response.statusCode){
+        webpush
+          .sendNotification(subscriber, payload)
+          .then(() => {
+            console.log(`Sent notif to ${subscriber._id}`)
+          })
+          .catch((err) => {
+            const status = err && err.statusCode
+            switch (status) {
               case 400:
               case 404: // Not Found
               case 410:
                 console.log(`Subscription gone for ${subscriber._id}`)
-                Subscription.deleteOne(subscriber)
-                .then(console.log(`Deleted ${subscriber.id}`))
+                Subscription.deleteOne({ _id: subscriber._id })
+                  .then(() => console.log(`Deleted ${subscriber._id}`))
+                  .catch((deleteErr) =>
+                    console.error(
+                      `Failed to delete ${subscriber._id}:`,
+                      deleteErr?.message || deleteErr
+                    )
+                  )
                 break;
               default:
-                console.log(`Unhandled response in of sendNotification(): ${response.statusCode}`)
+                console.error(
+                  `Unhandled error in sendNotification():`,
+                  status || '',
+                  err?.message || err
+                )
             }
           })
       })

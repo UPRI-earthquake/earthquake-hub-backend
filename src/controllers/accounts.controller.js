@@ -302,6 +302,14 @@ exports.getAccountProfile = async (req, res, next) => {
   // No validation schema since this is for GET endpoint
 
   try {
+    // If optional auth indicates no session or username missing, return soft 200
+    if (req.isAuthenticated === false || !req.username) {
+      return res.status(200).json({
+        status: responseCodes.GENERIC_SUCCESS,
+        message: 'No active session',
+      });
+    }
+
     // Perform Task
     returnObj = await AccountsService.getAccountProfile(req.username)
 
@@ -408,4 +416,3 @@ exports.getBrgyToken = async (req, res, next) => {
     next(error)
   }  
 }
-
