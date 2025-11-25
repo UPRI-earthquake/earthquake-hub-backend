@@ -2,8 +2,8 @@ const SignificantEQs = require('../models/significantEQ.model');
 
 exports.getAllSignificantEQs = async () => {
     const allSignificantEQs = await SignificantEQs.find({});
-    console.log('EQs:' + allSignificantEQs)
-    console.log(allSignificantEQs.length)
+    // console.log('EQs:' + allSignificantEQs)
+    // console.log(allSignificantEQs.length)
 
     if (allSignificantEQs.length === 0) {
         return {str: 'noSignificantEQsFound'};
@@ -17,10 +17,10 @@ exports.getAllSignificantEQs = async () => {
 
 exports.getEarthquakeInfo = async (id) => {
     const earthquakeInfo = await SignificantEQs.findById(id);
-    console.log('EQ Info:' + earthquakeInfo)
+    // console.log('EQ Info:' + earthquakeInfo)
 
     if (!earthquakeInfo) {
-        return {str: 'noSignificantEQsFound'};
+        return {str: 'noEarthquakeInfoFound'};
     }
 
     return {

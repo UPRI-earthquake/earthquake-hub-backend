@@ -2,5 +2,5 @@
 require('./account.model.js');
 require('./device.model.js');
 require('./events.model.js');
-require('./significantEQ.model.js')
+require('./significantEQ.model.js');
 

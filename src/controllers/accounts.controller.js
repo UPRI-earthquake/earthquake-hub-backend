@@ -311,7 +311,7 @@ exports.getAccountProfile = async (req, res, next) => {
     }
 
     // Perform Task
-    returnObj = await AccountsService.getAccountProfile(req.username)
+    let returnObj = await AccountsService.getAccountProfile(req.username)
 
     // Respond based on returned value
     let message = "";

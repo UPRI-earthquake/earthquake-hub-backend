@@ -220,7 +220,7 @@ const sseStreamsEventListener = async() => {
 
             deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
             deviceToUpdate.activity = 'inactive';
-            deviceToUpdate.save();
+            await deviceToUpdate.save();
             try {
               await eventCache.newEvent('SC_*', {
                 network: deviceToUpdate.network,
@@ -242,7 +242,7 @@ const sseStreamsEventListener = async() => {
 
           deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
           deviceToUpdate.activity = 'active';
-          deviceToUpdate.save();
+          await deviceToUpdate.save();
           try {
             await eventCache.newEvent('SC_*', {
               network: deviceToUpdate.network,

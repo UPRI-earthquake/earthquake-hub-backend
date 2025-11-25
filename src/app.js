@@ -111,15 +111,15 @@ app.use((err, req, res, next) => {
   } else {
     const statusCode = err.statusCode || 500;
     if (process.env.NODE_ENV === 'production') {
-      res.status(statusCode).json({ status: responseCodes.GENERIC_ERROR, message: 'Server error occured' });
+      res.status(statusCode).json({ status: responseCodes.GENERIC_ERROR, message: 'Server error occurred' });
     } else {
       res.status(statusCode).json({
         status: responseCodes.GENERIC_ERROR,
         err: err.stack,
-        note: 'This error will only appear on non-production env. In production message is: Server error occured',
+        note: 'This error will only appear on non-production env. In production message is: Server error occurred',
       });
     }
-    logger.error(`Server error occured: \n\t${err.stack}`, { label: 'internalErrors', ip: req.ip });
+    logger.error(`Server error occurred: \n\t${err.stack}`, { label: 'internalErrors', ip: req.ip });
   }
 });
 

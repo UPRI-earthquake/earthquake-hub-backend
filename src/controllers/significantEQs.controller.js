@@ -6,7 +6,7 @@ exports.getAllSignificantEQs = async (req, res, next) => {
 
     try {
         // Perform Task
-        returnObj = await SignificantEQsService.getAllSignificantEQs();
+        let returnObj = await SignificantEQsService.getAllSignificantEQs();
 
         //Respond based on returned value
         let message = "";
@@ -36,7 +36,7 @@ exports.getAllSignificantEQs = async (req, res, next) => {
         return;
     } catch (error) {
         console.log(`Getting all significant earthquakes unsuccessful: \n ${error}`);
-        next(error)
+        next(error);
     }
 }
 
@@ -46,7 +46,7 @@ exports.getEarthquakeInfo = async (req, res, next) => {
 
     try {
         // Perform Task
-        returnObj = await SignificantEQsService.getEarthquakeInfo(id);
+        let returnObj = await SignificantEQsService.getEarthquakeInfo(id);
 
         //Respond based on returned value
         let message = "";
@@ -75,7 +75,7 @@ exports.getEarthquakeInfo = async (req, res, next) => {
 
         return;
     } catch (error) {
-        console.log(`Getting all significant earthquakes unsuccessful: \n ${error}`);
-        next(error)
+        console.log(`Getting earthquake info unsuccessful: \n ${error}`);
+        next(error);
     }
 }
