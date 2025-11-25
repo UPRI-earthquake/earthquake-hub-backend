@@ -6,6 +6,7 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const fs = require('fs');
+const gaMiddleware = require('./middlewares/ga.middleware');
 
 const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
@@ -68,6 +69,9 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Google Analytics Measurement Protocol: API request tracking (conditionally enabled)
+app.use(gaMiddleware());
+
 // Request logging
 app.use((req, _, next) => {
   logger.info(`${req.method} request to ${req.path}`, { label: 'requests', ip: req.ip });
@@ -124,4 +128,3 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
-
