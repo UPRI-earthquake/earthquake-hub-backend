@@ -72,6 +72,10 @@ class EventCache extends EventEmitter {
     else if (channel === 'SC_PICK'){
       extendedEvent.data = event
     }
+    else {
+      // Pass-through for other event types (e.g., STATION_STATUS). Do not cache.
+      extendedEvent.data = event
+    }
 
     this.emit("newEvent", extendedEvent) // emit
 
@@ -216,7 +220,16 @@ const sseStreamsEventListener = async() => {
 
             deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
             deviceToUpdate.activity = 'inactive';
-            deviceToUpdate.save();
+            await deviceToUpdate.save();
+            try {
+              await eventCache.newEvent('SC_*', {
+                network: deviceToUpdate.network,
+                station: deviceToUpdate.station,
+                activity: 'inactive',
+                status: 'Not Streaming',
+                statusSince: deviceToUpdate.activityToggleTime,
+              }, 'STATION_STATUS');
+            } catch (_) {}
             return;
           } else { // Do nothing
             return;
@@ -229,7 +242,16 @@ const sseStreamsEventListener = async() => {
 
           deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
           deviceToUpdate.activity = 'active';
-          deviceToUpdate.save();
+          await deviceToUpdate.save();
+          try {
+            await eventCache.newEvent('SC_*', {
+              network: deviceToUpdate.network,
+              station: deviceToUpdate.station,
+              activity: 'active',
+              status: 'Streaming',
+              statusSince: deviceToUpdate.activityToggleTime,
+            }, 'STATION_STATUS');
+          } catch (_) {}
         }
     })
   });

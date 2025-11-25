@@ -11,12 +11,12 @@ const restrictedPath = '/restricted'; // NGINX will deny public access to this p
   * /messaging:
   *   get:
   *     tags: [Messaging]
-  *     summary: SSE endpoint to stream SC_PICK or SC_EVENT messages to the client.
+  *     summary: SSE endpoint to stream SC_EVENT, SC_PICK, and STATION_STATUS messages to the client.
   *     description: |
   *       - This endpoint streams events to the client using Server-Sent Events (SSE).
   *       - The endpoint uses the `text/event-stream` content type.
   *       - Events are sent as STRINGS in the format: `event: <event_name>\ndata: <event_obj>\\id: <timestamp>\n\n`.
-  *       - `event` can be either SC_PICK or SC_EVENT
+  *       - `event` can be SC_EVENT, SC_PICK, or STATION_STATUS (station activity updates)
   *     responses:
   *       200:
   *         description: OK
@@ -53,6 +53,17 @@ const restrictedPath = '/restricted'; // NGINX will deny public access to this p
   *                     "timestamp": "2023-06-27T05:58:21.000Z"
   *                   }
   *                   "id": 1690534975472
+  *               stationStatus:
+  *                 value: |
+  *                   "event": "STATION_STATUS"
+  *                   "data": {
+  *                     "network": "AM",
+  *                     "station": "RE722",
+  *                     "activity": "active",
+  *                     "status": "Streaming",
+  *                     "statusSince": "2025-10-09T02:31:22.000Z"
+  *                   }
+  *                   "id": 1690534976000
   */
 router.get('/',
   MessagingMiddleware.SSEFormatting,
@@ -185,6 +196,65 @@ router.post(`${restrictedPath}/new-event`,
   */
 router.post(`${restrictedPath}/new-pick`,
   MessagingController.newPick
+);
+
+
+/**
+  * @swagger
+  * /messaging/restricted/station-status:
+  *   post:
+  *     summary: Publish a station status event to SSE (admin/test only)
+  *     description: >
+  *       !! Access to this endpoint is restricted to trusted network only (via reverse-proxy).
+  *       Emits a `STATION_STATUS` message on the `/messaging` SSE stream and optionally updates
+  *       the matching device's `activity` and `activityToggleTime` in MongoDB.
+  *     tags: [Messaging]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               network:
+  *                 type: string
+  *                 example: AM
+  *               station:
+  *                 type: string
+  *                 example: RE722
+  *               activity:
+  *                 type: string
+  *                 description: Canonical activity value
+  *                 enum: [active, inactive]
+  *               status:
+  *                 type: string
+  *                 description: Optional human label; will be derived from activity if omitted
+  *                 enum: [Streaming, Not Streaming]
+  *               statusSince:
+  *                 type: string
+  *                 format: date-time
+  *                 description: Optional toggle time; defaults to now
+  *           example:
+  *             network: AM
+  *             station: RE722
+  *             activity: active
+  *             status: Streaming
+  *             statusSince: '2025-10-09T02:31:22.000Z'
+  *     responses:
+  *       200:
+  *         description: Status broadcasted
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  */
+router.post(`${restrictedPath}/station-status`,
+  MessagingController.newStationStatus
 );
 
 

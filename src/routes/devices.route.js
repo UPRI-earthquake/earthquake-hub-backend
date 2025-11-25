@@ -3,7 +3,7 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
-  verifyTokenWithRole
+  verifyTokenWithRole,
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -318,7 +318,10 @@ DeviceController.unlinkDevice
   *                   type: string
   *                   example: "Server error occured"
   */
+// Short cache lifetime is acceptable for station list (SSE updates will refine status)
+// TODO(perf): Revisit TTL if backend adds ETag/Last-Modified support
 router.route('/all').get(
+  require('../middlewares/cache.middleware').cacheSeconds(60),
   DeviceController.getAllDeviceLocations
 );
 
@@ -400,10 +403,11 @@ router.route('/all').get(
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/my-devices').get( 
+router.route('/my-devices').get(
+  // Strict auth: require citizen cookie and role
   getTokenFromCookie,
   verifyTokenWithRole('citizen'),
-  DeviceController.getOwnedDevices
+  DeviceController.getOwnedDevices,
 );
 
 

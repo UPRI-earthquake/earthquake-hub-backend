@@ -52,16 +52,34 @@
 
 const mongoose = require('mongoose');
 
-const eventSchema = new mongoose.Schema({
-  publicID: String,
-  OT: Date,
-  latitude_value: Number,
-  longitude_value: Number,
-  depth_value: Number,
-  magnitude_value: Number,
-  type: String,
-  text: String,
-  place: String
-});
+// NOTE:
+// - We persist the upstream SeisComP identifier in `publicID` and enforce
+//   uniqueness so a single earthquake cannot be duplicated as multiple
+//   documents (e.g., one "NEW" and one "UPDATE").
+// - `type` stores the latest upstream eventType ("NEW" | "UPDATE").
+// - `last_modification` is stored to allow deterministic conflict resolution
+//   if multiple updates arrive out of order.
+const eventSchema = new mongoose.Schema(
+  {
+    publicID: { type: String, required: true, index: true, unique: true },
+    OT: Date,
+    latitude_value: Number,
+    longitude_value: Number,
+    depth_value: Number,
+    magnitude_value: Number,
+    type: String, // upstream eventType
+    text: String,
+    place: String,
+    last_modification: Date,
+  },
+  {
+    timestamps: true, // createdAt/updatedAt for troubleshooting
+  },
+);
+
+// In case the collection already exists without the unique index, Mongoose
+// will attempt to create it on startup. If duplicates are present, index
+// creation will fail; clean duplicates first then re-create the index.
+eventSchema.index({ publicID: 1 }, { unique: true });
 
 module.exports = mongoose.model('Event', eventSchema);

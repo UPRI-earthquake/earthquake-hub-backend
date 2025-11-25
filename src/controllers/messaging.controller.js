@@ -4,6 +4,7 @@ const EQEventsService = require('../services/EQevents.service')
 const NotificationsService = require('../services/notifications.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
+const Device = require('../models/device.model');
 
 exports.setupSSEConnection = async (req, res, next) => {
   try {
@@ -91,7 +92,8 @@ exports.newEQEvent = async (req, res, next) => {
       value.depth_value,
       value.magnitude_value,
       value.eventType,
-      value.text
+      value.text,
+      value.last_modification
     )
 
     // Respond based on return value
@@ -161,3 +163,64 @@ exports.newPick = async (req, res, next) => {
   }
 }
 
+exports.newStationStatus = async (req, res, next) => {
+  // This is a restricted/admin/test endpoint to broadcast a STATION_STATUS SSE
+  // and optionally update the Device document to keep DB in sync.
+  const schema = Joi.object({
+    network: Joi.string().trim().uppercase().min(2).max(4).required(),
+    station: Joi.string().trim().uppercase().min(3).max(8).required(),
+    activity: Joi.string().trim().insensitive().valid('active', 'inactive').optional(),
+    status: Joi.string().trim().insensitive().valid('streaming', 'not streaming').optional(),
+    statusSince: Joi.string().isoDate().optional(),
+  }).or('activity', 'status');
+
+  try {
+    const { error, value } = schema.validate(req.body, { abortEarly: false });
+    if (error) throw error;
+
+    const network = String(value.network).toUpperCase();
+    const station = String(value.station).toUpperCase();
+
+    // Derive canonical values
+    let activity = value.activity ? String(value.activity).toLowerCase() : '';
+    if (!activity) {
+      const s = String(value.status || '').toLowerCase();
+      activity = (s === 'streaming' || s === 'online' || s === 'active') ? 'active' : 'inactive';
+    }
+    const statusLabel = value.status
+      ? (String(value.status).toLowerCase() === 'streaming' ? 'Streaming' : 'Not Streaming')
+      : (activity === 'active' ? 'Streaming' : 'Not Streaming');
+    const since = value.statusSince ? new Date(value.statusSince) : new Date();
+
+    const payload = {
+      network,
+      station,
+      activity,
+      status: statusLabel,
+      statusSince: since,
+    };
+
+    // Broadcast via SSE
+    await MessagingService.eventCache.newEvent('SC_*', payload, 'STATION_STATUS');
+
+    // Best-effort DB sync (optional)
+    try {
+      const dev = await Device.findOne({ network, station });
+      if (dev) {
+        dev.activity = activity;
+        dev.activityToggleTime = since;
+        await dev.save();
+      }
+    } catch (_) {}
+
+    const message = 'Station status broadcast';
+    res.status(200).json({ status: responseCodes.GENERIC_SUCCESS, message, payload });
+    res.message = message;
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      // Forward to global error handler with 400
+      err.statusCode = 400;
+    }
+    next(err);
+  }
+}

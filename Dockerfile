@@ -1,6 +1,6 @@
 # Stage 1: base, minimal setup for dev, shall contain non-js deps.
 #          To be bind-mounted to local dev files (includint node_modules)
-FROM node:18-alpine as base
+FROM node:18-alpine AS base
 
 EXPOSE 5000
 
@@ -11,12 +11,12 @@ RUN apk add --no-cache python3 make g++
 
 # Stage 2: prod, inherits base, adds src code, pre-installs js deps
 # TODO: Test for production build
-FROM base as prod
+FROM base AS prod
 
 RUN apk add dumb-init
 
 # install node modules
-ENV NODE_ENV production
+ENV NODE_ENV=production
 COPY --chown=node:node package*.json ./
 RUN npm ci --only=production --loglevel=verbose
 
