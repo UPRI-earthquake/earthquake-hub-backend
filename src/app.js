@@ -14,6 +14,8 @@ const logger = require('./middlewares/logger.middleware');
 
 const app = express();
 
+app.set('trust proxy', true);
+
 // Compression: skip for SSE
 app.use(
   compression({
