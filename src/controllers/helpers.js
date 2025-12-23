@@ -8,6 +8,14 @@ function generateAccessToken(payload){
   );
 }
 
+function generateRefreshToken(payload){
+  return jwt.sign(
+    payload,
+    process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY,
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '90 days' }
+  );
+}
+
 function formatErrorMessage(errorMessage) {
   return errorMessage
     .replace(/["\\]/g, "") // Strip double quotes and backslashes
@@ -26,6 +34,7 @@ function generateAMStationCode(macAddress) {
 
 module.exports = {
   generateAccessToken,
+  generateRefreshToken,
   formatErrorMessage,
   generateAMStationCode,
 }

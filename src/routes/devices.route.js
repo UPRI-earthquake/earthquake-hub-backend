@@ -158,6 +158,11 @@ router.route('/link').post(
   DeviceController.linkDevice
 );
 
+// Exchange refresh token for new access/refresh pair
+router.route('/refresh-token').post(
+  DeviceController.refreshToken
+);
+
 
 /**
   * @swagger

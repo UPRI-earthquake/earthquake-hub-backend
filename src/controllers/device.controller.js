@@ -2,7 +2,8 @@ const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const {responseCodes} = require('./responseCodes')
-const {formatErrorMessage, generateAccessToken} = require('./helpers')
+const {formatErrorMessage, generateAccessToken, generateRefreshToken} = require('./helpers')
+const jwt = require('jsonwebtoken');
 
 exports.getAllDeviceLocations = async (req, res, next) => {
   // No validation for GET request
@@ -206,7 +207,7 @@ exports.linkDevice = async (req, res, next) => {
       throw new Error(returnObj.str)
     }
 
-    // Return accesstoken within the payload
+    // Return access + refresh tokens within the payload
     let message = 'Device-Account Linking Successful';
     let status = responseCodes.LINKING_SUCCESS
     if (returnObj.str === 'alreadyLinked'){ 
@@ -219,6 +220,10 @@ exports.linkDevice = async (req, res, next) => {
       payload: {
         ...returnObj.payload,
         accessToken: generateAccessToken({
+          'username': username,
+          'role': role
+        }),
+        refreshToken: generateRefreshToken({
           'username': username,
           'role': role
         })
@@ -274,6 +279,57 @@ exports.linkDevice = async (req, res, next) => {
         return
     }
     res.message = message; // used by next middleware
+  }
+}
+
+exports.refreshToken = async (req, res, next) => {
+  const schema = Joi.object({
+    refreshToken: Joi.string().required(),
+  });
+
+  try {
+    const { error, value } = schema.validate(req.body);
+    if (error) throw error;
+    const { refreshToken } = value;
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY);
+    } catch (verifyErr) {
+      return res.status(401).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: 'Invalid refresh token',
+      });
+    }
+
+    const { username, role } = decoded;
+
+    // Build device info payload if available
+    const account = await DeviceService.getAccountDevices(username);
+    let deviceInfo = null;
+    if (account.str === 'success' && account.devices?.length > 0) {
+      const first = account.devices[0];
+      deviceInfo = {
+        network: first.network,
+        station: first.station,
+      };
+    }
+
+    const accessToken = generateAccessToken({ username, role });
+    const newRefresh = generateRefreshToken({ username, role });
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: 'Refresh token exchanged',
+      payload: {
+        accessToken,
+        refreshToken: newRefresh,
+        deviceInfo,
+      },
+    });
+  } catch (error) {
+    console.log(`Refresh token error: ${error}`);
+    next(error);
   }
 }
 
