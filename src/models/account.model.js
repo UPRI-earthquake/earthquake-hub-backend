@@ -60,6 +60,11 @@ const AccountSchema = new mongoose.Schema({
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
+  passwordPolicyVersion: {
+    type: Number,
+    default: 1, // legacy until explicitly updated
+  },
+  passwordUpdatedAt: Date,
   isApproved: { // inactive, active
     type: Boolean,
     default: false

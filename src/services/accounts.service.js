@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/account.model');
+const { passwordSchema, CURRENT_PASSWORD_POLICY_VERSION, LEGACY_PASSWORD_POLICY_VERSION } = require('../controllers/helpers');
 
 /***************************************************************************
   * createUniqueAccount:
@@ -45,6 +46,8 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
         roles: ["brgy"], // TODO: Make this an attribute to POST route too
         ringserverUrl: ringserverUrl,
         ringserverPort: ringserverPort,
+        passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
+        passwordUpdatedAt: new Date(),
       });
       break;
   
@@ -53,7 +56,9 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
         username: username,
         email: email,
         password: hashedPassword,
-        roles: ["citizen", "sensor"] // TODO: Make this an attribute to POST route too
+        roles: ["citizen", "sensor"], // TODO: Make this an attribute to POST route too
+        passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
+        passwordUpdatedAt: new Date(),
       });
       break;
   }
@@ -102,19 +107,38 @@ exports.loginAccountRole = async (username, password, role) => {
     return 'invalidRole';
   }
 
+  // Track whether the provided password meets the current policy without blocking legacy users
+  const passwordValidation = passwordSchema('Password').validate(password);
+  const meetsCurrentPolicy = !passwordValidation.error;
+  const currentPolicyVersion = user.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION;
+  let updatedPolicyVersion = currentPolicyVersion;
+  if (meetsCurrentPolicy && currentPolicyVersion !== CURRENT_PASSWORD_POLICY_VERSION) {
+    updatedPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+    user.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+    user.passwordUpdatedAt = new Date();
+    await user.save();
+  } else if (!user.passwordPolicyVersion) {
+    user.passwordPolicyVersion = LEGACY_PASSWORD_POLICY_VERSION;
+    await user.save();
+  }
+
+  const passwordStatus = (updatedPolicyVersion >= CURRENT_PASSWORD_POLICY_VERSION && meetsCurrentPolicy)
+    ? 'current'
+    : 'legacy';
+
   switch(role) {
     case 'sensor':
-      return 'successSensorBrgy'
+      return { str: 'successSensorBrgy', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
     case 'brgy':
       // check if brgy account is approved
       if (!user.isApproved) {
         return 'brgyAccountInactive';
       }
-      return 'successSensorBrgy'
+      return { str: 'successSensorBrgy', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
     case 'citizen':
-      return 'successCitizen'
+      return { str: 'successCitizen', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
   }
-  return "success";
+  return { str: "success", passwordStatus, passwordPolicyVersion: updatedPolicyVersion };
 }
 
 /***************************************************************************
@@ -220,15 +244,76 @@ exports.getAccountProfile = async (username) => {
       return {str: 'accountNotExists'};
     }
     
-    return {
-      str: 'success',
+  return {
+    str: 'success',
       profile: {
         username: citizen.username,
         email: citizen.email,
-        role: citizen.role
+        roles: citizen.roles || [],
+        passwordPolicyVersion: citizen.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION,
+        passwordUpdatedAt: citizen.passwordUpdatedAt,
       }
     }
 }
+
+/**
+ * Update account email and/or password for a logged-in user.
+ * @param {string} username
+ * @param {Object} updates
+ * @param {string} [updates.email] New email address
+ * @param {string} [updates.newPassword] New password (validated)
+ * @param {string} updates.currentPassword Current password for verification
+ * @returns {Promise<Object>} outcome descriptor
+ */
+exports.updateAccountProfile = async (username, { email, newPassword, currentPassword }) => {
+  const account = await User.findOne({ username });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  const hasEmailChange = Boolean(email) && email !== account.email;
+  const hasPasswordChange = Boolean(newPassword);
+  if (!hasEmailChange && !hasPasswordChange) {
+    return { str: 'noChanges' };
+  }
+
+  if (!currentPassword || !bcrypt.compareSync(currentPassword, account.password)) {
+    return { str: 'wrongPassword' };
+  }
+
+  if (hasEmailChange) {
+    const existing = await User.findOne({ email });
+    if (existing && existing.username !== username) {
+      return { str: 'emailExists' };
+    }
+    account.email = email;
+  }
+
+  if (hasPasswordChange) {
+    const validation = passwordSchema('New password').validate(newPassword);
+    if (validation.error) {
+      return { str: 'invalidPassword', message: validation.error.message };
+    }
+    account.password = bcrypt.hashSync(newPassword, 10);
+    account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+    account.passwordUpdatedAt = new Date();
+  }
+
+  await account.save();
+
+  return {
+    str: 'success',
+    updated: {
+      email: hasEmailChange,
+      password: hasPasswordChange,
+    },
+    passwordStatus:
+      (account.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
+        ? 'current'
+        : 'legacy',
+    passwordPolicyVersion: account.passwordPolicyVersion,
+  };
+};
 
 
 /***************************************************************************
@@ -261,3 +346,81 @@ exports.getActiveRingserverHosts = async () => {
     hosts: ringserverHosts
   }
 }
+
+/***************************************************************************
+  * createPasswordResetToken:
+  *     Generates a short-lived reset token for an account email.
+  * Inputs:
+  *     email: valid email string
+  * Outputs obj.str:
+  *     "queued":           request accepted (email existence not disclosed)
+  * Outputs obj.token (optional):
+  *     reset JWT if account exists
+  *     
+ ***************************************************************************/
+exports.createPasswordResetToken = async (email) => {
+  const user = await User.findOne({ email });
+  if (!user) {
+    return { str: 'queued', issued: false };
+  }
+
+  const secret = process.env.PASSWORD_RESET_TOKEN_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+  const expiresIn = process.env.PASSWORD_RESET_TOKEN_EXPIRY || '30m';
+  const token = jwt.sign(
+    {
+      username: user.username,
+      email: user.email,
+      roles: user.roles || [],
+    },
+    secret,
+    { expiresIn }
+  );
+
+  return {
+    str: 'queued',
+    issued: true,
+    token,
+    username: user.username,
+    email: user.email,
+  };
+};
+
+/***************************************************************************
+  * applyPasswordReset:
+  *     Validates reset token and updates password.
+  * Inputs:
+  *     token: reset token
+  *     newPassword: validated new password string
+  * Outputs obj.str:
+  *     "invalid":          invalid token
+  *     "expired":          expired token
+  *     "accountNotExists": token valid but account missing
+  *     "success":          password updated
+  *     
+ ***************************************************************************/
+exports.applyPasswordReset = async (token, newPassword) => {
+  const secret = process.env.PASSWORD_RESET_TOKEN_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+
+  try {
+    const decoded = jwt.verify(token, secret);
+    const account = await User.findOne({ email: decoded.email, username: decoded.username });
+    if (!account) {
+      return { str: 'accountNotExists' };
+    }
+
+    const validation = passwordSchema('New password').validate(newPassword);
+    if (validation.error) {
+      return { str: 'invalidPassword', message: validation.error.message };
+    }
+
+    account.password = bcrypt.hashSync(newPassword, 10);
+    account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+    account.passwordUpdatedAt = new Date();
+    await account.save();
+
+    return { str: 'success', username: account.username };
+  } catch (err) {
+    if (err?.name === 'TokenExpiredError') return { str: 'expired' };
+    return { str: 'invalid' };
+  }
+};

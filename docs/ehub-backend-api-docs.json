@@ -469,6 +469,107 @@
         }
       }
     },
+    "/accounts/forgot-password": {
+      "post": {
+        "summary": "Start password reset flow for a contributor account",
+        "tags": [
+          "Accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "Registered contributor email"
+                  }
+                }
+              },
+              "example": {
+                "email": "contributor@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset request accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.PASSWORD_RESET_REQUESTED"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/reset-password": {
+      "post": {
+        "summary": "Complete password reset with a verification token",
+        "tags": [
+          "Accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "Verification token received via email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "New password"
+                  },
+                  "confirmPassword": {
+                    "type": "string",
+                    "description": "Confirmation of new password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": "responseCodes.PASSWORD_RESET_SUCCESS"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/accounts/signout": {
       "post": {
         "summary": "Clear citizen's accessToken in cookie",

@@ -9,6 +9,7 @@ function getTokenFromCookie(req, res, next) {
   }
 
   const token = req.cookies.accessToken;
+  req.refreshToken = req.cookies.refreshToken;
   if(!token) {
     res.status(403).json({ status: 403, message: "Token in cookie missing" })
     return;
@@ -22,6 +23,8 @@ function getTokenFromCookie(req, res, next) {
 function getTokenFromCookieIfPresent(req, res, next) {
   // Normalize flags used by optional verifiers
   req.isAuthenticated = false;
+  req.sessionError = null;
+  req.refreshToken = req.cookies ? req.cookies.refreshToken : undefined;
 
   // If cookies are unavailable or token not present, proceed without setting req.token
   if (!req.cookies || !req.cookies.accessToken) {
@@ -52,6 +55,7 @@ function getTokenFromBearer(req, res, next) {
 
 // Verify token is valid, and role in token is role in arg
 function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for custom args
+  const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
     jwt.verify(req.token, 
       process.env.ACCESS_TOKEN_PRIVATE_KEY, 
@@ -73,7 +77,7 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
         return;
       }
 
-      if (decodedToken.role !== role) {
+      if (!allowedRoles.includes(decodedToken.role)) {
         res.status(403).json({
           status: responseCodes.VERIFICATION_INVALID_ROLE,
           message: "Role invalid"
@@ -95,10 +99,12 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
 
 // Verify token with role but do not error; sets req.isAuthenticated=false on failures
 function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
+  const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
     // If no token provided, skip verification; treat as unauthenticated
     if (!req.token) {
       req.isAuthenticated = false;
+      req.sessionError = req.sessionError || 'missing';
       return next();
     }
 
@@ -110,12 +116,14 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
         if (err) {
           // Invalid or expired token — treat as unauthenticated without responding
           req.isAuthenticated = false;
+          req.sessionError = err.name === 'TokenExpiredError' ? 'expired' : 'invalid';
           return next();
         }
 
-        if (decodedToken.role !== role) {
+        if (!allowedRoles.includes(decodedToken.role)) {
           // Role mismatch — treat as unauthenticated without responding
           req.isAuthenticated = false;
+          req.sessionError = 'invalidRole';
           return next();
         }
 
@@ -127,6 +135,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
           req.streamIds = decodedToken.streamIds;
         }
         req.isAuthenticated = true;
+        req.sessionError = null;
         next();
       }
     );

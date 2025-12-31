@@ -24,12 +24,14 @@ const responseCodes = {
   AUTHENTICATION_SUCCESS:           20,
   AUTHENTICATION_TOKEN_COOKIE:      21,
   AUTHENTICATION_TOKEN_PAYLOAD:     22,
+  AUTHENTICATION_SESSION_REFRESHED: 23,
   AUTHENTICATION_ERROR:            120,
   AUTHENTICATION_USER_NOT_EXIST:   121,
   AUTHENTICATION_INVALID_ROLE:     122,
   AUTHENTICATION_WRONG_PASSWORD:   123,
   AUTHENTICATION_NO_LINKED_DEVICE: 124,
   AUTHENTICATION_ACCOUNT_INACTIVE: 125,
+  AUTHENTICATION_SESSION_EXPIRED:  126,
 
   VERIFICATION_SUCCESS:            30,
   VERIFICATION_SUCCESS_NEW_TOKEN:  31,
@@ -49,6 +51,12 @@ const responseCodes = {
 
   LINKING_SUCCESS:            60,
   LINKING_ALREADY_DONE:       61,
+
+  PASSWORD_RESET_REQUESTED:   70,
+  PASSWORD_RESET_SUCCESS:     71,
+  PASSWORD_RESET_INVALID:    170,
+  PASSWORD_RESET_EXPIRED:    171,
+  PASSWORD_RESET_USER_MISSING:172,
 };
 
 const responseMessages = {
@@ -64,11 +72,13 @@ const responseMessages = {
   AUTHENTICATION_SUCCESS: "Authentication success",
   AUTHENTICATION_TOKEN_COOKIE: "Authentication success: Token in cookie",
   AUTHENTICATION_TOKEN_PAYLOAD: "Authentication success: Token in payload",
+  AUTHENTICATION_SESSION_REFRESHED: "Authentication success: Session refreshed",
   AUTHENTICATION_ERROR: "Authentication error",
   AUTHENTICATION_USER_NOT_EXIST: "Authentication error: User doesn't exist",
   AUTHENTICATION_INVALID_ROLE: "Authentication error: Invalid role claimed",
   AUTHENTICATION_WRONG_PASSWORD: "Authentication error: Wrong password",
   AUTHENTICATION_NO_LINKED_DEVICE: "Authentication error: Account has no linked/forwardable devices",
+  AUTHENTICATION_SESSION_EXPIRED: "Authentication error: Session expired",
 
   VERIFICATION_SUCCESS: "Verification success",
   VERIFICATION_SUCCESS_NEW_TOKEN: "Verification success with new token",
@@ -76,6 +86,12 @@ const responseMessages = {
   VERIFICATION_INVALID_TOKEN: "Verification error: Invalid token",
   VERIFICATION_INVALID_ROLE: "Verification error: Invalid role in token",
   VERIFICATION_EXPIRED_TOKEN: "Verification error: Expired token",
+
+  PASSWORD_RESET_REQUESTED: "Password reset requested",
+  PASSWORD_RESET_SUCCESS: "Password reset success",
+  PASSWORD_RESET_INVALID: "Password reset error: Invalid token",
+  PASSWORD_RESET_EXPIRED: "Password reset error: Expired token",
+  PASSWORD_RESET_USER_MISSING: "Password reset error: User not found",
 };
 
 module.exports = {

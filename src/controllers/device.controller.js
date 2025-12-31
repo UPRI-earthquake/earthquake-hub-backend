@@ -142,12 +142,9 @@ exports.linkDevice = async (req, res, next) => {
   // Define validation schema
   const linkDeviceSchema = Joi.object().keys({
     username: Joi.string().required(),
-    password: Joi.string()
-      .pattern(new RegExp("^[a-zA-Z0-9]{6,30}$"))
-      .required()
-      .messages({
-        "string.pattern.base": "Password must be between 6 and 30 letters and/or digits.",
-      }),
+    password: Joi.string().min(1).max(256).required().messages({
+      'string.min': 'Password is required.',
+    }),
     role: Joi.string().valid('sensor').required()
       .messages({
         "any.only": "Only sensor role can request device linking",
@@ -194,7 +191,8 @@ exports.linkDevice = async (req, res, next) => {
            macAddress, streamId} = value
 
     // Perform task: authenticate user
-    returnStr = await AccountsService.loginAccountRole(username, password, role)
+    const loginResult = await AccountsService.loginAccountRole(username, password, role)
+    const returnStr = loginResult?.str || loginResult;
     if (returnStr !== 'successSensorBrgy'){
       console.log(`Adding device unsuccessful: ${returnStr}`);
       throw new Error(returnStr)

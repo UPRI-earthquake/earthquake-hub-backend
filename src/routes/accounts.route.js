@@ -213,6 +213,82 @@ router.route('/authenticate').post(
   AccountsController.authenticateAccount
 );
 
+/**
+  * @swagger
+  * /accounts/forgot-password:
+  *   post:
+  *     summary: Start password reset flow for a contributor account
+  *     tags: [Accounts]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               email:
+  *                 type: string
+  *                 description: Registered contributor email
+  *           example:
+  *             email: contributor@example.com
+  *     responses:
+  *       '200':
+  *         description: Password reset request accepted
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.PASSWORD_RESET_REQUESTED
+  *                 message:
+  *                   type: string
+  */
+router.route('/forgot-password').post(
+  AccountsController.requestPasswordReset
+);
+
+/**
+  * @swagger
+  * /accounts/reset-password:
+  *   post:
+  *     summary: Complete password reset with a verification token
+  *     tags: [Accounts]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               token:
+  *                 type: string
+  *                 description: Verification token received via email
+  *               password:
+  *                 type: string
+  *                 description: New password
+  *               confirmPassword:
+  *                 type: string
+  *                 description: Confirmation of new password
+  *     responses:
+  *       '200':
+  *         description: Password reset successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.PASSWORD_RESET_SUCCESS
+  *                 message:
+  *                   type: string
+  */
+router.route('/reset-password').post(
+  AccountsController.resetPassword
+);
+
 
 /**
   * @swagger
@@ -446,8 +522,14 @@ router.route('/verify-sensor-token').post(
 router.route('/profile').get(
   // Optional auth: do not emit 403 when cookie/token is missing or invalid
   Middleware.getTokenFromCookieIfPresent,
-  Middleware.verifyTokenWithRoleOptional('citizen'),
+  Middleware.verifyTokenWithRoleOptional(['citizen', 'brgy']),
   AccountsController.getAccountProfile
+);
+
+router.route('/profile').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountProfile
 );
 
 

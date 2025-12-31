@@ -1,19 +1,142 @@
 const jwt = require('jsonwebtoken');
+const Joi = require('joi');
 
-function generateAccessToken(payload){
-  return jwt.sign(
-    payload, 
-    process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-    {expiresIn: process.env.JWT_EXPIRY} // Adds 'exp' in seconds since epoch
-  );
+function generateAccessToken(payload) {
+  return jwt.sign(payload, process.env.ACCESS_TOKEN_PRIVATE_KEY, {
+    expiresIn: process.env.JWT_EXPIRY, // Adds 'exp' in seconds since epoch
+  });
 }
 
-function generateRefreshToken(payload){
-  return jwt.sign(
-    payload,
-    process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '90 days' }
-  );
+function generateRefreshToken(payload) {
+  return jwt.sign(payload, process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY, {
+    expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '90 days',
+  });
+}
+
+function parseDurationToMs(input, fallbackMs = 0) {
+  if (!input && input !== 0) return fallbackMs;
+  if (typeof input === 'number' && Number.isFinite(input)) return input;
+
+  const str = String(input).trim();
+  const match = str.match(/^(\d+)\s*(milliseconds?|ms|seconds?|s|minutes?|mins?|m|hours?|hrs?|h|days?|day|d|weeks?|w)?$/i);
+  if (!match) return fallbackMs;
+
+  const value = parseInt(match[1], 10);
+  const unit = (match[2] || 'ms').toLowerCase();
+  const unitToMs = {
+    ms: 1,
+    millisecond: 1,
+    milliseconds: 1,
+    s: 1000,
+    second: 1000,
+    seconds: 1000,
+    m: 1000 * 60,
+    min: 1000 * 60,
+    mins: 1000 * 60,
+    minute: 1000 * 60,
+    minutes: 1000 * 60,
+    h: 1000 * 60 * 60,
+    hr: 1000 * 60 * 60,
+    hrs: 1000 * 60 * 60,
+    hour: 1000 * 60 * 60,
+    hours: 1000 * 60 * 60,
+    d: 1000 * 60 * 60 * 24,
+    day: 1000 * 60 * 60 * 24,
+    days: 1000 * 60 * 60 * 24,
+    w: 1000 * 60 * 60 * 24 * 7,
+    week: 1000 * 60 * 60 * 24 * 7,
+    weeks: 1000 * 60 * 60 * 24 * 7,
+  };
+
+  const multiplier = unitToMs[unit];
+  if (!multiplier) return fallbackMs;
+  return value * multiplier;
+}
+
+const ACCESS_TOKEN_MAX_AGE_MS = parseDurationToMs(process.env.JWT_EXPIRY, 1000 * 60 * 60 * 12);
+const REFRESH_TOKEN_MAX_AGE_MS = parseDurationToMs(
+  process.env.REFRESH_TOKEN_EXPIRY || '30 days',
+  1000 * 60 * 60 * 24 * 30
+);
+
+const COOKIE_BASE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  path: '/',
+};
+
+function cookieOptions(maxAgeMs) {
+  return { ...COOKIE_BASE_OPTIONS, maxAge: maxAgeMs };
+}
+
+function setSessionCookies(res, payload) {
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  res.cookie('accessToken', accessToken, cookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
+  res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_TOKEN_MAX_AGE_MS));
+
+  return { accessToken, refreshToken };
+}
+
+function clearSessionCookies(res) {
+  const clearOpts = {
+    path: COOKIE_BASE_OPTIONS.path,
+    sameSite: COOKIE_BASE_OPTIONS.sameSite,
+    secure: COOKIE_BASE_OPTIONS.secure,
+    httpOnly: COOKIE_BASE_OPTIONS.httpOnly,
+  };
+  res.clearCookie('accessToken', clearOpts);
+  res.clearCookie('refreshToken', clearOpts);
+}
+
+const blockedPasswords = new Set([
+  'password',
+  'password123',
+  '12345678',
+  '123456789',
+  'qwerty',
+  'letmein',
+  'welcome',
+  'admin',
+  'earthquake',
+  'upri',
+  'citizen',
+  'brgy',
+]);
+
+const CURRENT_PASSWORD_POLICY_VERSION = 2;
+const LEGACY_PASSWORD_POLICY_VERSION = 1;
+
+function validatePasswordStrength(value, helpers) {
+  const normalized = (value || '').trim();
+  const lower = normalized.toLowerCase();
+
+  if (blockedPasswords.has(lower)) {
+    return helpers.message('Choose a less common password.');
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return helpers.message('Password cannot be numbers only.');
+  }
+
+  if (/^(.)\1{7,}$/.test(normalized)) {
+    return helpers.message('Avoid repeating the same character.');
+  }
+
+  return value;
+}
+
+function passwordSchema(label = 'Password') {
+  return Joi.string()
+    .min(12)
+    .max(128)
+    .custom(validatePasswordStrength, 'basic password safety checks')
+    .messages({
+      'string.min': `${label} must be at least 12 characters.`,
+      'string.max': `${label} must be 128 characters or fewer.`,
+    });
 }
 
 function formatErrorMessage(errorMessage) {
@@ -35,6 +158,13 @@ function generateAMStationCode(macAddress) {
 module.exports = {
   generateAccessToken,
   generateRefreshToken,
+  parseDurationToMs,
+  cookieOptions,
+  setSessionCookies,
+  clearSessionCookies,
+  passwordSchema,
   formatErrorMessage,
   generateAMStationCode,
+  CURRENT_PASSWORD_POLICY_VERSION,
+  LEGACY_PASSWORD_POLICY_VERSION,
 }
