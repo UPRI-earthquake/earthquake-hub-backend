@@ -409,9 +409,9 @@ router.route('/all').get(
   *                   example: "Server error occured"
   */
 router.route('/my-devices').get(
-  // Strict auth: require citizen cookie and role
+  // Allow both citizen and brgy accounts to view their linked devices
   getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
+  verifyTokenWithRole(['citizen', 'brgy']),
   DeviceController.getOwnedDevices,
 );
 
