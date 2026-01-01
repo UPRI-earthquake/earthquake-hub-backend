@@ -84,10 +84,11 @@ exports.getAccountDevices = async (username) => {
   const citizen = await Account.findOne({ 'username': username }).populate('devices');
   if( ! citizen) { return {str: 'usernameNotFound'} }
 
+  const linkedDevices = (citizen.devices || []).filter(Boolean);
   let devicePayload = [];
 
-  if (citizen.devices) {
-    devicePayload = citizen.devices.map(device => {
+  if (linkedDevices.length > 0) {
+    devicePayload = linkedDevices.map(device => {
       let status = '';
       let statusSince = 'Not Available';
       
@@ -419,4 +420,63 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
   await device.save();
 
   return {str:'success'}
+}
+
+/***************************************************************************
+  * resetDeviceLink:
+  *     Removes a device record entirely and detaches all account references.
+  * 
+  * Inputs:
+  *     username:    string // Requesting user's username (from token)
+  *     macAddress:  string // MAC address identifier
+  *     streamId:    string // Stream ID identifier
+  * 
+  * Output str:
+  *     "success":             when device record and associations are removed
+  *     "deviceNotFound":      when no device matches the provided identifiers
+  *     "identifierMismatch":  when macAddress and streamId point to different records
+  *     "deviceOwnedElsewhere":when the device is linked to another account
+  ***************************************************************************/
+exports.resetDeviceLink = async (username, macAddress, streamId) => {
+  const lookupConditions = [];
+  if (macAddress) lookupConditions.push({ macAddress });
+  if (streamId) lookupConditions.push({ streamId });
+
+  if (lookupConditions.length === 0) {
+    return { str: 'missingIdentifiers' };
+  }
+
+  const candidates = await Device.find({ $or: lookupConditions });
+  if (!candidates || candidates.length === 0) {
+    return { str: 'deviceNotFound' };
+  }
+
+  const uniqueIds = [...new Set(candidates.map((device) => device.id))];
+  if (uniqueIds.length > 1) {
+    return { str: 'identifierMismatch' };
+  }
+
+  const device = candidates[0];
+  const linkedAccounts = await Account.find({ devices: device._id });
+  const linkedUsernames = linkedAccounts.map((acc) => acc.username);
+  const ownedByRequester = linkedUsernames.includes(username);
+
+  if (linkedUsernames.length > 0 && !ownedByRequester) {
+    return { str: 'deviceOwnedElsewhere', linkedUsernames };
+  }
+
+  await Account.updateMany(
+    { devices: device._id },
+    { $pull: { devices: device._id } },
+  );
+
+  await Device.deleteOne({ _id: device._id });
+
+  return {
+    str: 'success',
+    payload: {
+      removedAccounts: linkedUsernames,
+      ownershipConfirmed: ownedByRequester,
+    },
+  };
 }

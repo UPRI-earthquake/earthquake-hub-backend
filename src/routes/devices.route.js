@@ -239,9 +239,46 @@ router.route('/refresh-token').post(
   */
 router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
 getTokenFromBearer,
-verifyTokenWithRole('sensor', ignoreExpiration = true),
+verifyTokenWithRole('sensor', true),
 DeviceController.unlinkDevice
 )
+
+/**
+  * @swagger
+  * /device/reset-link:
+  *   post:
+  *     summary: Hard reset a device link and delete the device record
+  *     tags: [Device]
+  *     requestBody:
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *             required:
+  *               - macAddress
+  *               - streamId
+  *     responses:
+  *       200:
+  *         description: Device reset and record removed
+  *       403:
+  *         description: Device belongs to another account
+  *       404:
+  *         description: Device not found
+  *       409:
+  *         description: Identifier mismatch
+  */
+router.route('/reset-link').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor', true),
+  DeviceController.resetDeviceLink,
+);
 
 
 /**

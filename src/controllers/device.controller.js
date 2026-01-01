@@ -406,3 +406,62 @@ exports.unlinkDevice = async (req, res, next) => {
     next(error)
   }
 }
+
+exports.resetDeviceLink = async (req, res, next) => {
+  const resetDeviceSchema = Joi.object().keys({
+    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/).required(),
+    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/).required()
+  });
+
+  try {
+    if (!req.username) {
+      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
+      return;
+    }
+
+    const { error, value } = resetDeviceSchema.validate(req.body);
+    if (error) { throw error; }
+    const { macAddress, streamId } = value;
+
+    const returnObj = await DeviceService.resetDeviceLink(req.username, macAddress, streamId);
+
+    let message = '';
+    switch (returnObj.str) {
+      case 'deviceNotFound':
+        message = 'Device not found or already removed';
+        res.status(404).json({
+          status: responseCodes.LINK_RESET_ERROR,
+          message,
+        });
+        break;
+      case 'identifierMismatch':
+        message = 'Stream ID and MAC address point to different devices. Verify identifiers before resetting.';
+        res.status(409).json({
+          status: responseCodes.LINK_RESET_ERROR,
+          message,
+        });
+        break;
+      case 'deviceOwnedElsewhere':
+        message = 'Device belongs to a different account. Request a reset from the linked account instead.';
+        res.status(403).json({
+          status: responseCodes.LINK_RESET_ERROR,
+          message,
+        });
+        break;
+      case 'success':
+        message = 'Device link reset. Re-register to link again.';
+        res.status(200).json({
+          status: responseCodes.LINK_RESET_SUCCESS,
+          message,
+          payload: returnObj.payload,
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${returnObj} from service.resetDeviceLink()`);
+    }
+    res.message = message;
+  } catch (error) {
+    console.log(`Reset device unsuccessful: \n ${error}`);
+    next(error);
+  }
+}

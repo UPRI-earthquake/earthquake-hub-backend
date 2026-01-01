@@ -51,6 +51,8 @@ const responseCodes = {
 
   LINKING_SUCCESS:            60,
   LINKING_ALREADY_DONE:       61,
+  LINK_RESET_SUCCESS:         62,
+  LINK_RESET_ERROR:          162,
 
   PASSWORD_RESET_REQUESTED:   70,
   PASSWORD_RESET_SUCCESS:     71,
@@ -92,6 +94,8 @@ const responseMessages = {
   PASSWORD_RESET_INVALID: "Password reset error: Invalid token",
   PASSWORD_RESET_EXPIRED: "Password reset error: Expired token",
   PASSWORD_RESET_USER_MISSING: "Password reset error: User not found",
+  LINK_RESET_SUCCESS: "Device link reset",
+  LINK_RESET_ERROR: "Device link reset error",
 };
 
 module.exports = {
