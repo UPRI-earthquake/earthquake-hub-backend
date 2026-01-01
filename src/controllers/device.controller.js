@@ -258,10 +258,17 @@ exports.linkDevice = async (req, res, next) => {
         });
         break;
       case 'alreadyLinkedToSomeone':
-        message = "Device is already linked to someone else!";
-        res.status(400).json({
+        message = 'Device is already linked to another account';
+        res.status(409).json({
           status: responseCodes.GENERIC_ERROR,
-          message: message
+          message: message,
+        });
+        break;
+      case 'invalidRole':
+        message = 'Account is not allowed to link a device (sensor role required)';
+        res.status(403).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: message,
         });
         break;
       case 'incorrectAMStation':
@@ -353,6 +360,17 @@ exports.unlinkDevice = async (req, res, next) => {
 
     // Perform task
     returnObj = await DeviceService.unlinkDevice(req.username, macAddress, streamId)
+
+    // Best-effort: remove device from all brgy accounts that may hold it
+    try {
+      const brgyAccounts = await AccountsService.getBrgyAccountsWithDevice(streamId);
+      for (const brgy of brgyAccounts) {
+        await AccountsService.removeDeviceFromBrgyByStreamId(brgy.username, streamId);
+      }
+    } catch (cleanupErr) {
+      console.log(`Brgy device cleanup error during unlink: ${cleanupErr}`);
+      // Do not fail unlink on cleanup error
+    }
 
     switch(returnObj.str){
       case 'usernameNotFound':

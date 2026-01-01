@@ -93,19 +93,28 @@ exports.getAccountDevices = async (username) => {
       
       if (device.macAddress === 'TO_BE_LINKED') {
         status = 'Not Yet Linked';
+      } else if (device.activity === 'unlinked') {
+        status = 'Unlinked';
+        statusSince = device.activityToggleTime.toUTCString();
       } else if (device.activity === 'inactive') {
-        status = 'Not Streaming';
+        status = 'Inactive';
+        statusSince = device.activityToggleTime.toUTCString();
+      } else if (device.activity === 'active' || device.activity === 'streaming') {
+        status = 'Streaming';
         statusSince = device.activityToggleTime.toUTCString();
       } else {
-        status = 'Streaming';
+        status = 'Inactive';
         statusSince = device.activityToggleTime.toUTCString();
       }
 
       const deviceInfo = {
         network: device.network,
         station: device.station,
+        description: device.description,
+        activity: device.activity,
         status: status,
-        statusSince: statusSince
+        statusSince: statusSince,
+        activityToggleTime: device.activityToggleTime,
       };
 
       return deviceInfo;
@@ -158,20 +167,28 @@ exports.getDeviceStatus = async (network, station) => {
   let statusSince = null;
 
   if (device.macAddress === 'TO_BE_LINKED') {
-    status = 'Not yet linked';
+    status = 'Not Yet Linked';
+  } else if (device.activity === 'unlinked') {
+    status = 'Unlinked';
+    statusSince = device.activityToggleTime;
   } else if (device.activity === 'inactive') {
-    status = 'Not streaming';
+    status = 'Inactive';
+    statusSince = device.activityToggleTime;
+  } else if (device.activity === 'active' || device.activity === 'streaming') {
+    status = 'Streaming';
     statusSince = device.activityToggleTime;
   } else {
-    status = 'Streaming';
+    status = 'Inactive';
     statusSince = device.activityToggleTime;
   }
 
   let deviceStatus = {
     network: device.network,
     station: device.station,
+    activity: device.activity,
     status: status,
-    statusSince: statusSince
+    statusSince: statusSince,
+    activityToggleTime: device.activityToggleTime,
   };
 
   return {
@@ -217,9 +234,37 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     return {str:'usernameNotFound'};
   }
 
+  // Parse device details early
+  const [network, station, loc, channel] = streamId.split(",")[0].split("_")
+
   // check if user already has the device in their record
   const deviceOwned = currentAccount.devices.find(device => device.macAddress === macAddress);
   if(deviceOwned){
+    // If the device is marked unlinked, treat this as a relink that restores activity only.
+    if (deviceOwned.activity === 'unlinked') {
+      deviceOwned.network = (network || deviceOwned.network || '').toUpperCase();
+      deviceOwned.station = (station || deviceOwned.station || '').toUpperCase();
+      deviceOwned.elevation = elevation;
+      deviceOwned.longitude = longitude;
+      deviceOwned.latitude = latitude;
+      deviceOwned.streamId = streamId;
+      deviceOwned.activity = 'inactive';
+      deviceOwned.activityToggleTime = new Date();
+      await deviceOwned.save();
+
+      const payload = {
+        deviceInfo: {
+          network: deviceOwned.network,
+          station: deviceOwned.station,
+          longitude: deviceOwned.longitude,
+          latitude: deviceOwned.latitude,
+          elevation: deviceOwned.elevation,
+          streamId: deviceOwned.streamId
+        }
+      };
+      return { str: 'success', payload };
+    }
+
     const payload = {
       deviceInfo: {
         network: deviceOwned.network,
@@ -236,11 +281,45 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   // check if device's mac address already exists in the database
   const device = await Device.findOne({macAddress: macAddress})
   if (device) { // device is already saved to db
+    const existingOwner = await Account.findOne({ devices: device._id }).select('username');
+
+    // Preserve ownership history: only the last linked account may relink.
+    if (existingOwner && existingOwner.username !== username) {
+      return {str:'alreadyLinkedToSomeone'};
+    }
+
+    if (device.activity === 'unlinked') {
+      // Relink existing record without changing description/ownership.
+      device.network = (network || device.network || '').toUpperCase();
+      device.station = (station || device.station || '').toUpperCase();
+      device.elevation = elevation;
+      device.longitude = longitude;
+      device.latitude = latitude;
+      device.streamId = streamId;
+      device.activity = 'inactive';
+      device.activityToggleTime = new Date();
+      await device.save();
+
+      // Backfill account association if legacy unlinking removed it.
+      await currentAccount.updateOne({
+        $addToSet: { devices: device._id }
+      });
+
+      const payload = {
+        deviceInfo: {
+          network: device.network,
+          station: device.station,
+          longitude: device.longitude,
+          latitude: device.latitude,
+          elevation: device.elevation,
+          streamId: device.streamId
+        }
+      };
+      return {str:'success', payload};
+    }
+
     return {str:'alreadyLinkedToSomeone'};
   }
-
-  // Parse device details
-  const [network, station, loc, channel] = streamId.split(",")[0].split("_")
 
   //check mac and station if device is from AM network
   if(network === 'AM'){
@@ -259,7 +338,8 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     longitude: longitude,
     latitude: latitude,
     macAddress: macAddress,
-    streamId: streamId
+    streamId: streamId,
+    activityToggleTime: new Date(),
   });
   await newDevice.save(); // save new entry to device collections
 
@@ -333,15 +413,10 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
     return {str:'deviceNotOwned'};
   }
 
-  
-  user.devices.pull(device); // Delete the device._id from Accounts.devices array
-  await user.save(); // Save the user object to persist the changes
-
-
-  // Delete the device information in Devices collection
-  await Device.findOneAndDelete({ network:network, station:station })
+  // Mark device as unlinked without removing ownership association or mutating metadata.
+  device.activity = 'unlinked';
+  device.activityToggleTime = new Date();
+  await device.save();
 
   return {str:'success'}
 }
-
-

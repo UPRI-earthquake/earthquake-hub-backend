@@ -225,6 +225,52 @@ exports.verifySensorToken = async (token, brgyUsername) => {
 }
 
 /***************************************************************************
+  * removeDeviceFromBrgyByStreamId:
+  *     Removes a device reference from a brgy account if present.
+  * Inputs:
+  *     brgyUsername: brgy account username
+  *     streamId:     device streamId
+  * Outputs obj.str:
+  *     "brgyNotFound":     if brgy account missing
+  *     "deviceNotFound":   if device not found
+  *     "deviceNotLinked":  if device not in brgy.devices
+  *     "success":          on removal
+  ***************************************************************************/
+exports.removeDeviceFromBrgyByStreamId = async (brgyUsername, streamId) => {
+  const brgy = await User.findOne({ username: brgyUsername, roles: 'brgy' });
+  if (!brgy) {
+    return { str: 'brgyNotFound' };
+  }
+
+  const device = await Device.findOne({ streamId });
+  if (!device) {
+    return { str: 'deviceNotFound' };
+  }
+
+  const hasDevice = brgy.devices.some((devId) => devId.toString() === device.id);
+  if (!hasDevice) {
+    return { str: 'deviceNotLinked' };
+  }
+
+  brgy.devices.pull(device._id);
+  await brgy.save();
+  return { str: 'success' };
+};
+
+/**
+ * Returns brgy accounts that reference a device by streamId.
+ */
+exports.getBrgyAccountsWithDevice = async (streamId) => {
+  const device = await Device.findOne({ streamId });
+  if (!device) return [];
+  const matches = await User.find({
+    roles: 'brgy',
+    devices: device._id,
+  }, 'username');
+  return matches || [];
+};
+
+/***************************************************************************
   * removeSensorDeviceFromBrgy:
   *     Removes a device (by streamId) from a brgy account's devices list,
   *     ensuring the device belongs to the requesting sensor.
