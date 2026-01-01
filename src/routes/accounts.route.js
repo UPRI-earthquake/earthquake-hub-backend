@@ -456,6 +456,77 @@ router.route('/verify-sensor-token').post(
   AccountsController.verifySensorToken    // Verify sensor's token as provided by the brgy
 )
 
+/**
+  * @swagger
+  * /accounts/brgy/remove-device:
+  *   post:
+  *     summary: Remove a device from a brgy account's devices list
+  *     tags: [Accounts]
+  *     security:
+  *       - bearerAuth: []  # Sensor bearer token required
+  *     requestBody:
+  *       description: Identify the brgy account and device to remove
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               brgyUsername:
+  *                 type: string
+  *                 description: Username of the brgy account
+  *                 example: "barangay-001"
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *                 description: Stream ID of the device
+  *                 example: "AM_RE722_.*\/MSEED"
+  *             required:
+  *               - brgyUsername
+  *               - streamId
+  *     responses:
+  *       '200':
+  *         description: Device removed (or already absent) from brgy account
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Device removed from brgy account"
+  *       '400':
+  *         description: Missing or invalid identifiers, or accounts/devices not found
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *       '403':
+  *         description: Requesting sensor does not own the device
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  */
+router.route('/brgy/remove-device').post(
+  Middleware.getTokenFromBearer,
+  Middleware.verifyTokenWithRole('sensor'),
+  AccountsController.removeDeviceFromBrgy,
+);
+
 
 /**
   * @swagger

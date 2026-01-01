@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/account.model');
+const Device = require('../models/device.model');
 const { passwordSchema, CURRENT_PASSWORD_POLICY_VERSION, LEGACY_PASSWORD_POLICY_VERSION } = require('../controllers/helpers');
 
 /***************************************************************************
@@ -222,6 +223,55 @@ exports.verifySensorToken = async (token, brgyUsername) => {
     }) //end of jwt.verify()
   }) //end of Promise
 }
+
+/***************************************************************************
+  * removeSensorDeviceFromBrgy:
+  *     Removes a device (by streamId) from a brgy account's devices list,
+  *     ensuring the device belongs to the requesting sensor.
+  * Inputs:
+  *     sensorUsername: username from the sensor's JWT
+  *     brgyUsername:   target brgy account username
+  *     streamId:       streamId of the device to remove
+  * Outputs obj.str:
+  *     "sensorNotFound":        if the sensor account is missing
+  *     "brgyNotFound":          if the brgy account is missing or not a brgy
+  *     "deviceNotFound":        if the streamId is not in Devices collection
+  *     "deviceNotOwnedBySensor":if the device does not belong to the sensor
+  *     "deviceNotLinkedToBrgy": if the brgy does not list this device
+  *     "success":               when the device reference is removed
+  *     
+ ***************************************************************************/
+exports.removeSensorDeviceFromBrgy = async (sensorUsername, brgyUsername, streamId) => {
+  const sensor = await User.findOne({ username: sensorUsername }).populate('devices');
+  if (!sensor) {
+    return { str: 'sensorNotFound' };
+  }
+
+  const brgy = await User.findOne({ username: brgyUsername, roles: 'brgy' });
+  if (!brgy) {
+    return { str: 'brgyNotFound' };
+  }
+
+  const device = await Device.findOne({ streamId });
+  if (!device) {
+    return { str: 'deviceNotFound' };
+  }
+
+  const sensorOwnsDevice = sensor.devices.some((dev) => dev.id === device.id);
+  if (!sensorOwnsDevice) {
+    return { str: 'deviceNotOwnedBySensor' };
+  }
+
+  const alreadyLinkedToBrgy = brgy.devices.some((devId) => devId.toString() === device.id);
+  if (!alreadyLinkedToBrgy) {
+    return { str: 'deviceNotLinkedToBrgy' };
+  }
+
+  brgy.devices.pull(device._id);
+  await brgy.save();
+
+  return { str: 'success' };
+};
 
 
 /***************************************************************************

@@ -408,6 +408,78 @@ exports.verifySensorToken = async (req, res, next) => {
   }
 }
 
+exports.removeDeviceFromBrgy = async (req, res, next) => {
+  // Sensor-triggered removal of a device reference from a brgy account
+  const schema = Joi.object({
+    brgyUsername: Joi.string().required(),
+    streamId: Joi.string()
+      .regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/)
+      .required(),
+  });
+
+  try {
+    if (!req.username) {
+      return res.status(403).json({
+        status: 403,
+        message: 'Username of a logged-in user is required.',
+      });
+    }
+
+    const { error, value } = schema.validate(req.body);
+    if (error) { throw error; }
+
+    const result = await AccountsService.removeSensorDeviceFromBrgy(
+      req.username,
+      value.brgyUsername,
+      value.streamId,
+    );
+
+    switch (result.str) {
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Device removed from brgy account',
+        });
+        break;
+      case 'deviceNotLinkedToBrgy':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Device not linked to specified brgy account; nothing to remove',
+        });
+        break;
+      case 'deviceNotOwnedBySensor':
+        res.status(403).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Device does not belong to requesting sensor',
+        });
+        break;
+      case 'sensorNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Sensor account not found',
+        });
+        break;
+      case 'brgyNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Barangay account not found',
+        });
+        break;
+      case 'deviceNotFound':
+        res.status(400).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Device not found',
+        });
+        break;
+      default:
+        throw Error(`Unhandled return value ${result} from removeSensorDeviceFromBrgy()`);
+    }
+  } catch (error) {
+    console.log(`Remove device from brgy unsuccessful: \n ${error}`);
+    next(error);
+  }
+};
+
 exports.getAccountProfile = async (req, res, next) => {
   // No validation schema since this is for GET endpoint
   let sessionWasRefreshed = false;
