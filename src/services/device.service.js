@@ -459,9 +459,15 @@ exports.resetDeviceLink = async (username, macAddress, streamId) => {
   const device = candidates[0];
   const linkedAccounts = await Account.find({ devices: device._id });
   const linkedUsernames = linkedAccounts.map((acc) => acc.username);
-  const ownedByRequester = linkedUsernames.includes(username);
+  const ownedByRequester = username && linkedUsernames.includes(username);
 
-  if (linkedUsernames.length > 0 && !ownedByRequester) {
+  // Unauthenticated resets are only allowed when no account references exist.
+  // Even if activity is marked "unlinked", require auth when account links remain.
+  if (!username && linkedUsernames.length > 0) {
+    return { str: 'authRequired', linkedUsernames };
+  }
+
+  if (linkedUsernames.length > 0 && username && !ownedByRequester) {
     return { str: 'deviceOwnedElsewhere', linkedUsernames };
   }
 

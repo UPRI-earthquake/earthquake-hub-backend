@@ -1,8 +1,45 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/account.model');
 const Device = require('../models/device.model');
-const { passwordSchema, CURRENT_PASSWORD_POLICY_VERSION, LEGACY_PASSWORD_POLICY_VERSION } = require('../controllers/helpers');
+const {
+  passwordSchema,
+  usernameSchema,
+  CURRENT_PASSWORD_POLICY_VERSION,
+  LEGACY_PASSWORD_POLICY_VERSION,
+  getPasswordResetSecret,
+  getAccessTokenSecret,
+} = require('../controllers/helpers');
+const EmailService = require('./email.service');
+
+const PASSWORD_RESET_TOKEN_EXPIRY = process.env.PASSWORD_RESET_TOKEN_EXPIRY || '30m';
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizeEmail = (value = '') => String(value || '').trim().toLowerCase();
+const buildEmailQuery = (email) => ({ email: new RegExp(`^${escapeRegex(email)}$`, 'i') });
+
+function hashTokenId(tokenId) {
+  return crypto.createHash('sha256').update(String(tokenId || '')).digest('hex');
+}
+
+function buildResetLink(token) {
+  const normalizeBase = (value, proto) => {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value.replace(/\/+$/, '');
+    return `${proto}://${String(value).replace(/\/+$/, '')}`;
+  };
+  const devHost = process.env.CLIENT_DEV_PORT
+    ? `${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`
+    : process.env.CLIENT_DEV_HOST;
+  const base =
+    process.env.NODE_ENV === 'production'
+      ? normalizeBase(process.env.CLIENT_PROD_HOST, 'https')
+      : normalizeBase(devHost, 'http');
+  if (!base) return null;
+  return `${base}/reset-password?token=${encodeURIComponent(token)}`;
+}
 
 /***************************************************************************
   * createUniqueAccount:
@@ -19,13 +56,16 @@ const { passwordSchema, CURRENT_PASSWORD_POLICY_VERSION, LEGACY_PASSWORD_POLICY_
   *     
  ***************************************************************************/
 exports.createUniqueAccount = async (role, username, email, password, ringserverUrl, ringserverPort) => {
+  const normalizedUsername = (username || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+
   // Check if username is in use
-  if (await User.findOne({ username: username })) {
+  if (await User.findOne({ username: normalizedUsername })) {
     return 'usernameExists';
   }
 
   // Check if email is in use
-  if (await User.findOne({ email: email })) {
+  if (await User.findOne(buildEmailQuery(normalizedEmail))) {
     return 'emailExists';
   }
 
@@ -41,8 +81,8 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
       }
 
       newAccount = new User({
-        username: username,
-        email: email,
+        username: normalizedUsername,
+        email: normalizedEmail,
         password: hashedPassword,
         roles: ["brgy"], // TODO: Make this an attribute to POST route too
         ringserverUrl: ringserverUrl,
@@ -54,8 +94,8 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
   
     case 'citizen':
       newAccount = new User({
-        username: username,
-        email: email,
+        username: normalizedUsername,
+        email: normalizedEmail,
         password: hashedPassword,
         roles: ["citizen", "sensor"], // TODO: Make this an attribute to POST route too
         passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
@@ -71,13 +111,14 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
 
 /***************************************************************************
   * loginAccountRole:
-  *     Compares provided username/password & role with that in DB
+  *     Compares provided identifier/password & role with that in DB
   * Inputs:
-  *     username: valid username string
+  *     identifier: username or contact email string
   *     password: valid password string
   * Outputs:
   *     "accountNotExists":    if username doesn't exist in DB
   *     "wrongPassword":       if password does NOT match username's password in DB
+  *     "invalidCredentials":  if identifier/password combo fails with masked errors
   *     "invalidRole":         if claimed role is listed as user's role in DB
   *     "successSensorBrgy":   if Sensor/Brgy password matches their password in DB,
   *                            and they have linked devices
@@ -85,14 +126,22 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
   *     "brgyAccountInactive": if Brgy is registered but not yet approved by admin
   *     
  ***************************************************************************/
-exports.loginAccountRole = async (username, password, role) => {
-  // get user with its devices array populated by device object (instead of device id)
-  const user = await User.findOne({ 'username': username }).populate('devices');
+exports.loginAccountRole = async (identifier, password, role, options = {}) => {
+  const { maskUserNotFound = false } = options;
+  const trimmedIdentifier = (identifier || '').trim();
+  const lookupByEmail = EMAIL_REGEX.test(trimmedIdentifier);
+
+  const user = await User.findOne(
+    lookupByEmail ? buildEmailQuery(normalizeEmail(trimmedIdentifier)) : { username: trimmedIdentifier }
+  ).populate('devices');
 
   if(!user){
-    return 'accountNotExists';
+    return maskUserNotFound ? 'invalidCredentials' : 'accountNotExists';
   }
 
+  const username = user.username;
+
+  // get user with its devices array populated by device object (instead of device id)
   // compare received password with user's password in db
   let passwordIsValid = bcrypt.compareSync(
     password,      // received password
@@ -100,12 +149,12 @@ exports.loginAccountRole = async (username, password, role) => {
   )
 
   if(!passwordIsValid){
-    return 'wrongPassword';
+    return maskUserNotFound ? 'invalidCredentials' : 'wrongPassword';
   }
 
   // check if claimed role reflects allowed role in db
   if(!user.roles.includes(role)){
-    return 'invalidRole';
+    return maskUserNotFound ? 'invalidCredentials' : 'invalidRole';
   }
 
   // Track whether the provided password meets the current policy without blocking legacy users
@@ -129,17 +178,32 @@ exports.loginAccountRole = async (username, password, role) => {
 
   switch(role) {
     case 'sensor':
-      return { str: 'successSensorBrgy', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
+      return {
+        str: 'successSensorBrgy',
+        username,
+        passwordStatus,
+        passwordPolicyVersion: updatedPolicyVersion,
+      };
     case 'brgy':
       // check if brgy account is approved
       if (!user.isApproved) {
         return 'brgyAccountInactive';
       }
-      return { str: 'successSensorBrgy', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
+      return {
+        str: 'successSensorBrgy',
+        username,
+        passwordStatus,
+        passwordPolicyVersion: updatedPolicyVersion,
+      };
     case 'citizen':
-      return { str: 'successCitizen', passwordStatus, passwordPolicyVersion: updatedPolicyVersion }
+      return {
+        str: 'successCitizen',
+        username,
+        passwordStatus,
+        passwordPolicyVersion: updatedPolicyVersion,
+      };
   }
-  return { str: "success", passwordStatus, passwordPolicyVersion: updatedPolicyVersion };
+  return { str: "success", username, passwordStatus, passwordPolicyVersion: updatedPolicyVersion };
 }
 
 /***************************************************************************
@@ -165,7 +229,7 @@ exports.loginAccountRole = async (username, password, role) => {
 exports.verifySensorToken = async (token, brgyUsername) => {
   return new Promise((resolve, reject) => { // wrap in Promise so we can await jwt.verify
     // Verify SENSOR token in body, valid if it enters callback w/o err
-    jwt.verify(token, process.env.ACCESS_TOKEN_PRIVATE_KEY, async (err, decodedToken) => {
+    jwt.verify(token, getAccessTokenSecret('device'), async (err, decodedToken) => {
       if (err) {
         if (err.name == 'JsonWebTokenError'){
           resolve({str: err.name})
@@ -367,7 +431,9 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
     return { str: 'accountNotExists' };
   }
 
-  const hasEmailChange = Boolean(email) && email !== account.email;
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+  const hasEmailChange =
+    Boolean(normalizedEmail) && normalizedEmail !== normalizeEmail(account.email || '');
   const hasPasswordChange = Boolean(newPassword);
   if (!hasEmailChange && !hasPasswordChange) {
     return { str: 'noChanges' };
@@ -378,11 +444,11 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
   }
 
   if (hasEmailChange) {
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne(buildEmailQuery(normalizedEmail));
     if (existing && existing.username !== username) {
       return { str: 'emailExists' };
     }
-    account.email = email;
+    account.email = normalizedEmail;
   }
 
   if (hasPasswordChange) {
@@ -409,6 +475,211 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
         : 'legacy',
     passwordPolicyVersion: account.passwordPolicyVersion,
   };
+};
+
+/**
+ * Update contact email for a logged-in user.
+ * @param {string} username
+ * @param {Object} updates
+ * @param {string} updates.email New email
+ * @param {string} updates.currentPassword Current password for verification
+ * @returns {Promise<Object>} outcome descriptor
+ */
+exports.updateAccountEmail = async (username, { email, currentPassword }) => {
+  const account = await User.findOne({ username });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+  if (!normalizedEmail || normalizedEmail === normalizeEmail(account.email || '')) {
+    return { str: 'noChanges' };
+  }
+
+  if (!currentPassword || !bcrypt.compareSync(currentPassword, account.password)) {
+    return { str: 'wrongPassword' };
+  }
+
+  const existing = await User.findOne(buildEmailQuery(normalizedEmail));
+  if (existing && existing.username !== username) {
+    return { str: 'emailExists' };
+  }
+
+  account.email = normalizedEmail;
+  await account.save();
+
+  return {
+    str: 'success',
+    updated: { email: true },
+  };
+};
+
+/**
+ * Update password for a logged-in user.
+ * @param {string} username
+ * @param {Object} updates
+ * @param {string} updates.currentPassword Current password for verification
+ * @param {string} updates.newPassword New password
+ * @returns {Promise<Object>} outcome descriptor
+ */
+exports.updateAccountPassword = async (username, { currentPassword, newPassword }) => {
+  const account = await User.findOne({ username });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  if (!newPassword) {
+    return { str: 'noChanges' };
+  }
+
+  if (!currentPassword || !bcrypt.compareSync(currentPassword, account.password)) {
+    return { str: 'wrongPassword' };
+  }
+
+  const validation = passwordSchema('New password').validate(newPassword);
+  if (validation.error) {
+    return { str: 'invalidPassword', message: validation.error.message };
+  }
+
+  account.password = bcrypt.hashSync(newPassword, 10);
+  account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+  account.passwordUpdatedAt = new Date();
+
+  await account.save();
+
+  return {
+    str: 'success',
+    updated: { password: true },
+    passwordStatus:
+      (account.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
+        ? 'current'
+        : 'legacy',
+    passwordPolicyVersion: account.passwordPolicyVersion,
+  };
+};
+
+/**
+ * Update username for a logged-in user and cascade username-derived metadata.
+ * @param {string} currentUsername
+ * @param {Object} updates
+ * @param {string} updates.newUsername Requested new username
+ * @param {string} updates.currentPassword Current password for verification
+ * @returns {Promise<Object>} outcome descriptor
+ */
+exports.updateAccountUsername = async (currentUsername, { newUsername, currentPassword }) => {
+  const account = await User.findOne({ username: currentUsername });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  const nextUsername = (newUsername || '').trim();
+  if (!nextUsername || nextUsername === currentUsername) {
+    return { str: 'noChanges' };
+  }
+
+  const validation = usernameSchema('New username').validate(nextUsername);
+  if (validation.error) {
+    return { str: 'invalidUsername', message: validation.error.message };
+  }
+
+  if (!currentPassword || !bcrypt.compareSync(currentPassword, account.password)) {
+    return { str: 'wrongPassword' };
+  }
+
+  const existing = await User.findOne({ username: nextUsername });
+  if (existing && existing.id !== account.id) {
+    return { str: 'usernameExists' };
+  }
+
+  const deviceIds = (account.devices || []).filter(Boolean).map((d) => d._id || d);
+  const newDescription = `${nextUsername}'s device`;
+
+  const applyUpdates = async (session = null) => {
+    const accountToUpdate = session
+      ? await User.findById(account._id).session(session)
+      : await User.findById(account._id);
+    if (!accountToUpdate) {
+      throw new Error('accountMissingDuringUpdate');
+    }
+    accountToUpdate.username = nextUsername;
+    await accountToUpdate.save({ session });
+
+    if (deviceIds.length > 0) {
+      const updateResult = await Device.updateMany(
+        { _id: { $in: deviceIds } },
+        { $set: { description: newDescription } },
+        { session }
+      );
+      return updateResult?.modifiedCount || updateResult?.nModified || 0;
+    }
+    return 0;
+  };
+
+  let updatedDevices = 0;
+  let usedTransaction = false;
+  let session = null;
+
+  try {
+    session = await User.startSession();
+    await session.withTransaction(async () => {
+      updatedDevices = await applyUpdates(session);
+    });
+    usedTransaction = true;
+  } catch (err) {
+    const message = String(err?.message || '').toLowerCase();
+    const transactionUnsupported =
+      message.includes('replica set') || message.includes('transactions are not supported');
+    if (!transactionUnsupported) {
+      throw err;
+    }
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+
+  if (!usedTransaction) {
+    try {
+      updatedDevices = await applyUpdates(null);
+    } catch (err) {
+      await User.updateOne(
+        { _id: account._id },
+        { $set: { username: currentUsername } }
+      ).catch(() => {});
+      throw err;
+    }
+  }
+
+  return {
+    str: 'success',
+    username: nextUsername,
+    updatedDevices,
+  };
+};
+
+/***************************************************************************
+  * deleteAccount:
+  *     Deletes an account that has no device associations.
+  * Inputs:
+  *     username: account username
+  * Outputs obj.str:
+  *     "accountNotExists": if username not found
+  *     "hasDevices":       if account still has device references
+  *     "success":          when account is removed
+  ***************************************************************************/
+exports.deleteAccount = async (username) => {
+  const account = await User.findOne({ username });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  const deviceCount = (account.devices || []).filter(Boolean).length;
+  if (deviceCount > 0) {
+    return { str: 'hasDevices', deviceCount };
+  }
+
+  await User.deleteOne({ _id: account._id });
+  return { str: 'success' };
 };
 
 
@@ -450,27 +721,60 @@ exports.getActiveRingserverHosts = async () => {
   *     email: valid email string
   * Outputs obj.str:
   *     "queued":           request accepted (email existence not disclosed)
-  * Outputs obj.token (optional):
-  *     reset JWT if account exists
-  *     
+ * Outputs obj.token (optional):
+ *     reset JWT if account exists
+ *     
  ***************************************************************************/
 exports.createPasswordResetToken = async (email) => {
-  const user = await User.findOne({ email });
+  const normalizedEmail = normalizeEmail(email);
+  const user = await User.findOne(buildEmailQuery(normalizedEmail));
   if (!user) {
     return { str: 'queued', issued: false };
   }
 
-  const secret = process.env.PASSWORD_RESET_TOKEN_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY;
-  const expiresIn = process.env.PASSWORD_RESET_TOKEN_EXPIRY || '30m';
+  const secret = getPasswordResetSecret();
+  const tokenId = crypto.randomBytes(24).toString('hex');
   const token = jwt.sign(
     {
       username: user.username,
       email: user.email,
       roles: user.roles || [],
+      purpose: 'password-reset',
+      jti: tokenId,
     },
     secret,
-    { expiresIn }
+    { expiresIn: PASSWORD_RESET_TOKEN_EXPIRY }
   );
+
+  user.passwordResetTokenId = hashTokenId(tokenId);
+  user.passwordResetIssuedAt = new Date();
+  user.passwordResetUsedAt = null;
+  await user.save();
+
+  const resetUrl = buildResetLink(token);
+  if (resetUrl) {
+    try {
+      await EmailService.sendMail({
+        to: user.email,
+        subject: 'Reset your UPRI Earthquake Hub password',
+        text: [
+          'We received a request to reset your UPRI Earthquake Hub password.',
+          'If you did not request this, you can ignore this message.',
+          '',
+          `Reset link: ${resetUrl}`,
+          `This link expires in ${PASSWORD_RESET_TOKEN_EXPIRY}.`,
+        ].join('\n'),
+        html: `
+          <p>We received a request to reset your UPRI Earthquake Hub password.</p>
+          <p>If you did not request this, you can safely ignore this email.</p>
+          <p><a href="${resetUrl}">Reset your password</a></p>
+          <p style="color:#444;">This link expires in ${PASSWORD_RESET_TOKEN_EXPIRY}.</p>
+        `,
+      });
+    } catch (err) {
+      console.error('Password reset email delivery failed:', err?.message || err);
+    }
+  }
 
   return {
     str: 'queued',
@@ -478,6 +782,7 @@ exports.createPasswordResetToken = async (email) => {
     token,
     username: user.username,
     email: user.email,
+    resetUrl,
   };
 };
 
@@ -495,13 +800,33 @@ exports.createPasswordResetToken = async (email) => {
   *     
  ***************************************************************************/
 exports.applyPasswordReset = async (token, newPassword) => {
-  const secret = process.env.PASSWORD_RESET_TOKEN_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+  const secret = getPasswordResetSecret();
 
   try {
     const decoded = jwt.verify(token, secret);
-    const account = await User.findOne({ email: decoded.email, username: decoded.username });
+    const account = await User.findOne({
+      username: decoded.username,
+      ...buildEmailQuery(decoded.email),
+    });
     if (!account) {
       return { str: 'accountNotExists' };
+    }
+
+    if (!decoded?.jti || !account.passwordResetTokenId || !account.passwordResetIssuedAt) {
+      return { str: 'invalid' };
+    }
+
+    if (account.passwordResetUsedAt) {
+      return { str: 'invalid' };
+    }
+
+    const hashedTokenId = hashTokenId(decoded.jti);
+    if (hashedTokenId !== account.passwordResetTokenId) {
+      return { str: 'invalid' };
+    }
+
+    if (decoded.purpose && decoded.purpose !== 'password-reset') {
+      return { str: 'invalid' };
     }
 
     const validation = passwordSchema('New password').validate(newPassword);
@@ -512,6 +837,9 @@ exports.applyPasswordReset = async (token, newPassword) => {
     account.password = bcrypt.hashSync(newPassword, 10);
     account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
     account.passwordUpdatedAt = new Date();
+    account.passwordResetTokenId = undefined;
+    account.passwordResetIssuedAt = null;
+    account.passwordResetUsedAt = new Date();
     await account.save();
 
     return { str: 'success', username: account.username };

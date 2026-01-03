@@ -65,6 +65,9 @@ const AccountSchema = new mongoose.Schema({
     default: 1, // legacy until explicitly updated
   },
   passwordUpdatedAt: Date,
+  passwordResetTokenId: String, // hashed token id for single-use resets
+  passwordResetIssuedAt: Date,
+  passwordResetUsedAt: Date,
   isApproved: { // inactive, active
     type: Boolean,
     default: false

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const {responseCodes} = require('../controllers/responseCodes')
+const { responseCodes } = require('../controllers/responseCodes');
+const { getAccessTokenSecret } = require('../controllers/helpers');
 
 // Citizen role request sends tokens thru cookie in requests
 function getTokenFromCookie(req, res, next) {
@@ -16,6 +17,8 @@ function getTokenFromCookie(req, res, next) {
   }
 
   req.token = token;
+  req.tokenSource = 'cookie';
+  req.tokenScope = 'web';
   next();
 }
 
@@ -25,6 +28,8 @@ function getTokenFromCookieIfPresent(req, res, next) {
   req.isAuthenticated = false;
   req.sessionError = null;
   req.refreshToken = req.cookies ? req.cookies.refreshToken : undefined;
+  req.tokenSource = 'cookie';
+  req.tokenScope = 'web';
 
   // If cookies are unavailable or token not present, proceed without setting req.token
   if (!req.cookies || !req.cookies.accessToken) {
@@ -50,6 +55,29 @@ function getTokenFromBearer(req, res, next) {
   }
 
   req.token = token;
+  req.tokenSource = 'bearer';
+  req.tokenScope = req.tokenScope || 'device';
+  next();
+}
+
+// Optional bearer reader: does not error when header/token is missing
+function getTokenFromBearerIfPresent(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) {
+    req.token = undefined;
+    req.tokenScope = req.tokenScope || 'device';
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    req.token = undefined;
+    req.tokenScope = req.tokenScope || 'device';
+    return next();
+  }
+
+  req.token = token;
+  req.tokenScope = req.tokenScope || 'device';
   next();
 }
 
@@ -57,9 +85,11 @@ function getTokenFromBearer(req, res, next) {
 function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for custom args
   const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
-    jwt.verify(req.token, 
-      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-      {ignoreExpiration: ignoreExpiration}, 
+    const scope = req.tokenScope || (req.tokenSource === 'cookie' ? 'web' : 'device');
+    jwt.verify(
+      req.token,
+      getAccessTokenSecret(scope),
+      { ignoreExpiration },
       (err, decodedToken) => {
 
       if (err) {
@@ -108,9 +138,10 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
       return next();
     }
 
+    const scope = req.tokenScope || (req.tokenSource === 'cookie' ? 'web' : 'device');
     jwt.verify(
       req.token,
-      process.env.ACCESS_TOKEN_PRIVATE_KEY,
+      getAccessTokenSecret(scope),
       { ignoreExpiration },
       (err, decodedToken) => {
         if (err) {
@@ -146,6 +177,7 @@ module.exports = {
   getTokenFromCookie,
   getTokenFromCookieIfPresent,
   getTokenFromBearer,
+  getTokenFromBearerIfPresent,
   verifyTokenWithRole,
   verifyTokenWithRoleOptional,
 }

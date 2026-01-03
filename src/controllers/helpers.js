@@ -1,15 +1,59 @@
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 
-function generateAccessToken(payload) {
-  return jwt.sign(payload, process.env.ACCESS_TOKEN_PRIVATE_KEY, {
-    expiresIn: process.env.JWT_EXPIRY, // Adds 'exp' in seconds since epoch
+const WEB_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_WEB || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+const DEVICE_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_DEVICE || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+const WEB_REFRESH_SECRET =
+  process.env.REFRESH_TOKEN_PRIVATE_KEY_WEB ||
+  process.env.REFRESH_TOKEN_PRIVATE_KEY ||
+  WEB_ACCESS_SECRET;
+const DEVICE_REFRESH_SECRET =
+  process.env.REFRESH_TOKEN_PRIVATE_KEY || DEVICE_ACCESS_SECRET;
+const PASSWORD_RESET_SECRET =
+  process.env.PASSWORD_RESET_TOKEN_KEY || WEB_ACCESS_SECRET;
+
+const WEB_ACCESS_EXPIRY = process.env.JWT_WEB_EXPIRY || '12h';
+const DEVICE_ACCESS_EXPIRY = process.env.JWT_DEVICE_EXPIRY || process.env.JWT_EXPIRY || '12h';
+const WEB_REFRESH_EXPIRY = process.env.REFRESH_TOKEN_WEB_EXPIRY || '30 days';
+const DEVICE_REFRESH_EXPIRY =
+  process.env.REFRESH_TOKEN_DEVICE_EXPIRY || process.env.REFRESH_TOKEN_EXPIRY || '90 days';
+const USERNAME_MIN_LENGTH = parseInt(process.env.USERNAME_MIN_LENGTH, 10) || 3;
+const USERNAME_MAX_LENGTH = parseInt(process.env.USERNAME_MAX_LENGTH, 10) || 32;
+
+let USERNAME_ALLOWED_PATTERN = /^[a-zA-Z0-9._-]+$/;
+if (process.env.USERNAME_ALLOWED_PATTERN) {
+  try {
+    USERNAME_ALLOWED_PATTERN = new RegExp(process.env.USERNAME_ALLOWED_PATTERN);
+  } catch (err) {
+    console.warn(
+      `Invalid USERNAME_ALLOWED_PATTERN provided; falling back to default. ${err?.message || err}`
+    );
+  }
+}
+
+function getAccessTokenSecret(scope = 'web') {
+  return scope === 'device' ? DEVICE_ACCESS_SECRET : WEB_ACCESS_SECRET;
+}
+
+function getRefreshTokenSecret(scope = 'web') {
+  return scope === 'device' ? DEVICE_REFRESH_SECRET : WEB_REFRESH_SECRET;
+}
+
+function getPasswordResetSecret() {
+  return PASSWORD_RESET_SECRET;
+}
+
+function generateAccessToken(payload, scope = 'web') {
+  const expiresIn = scope === 'device' ? DEVICE_ACCESS_EXPIRY : WEB_ACCESS_EXPIRY;
+  return jwt.sign(payload, getAccessTokenSecret(scope), {
+    expiresIn, // Adds 'exp' in seconds since epoch
   });
 }
 
-function generateRefreshToken(payload) {
-  return jwt.sign(payload, process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY, {
-    expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '90 days',
+function generateRefreshToken(payload, scope = 'web') {
+  const expiresIn = scope === 'device' ? DEVICE_REFRESH_EXPIRY : WEB_REFRESH_EXPIRY;
+  return jwt.sign(payload, getRefreshTokenSecret(scope), {
+    expiresIn,
   });
 }
 
@@ -53,9 +97,9 @@ function parseDurationToMs(input, fallbackMs = 0) {
   return value * multiplier;
 }
 
-const ACCESS_TOKEN_MAX_AGE_MS = parseDurationToMs(process.env.JWT_EXPIRY, 1000 * 60 * 60 * 12);
+const ACCESS_TOKEN_MAX_AGE_MS = parseDurationToMs(WEB_ACCESS_EXPIRY, 1000 * 60 * 60 * 12);
 const REFRESH_TOKEN_MAX_AGE_MS = parseDurationToMs(
-  process.env.REFRESH_TOKEN_EXPIRY || '30 days',
+  WEB_REFRESH_EXPIRY,
   1000 * 60 * 60 * 24 * 30
 );
 
@@ -71,8 +115,8 @@ function cookieOptions(maxAgeMs) {
 }
 
 function setSessionCookies(res, payload) {
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken(payload);
+  const accessToken = generateAccessToken(payload, 'web');
+  const refreshToken = generateRefreshToken(payload, 'web');
 
   res.cookie('accessToken', accessToken, cookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
   res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_TOKEN_MAX_AGE_MS));
@@ -139,6 +183,19 @@ function passwordSchema(label = 'Password') {
     });
 }
 
+function usernameSchema(label = 'Username') {
+  return Joi.string()
+    .min(USERNAME_MIN_LENGTH)
+    .max(USERNAME_MAX_LENGTH)
+    .pattern(USERNAME_ALLOWED_PATTERN)
+    .messages({
+      'string.min': `${label} must be at least ${USERNAME_MIN_LENGTH} characters.`,
+      'string.max': `${label} must be ${USERNAME_MAX_LENGTH} characters or fewer.`,
+      'string.pattern.base':
+        `${label} can include letters, numbers, dashes, underscores, and periods only.`,
+    });
+}
+
 function formatErrorMessage(errorMessage) {
   return errorMessage
     .replace(/["\\]/g, "") // Strip double quotes and backslashes
@@ -158,13 +215,20 @@ function generateAMStationCode(macAddress) {
 module.exports = {
   generateAccessToken,
   generateRefreshToken,
+  getAccessTokenSecret,
+  getRefreshTokenSecret,
+  getPasswordResetSecret,
   parseDurationToMs,
   cookieOptions,
   setSessionCookies,
   clearSessionCookies,
   passwordSchema,
+  usernameSchema,
   formatErrorMessage,
   generateAMStationCode,
   CURRENT_PASSWORD_POLICY_VERSION,
   LEGACY_PASSWORD_POLICY_VERSION,
+  USERNAME_ALLOWED_PATTERN,
+  USERNAME_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
 }

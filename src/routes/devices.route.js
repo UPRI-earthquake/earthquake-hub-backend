@@ -3,7 +3,9 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
+  getTokenFromBearerIfPresent,
   verifyTokenWithRole,
+  verifyTokenWithRoleOptional,
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -275,8 +277,8 @@ DeviceController.unlinkDevice
   *         description: Identifier mismatch
   */
 router.route('/reset-link').post(
-  getTokenFromBearer,
-  verifyTokenWithRole('sensor', true),
+  getTokenFromBearerIfPresent,
+  verifyTokenWithRoleOptional('sensor', true),
   DeviceController.resetDeviceLink,
 );
 

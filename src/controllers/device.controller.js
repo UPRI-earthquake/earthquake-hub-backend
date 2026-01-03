@@ -2,7 +2,7 @@ const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const {responseCodes} = require('./responseCodes')
-const {formatErrorMessage, generateAccessToken, generateRefreshToken} = require('./helpers')
+const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
 const jwt = require('jsonwebtoken');
 
 exports.getAllDeviceLocations = async (req, res, next) => {
@@ -220,11 +220,11 @@ exports.linkDevice = async (req, res, next) => {
         accessToken: generateAccessToken({
           'username': username,
           'role': role
-        }),
+        }, 'device'),
         refreshToken: generateRefreshToken({
           'username': username,
           'role': role
-        })
+        }, 'device')
       }
     });
     res.message = message; // used by next middleware
@@ -299,7 +299,7 @@ exports.refreshToken = async (req, res, next) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY);
+      decoded = jwt.verify(refreshToken, getRefreshTokenSecret('device'));
     } catch (verifyErr) {
       return res.status(401).json({
         status: responseCodes.GENERIC_ERROR,
@@ -320,8 +320,8 @@ exports.refreshToken = async (req, res, next) => {
       };
     }
 
-    const accessToken = generateAccessToken({ username, role });
-    const newRefresh = generateRefreshToken({ username, role });
+    const accessToken = generateAccessToken({ username, role }, 'device');
+    const newRefresh = generateRefreshToken({ username, role }, 'device');
 
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
@@ -414,11 +414,6 @@ exports.resetDeviceLink = async (req, res, next) => {
   });
 
   try {
-    if (!req.username) {
-      res.status(403).json({ status: 403, message: "Username of a logged-in user is required."});
-      return;
-    }
-
     const { error, value } = resetDeviceSchema.validate(req.body);
     if (error) { throw error; }
     const { macAddress, streamId } = value;
@@ -444,6 +439,13 @@ exports.resetDeviceLink = async (req, res, next) => {
       case 'deviceOwnedElsewhere':
         message = 'Device belongs to a different account. Request a reset from the linked account instead.';
         res.status(403).json({
+          status: responseCodes.LINK_RESET_ERROR,
+          message,
+        });
+        break;
+      case 'authRequired':
+        message = 'Authentication required to reset this linked device. Sign in and retry from the linked account.';
+        res.status(401).json({
           status: responseCodes.LINK_RESET_ERROR,
           message,
         });

@@ -32,6 +32,7 @@ const responseCodes = {
   AUTHENTICATION_NO_LINKED_DEVICE: 124,
   AUTHENTICATION_ACCOUNT_INACTIVE: 125,
   AUTHENTICATION_SESSION_EXPIRED:  126,
+  AUTHENTICATION_INVALID_CREDENTIALS: 127,
 
   VERIFICATION_SUCCESS:            30,
   VERIFICATION_SUCCESS_NEW_TOKEN:  31,
@@ -59,6 +60,7 @@ const responseCodes = {
   PASSWORD_RESET_INVALID:    170,
   PASSWORD_RESET_EXPIRED:    171,
   PASSWORD_RESET_USER_MISSING:172,
+  ACCOUNT_DELETE_HAS_DEVICES: 180,
 };
 
 const responseMessages = {
@@ -81,6 +83,7 @@ const responseMessages = {
   AUTHENTICATION_WRONG_PASSWORD: "Authentication error: Wrong password",
   AUTHENTICATION_NO_LINKED_DEVICE: "Authentication error: Account has no linked/forwardable devices",
   AUTHENTICATION_SESSION_EXPIRED: "Authentication error: Session expired",
+  AUTHENTICATION_INVALID_CREDENTIALS: "Authentication error: Invalid credentials",
 
   VERIFICATION_SUCCESS: "Verification success",
   VERIFICATION_SUCCESS_NEW_TOKEN: "Verification success with new token",
@@ -94,6 +97,7 @@ const responseMessages = {
   PASSWORD_RESET_INVALID: "Password reset error: Invalid token",
   PASSWORD_RESET_EXPIRED: "Password reset error: Expired token",
   PASSWORD_RESET_USER_MISSING: "Password reset error: User not found",
+  ACCOUNT_DELETE_HAS_DEVICES: "Account deletion blocked: Devices are still linked",
   LINK_RESET_SUCCESS: "Device link reset",
   LINK_RESET_ERROR: "Device link reset error",
 };

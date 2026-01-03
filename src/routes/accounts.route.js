@@ -97,7 +97,7 @@ router.route('/register').post(
   * @swagger
   * /accounts/authenticate:
   *   post:
-  *     summary: Return a JWT in exchange for username, password, & role
+  *     summary: Return a JWT in exchange for identifier (username or email), password, & role
   *     tags: [Accounts]
   *     requestBody:
   *       description: User credentials for authentication
@@ -107,9 +107,12 @@ router.route('/register').post(
   *           schema:
   *             type: object
   *             properties:
+  *               identifier:
+  *                 type: string
+  *                 description: Username or contact email
   *               username:
   *                 type: string
-  *                 description: Registered username
+  *                 description: (Legacy) Registered username; identifier is preferred
   *               password:
   *                 type: string
   *                 description: Account's password
@@ -125,7 +128,7 @@ router.route('/register').post(
   *                 type: string
   *                 description: Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy.
   *           example:
-  *             username: citizen
+  *             identifier: citizen@example.com
   *             password: testpassword
   *             role: citizen
   *     responses:
@@ -601,6 +604,82 @@ router.route('/profile').patch(
   Middleware.getTokenFromCookie,
   Middleware.verifyTokenWithRole(['citizen', 'brgy']),
   AccountsController.updateAccountProfile
+);
+
+router.route('/email').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountEmail
+);
+
+router.route('/password').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountPassword
+);
+
+/**
+  * @swagger
+  * /accounts/username:
+  *   patch:
+  *     summary: Update username for the authenticated account
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               newUsername:
+  *                 type: string
+  *                 description: New username to apply
+  *               currentPassword:
+  *                 type: string
+  *                 description: Current password for verification
+  *           example:
+  *             newUsername: contributor123
+  *             currentPassword: SupersafePassword!
+  *     responses:
+  *       200:
+  *         description: Username updated
+  *       400:
+  *         description: Validation error or username already in use
+  *       401:
+  *         description: Current password is incorrect
+  *       409:
+  *         description: Unable to update username
+  */
+router.route('/username').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountUsername
+);
+
+/**
+  * @swagger
+  * /accounts:
+  *   delete:
+  *     summary: Delete the authenticated account (only when no devices remain)
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Account deleted
+  *       401:
+  *         description: Not authenticated
+  *       404:
+  *         description: Account not found
+  *       409:
+  *         description: Account still has linked devices
+  */
+router.route('/').delete(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.deleteAccount
 );
 
 

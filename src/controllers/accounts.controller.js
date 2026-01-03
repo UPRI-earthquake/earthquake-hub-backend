@@ -6,8 +6,10 @@ const {
   generateAccessToken,
   generateRefreshToken,
   passwordSchema,
+  usernameSchema,
   setSessionCookies,
   clearSessionCookies,
+  getRefreshTokenSecret,
   CURRENT_PASSWORD_POLICY_VERSION,
 } = require('./helpers');
 
@@ -15,7 +17,7 @@ exports.registerAccount = async (req, res, next) => {
   // Define validation schema
   const registerSchema = Joi.object({
     role: Joi.string().valid('brgy', 'citizen').required(),
-    username: Joi.string().required(),
+    username: usernameSchema('Username').required(),
     password: passwordSchema('Password')
       .required(),
     confirmPassword: Joi.equal(Joi.ref('password'))
@@ -104,48 +106,51 @@ exports.registerAccount = async (req, res, next) => {
 
 exports.authenticateAccount = async (req, res, next) => {
   // Define validation schema
-  const authenticateSchema = Joi.object().keys({
-    username: Joi.string().required(),
-    password: Joi.string().min(1).max(256).required().messages({
-      'string.min': 'Password is required.',
-    }),
-    role: Joi.string().valid('sensor', 'citizen', 'brgy').required()
-      .messages({
+  const authenticateSchema = Joi.object()
+    .keys({
+      identifier: Joi.string().trim().min(1),
+      username: Joi.string().trim().min(1),
+      password: Joi.string().min(1).max(256).required().messages({
+        'string.min': 'Password is required.',
+      }),
+      role: Joi.string().valid('sensor', 'citizen', 'brgy').required().messages({
         "any.only": "Valid roles are only 'sensor', 'citizen', or 'brgy'.",
       }),
-  }).messages({ // Default message if no custom message is set for the key
-    "any.required": "{#label} is required.",
-    "string.empty": "{#label} cannot be empty.",
-  });
+    })
+    .or('identifier', 'username')
+    .messages({
+      'object.missing': 'Username or email is required.',
+      'any.required': '{#label} is required.',
+      'string.empty': '{#label} cannot be empty.',
+    });
 
   try{
     // Validate input
     const result = authenticateSchema.validate(req.body, {abortEarly: false});
     if(result.error){ throw result.error }
 
+    const identifier = (result.value.identifier || result.value.username || '').trim();
+
     // Perform task
     const loginResult = await AccountsService.loginAccountRole(
-      result.value.username,
+      identifier,
       result.value.password,
-      result.value.role
+      result.value.role,
+      { maskUserNotFound: true }
     )
     const returnStr = loginResult?.str || loginResult;
+    const authenticatedUsername = loginResult?.username || identifier;
 
     // Respond based on returned value
     let message = "";
     switch (returnStr) {
+      case "invalidCredentials":
       case "accountNotExists":
-        message = "User doesn't exists!";
-        res.status(400).json({
-          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
-          message: message
-        });
-        break;
       case "wrongPassword":
-        message = 'Wrong password';
+        message = "Invalid username/email or password.";
         res.status(401).json({
-          status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
-          message: message
+          status: responseCodes.AUTHENTICATION_INVALID_CREDENTIALS || responseCodes.AUTHENTICATION_ERROR,
+          message: message,
         });
         break;
       case "invalidRole":
@@ -156,12 +161,14 @@ exports.authenticateAccount = async (req, res, next) => {
         });
         break;
       case "brgyAccountInactive":
+        message = 'Account is not yet approved';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
-          message: 'Account is not yet approved'
+          message: message
         });
         break;
       case "successSensorBrgy":
+        message = "Authentication successful";
         const origin = req.get('origin');
         const allowedOrigin = process.env.NODE_ENV === 'production'
                               ? 'https://' + process.env.CLIENT_PROD_HOST
@@ -169,10 +176,11 @@ exports.authenticateAccount = async (req, res, next) => {
         
         if (origin === allowedOrigin) { // origin is from web app
           // return access token in http cookie (so it's hidden from browser js)
-          setSessionCookies(res, { username: result.value.username, role: 'brgy' });
+          setSessionCookies(res, { username: authenticatedUsername, role: 'brgy' });
           res.status(200).json({
             status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
             message: "Authentication successful",
+            username: authenticatedUsername,
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
           })
@@ -180,15 +188,16 @@ exports.authenticateAccount = async (req, res, next) => {
           res.status(200).json({
             status: responseCodes.AUTHENTICATION_TOKEN_PAYLOAD,
             message: 'Authentication successful',
+            username: authenticatedUsername,
             // return access token as part of json payload
             accessToken: generateAccessToken({
-              'username': result.value.username,
+              'username': authenticatedUsername,
               'role': result.value.role
-            }),
+            }, 'device'),
             refreshToken: generateRefreshToken({
-              'username': result.value.username,
+              'username': authenticatedUsername,
               'role': result.value.role
-            }),
+            }, 'device'),
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
           });
@@ -197,10 +206,11 @@ exports.authenticateAccount = async (req, res, next) => {
         break;
       case "successCitizen":
         message = "Authentication successful";
-        setSessionCookies(res, { username: result.value.username, role: 'citizen' });
+        setSessionCookies(res, { username: authenticatedUsername, role: 'citizen' });
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
           message: message,
+          username: authenticatedUsername,
           passwordStatus: loginResult?.passwordStatus,
           passwordPolicyVersion: loginResult?.passwordPolicyVersion,
         });
@@ -237,7 +247,7 @@ exports.requestPasswordReset = async (req, res, next) => {
     const outcome = await AccountsService.createPasswordResetToken(result.value.email);
     if (outcome?.issued && process.env.NODE_ENV !== 'production') {
       console.log(
-        `[accounts] Password reset token issued for ${outcome.email}: ${outcome.token}`
+        `[accounts] Password reset link for ${outcome.email}: ${outcome.resetUrl || outcome.token}`
       );
     }
 
@@ -491,7 +501,7 @@ exports.getAccountProfile = async (req, res, next) => {
       try {
         const decodedRefresh = jwt.verify(
           req.refreshToken,
-          process.env.REFRESH_TOKEN_PRIVATE_KEY || process.env.ACCESS_TOKEN_PRIVATE_KEY
+          getRefreshTokenSecret('web')
         );
 
         if (!allowedSessionRoles.includes(decodedRefresh.role)) {
@@ -680,6 +690,246 @@ exports.updateAccountProfile = async (req, res, next) => {
   }
 };
 
+exports.updateAccountEmail = async (req, res, next) => {
+  const schema = Joi.object()
+    .keys({
+      email: Joi.string()
+        .email({ minDomainSegments: 2, tlds: { allow: true } })
+        .required()
+        .messages({
+          'string.email': 'Please enter a valid email address.',
+        }),
+      currentPassword: Joi.string().min(1).max(256).required(),
+    })
+    .messages({
+      'any.required': '{#label} is required.',
+      'string.empty': '{#label} cannot be empty.',
+    });
+
+  try {
+    const result = schema.validate(req.body, { abortEarly: false });
+    if (result.error) throw result.error;
+
+    const outcome = await AccountsService.updateAccountEmail(req.username, {
+      email: result.value.email,
+      currentPassword: result.value.currentPassword,
+    });
+
+    switch (outcome.str) {
+      case 'accountNotExists':
+        res.status(404).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found.',
+        });
+        return;
+      case 'wrongPassword':
+        res.status(401).json({
+          status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
+          message: 'Current password is incorrect.',
+        });
+        return;
+      case 'emailExists':
+        res.status(400).json({
+          status: responseCodes.REGISTRATION_EMAIL_IN_USE,
+          message: 'Email address already in use.',
+        });
+        return;
+      case 'noChanges':
+        res.status(400).json({
+          status: responseCodes.VALIDATION_ERROR,
+          message: 'No email change supplied.',
+        });
+        return;
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Email updated.',
+          updated: outcome.updated,
+        });
+        res.message = 'Email updated.';
+        return;
+      default:
+        throw Error(`Unhandled return value ${outcome.str} from updateAccountEmail()`);
+    }
+  } catch (error) {
+    console.error('Unable to update account email:', error?.message || error);
+    next(error);
+  }
+};
+
+exports.updateAccountPassword = async (req, res, next) => {
+  const schema = Joi.object()
+    .keys({
+      currentPassword: Joi.string().min(1).max(256).required(),
+      newPassword: passwordSchema('New password').required(),
+      confirmPassword: Joi.equal(Joi.ref('newPassword')).required().messages({
+        'any.only': 'Passwords should match.',
+      }),
+    })
+    .messages({
+      'any.required': '{#label} is required.',
+      'string.empty': '{#label} cannot be empty.',
+    });
+
+  try {
+    const result = schema.validate(req.body, { abortEarly: false });
+    if (result.error) throw result.error;
+
+    const outcome = await AccountsService.updateAccountPassword(req.username, {
+      currentPassword: result.value.currentPassword,
+      newPassword: result.value.newPassword,
+    });
+
+    switch (outcome.str) {
+      case 'accountNotExists':
+        res.status(404).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found.',
+        });
+        return;
+      case 'wrongPassword':
+        res.status(401).json({
+          status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
+          message: 'Current password is incorrect.',
+        });
+        return;
+      case 'invalidPassword':
+        res.status(400).json({
+          status: responseCodes.VALIDATION_ERROR,
+          message: outcome.message || 'New password did not meet requirements.',
+        });
+        return;
+      case 'noChanges':
+        res.status(400).json({
+          status: responseCodes.VALIDATION_ERROR,
+          message: 'No password change supplied.',
+        });
+        return;
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Password updated.',
+          updated: outcome.updated,
+          passwordStatus: outcome.passwordStatus,
+          passwordPolicyVersion: outcome.passwordPolicyVersion,
+        });
+        res.message = 'Password updated.';
+        return;
+      default:
+        throw Error(`Unhandled return value ${outcome.str} from updateAccountPassword()`);
+    }
+  } catch (error) {
+    console.error('Unable to update account password:', error?.message || error);
+    next(error);
+  }
+};
+
+exports.updateAccountUsername = async (req, res, next) => {
+  const schema = Joi.object()
+    .keys({
+      newUsername: usernameSchema('New username').required(),
+      currentPassword: Joi.string().min(1).max(256).required(),
+    })
+    .messages({
+      'any.required': '{#label} is required.',
+      'string.empty': '{#label} cannot be empty.',
+    });
+
+  try {
+    const result = schema.validate(req.body, { abortEarly: false });
+    if (result.error) throw result.error;
+
+    const outcome = await AccountsService.updateAccountUsername(req.username, {
+      newUsername: result.value.newUsername,
+      currentPassword: result.value.currentPassword,
+    });
+
+    switch (outcome.str) {
+      case 'accountNotExists':
+        res.status(404).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found.',
+        });
+        return;
+      case 'wrongPassword':
+        res.status(401).json({
+          status: responseCodes.AUTHENTICATION_WRONG_PASSWORD,
+          message: 'Current password is incorrect.',
+        });
+        return;
+      case 'usernameExists':
+        res.status(400).json({
+          status: responseCodes.REGISTRATION_USERNAME_IN_USE,
+          message: 'Username already in use.',
+        });
+        return;
+      case 'invalidUsername':
+        res.status(400).json({
+          status: responseCodes.VALIDATION_ERROR,
+          message: outcome.message || 'Username did not meet requirements.',
+        });
+        return;
+      case 'noChanges':
+        res.status(400).json({
+          status: responseCodes.VALIDATION_ERROR,
+          message: 'No username change supplied.',
+        });
+        return;
+      case 'success':
+        setSessionCookies(res, { username: outcome.username, role: req.role });
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Username updated.',
+          payload: { username: outcome.username, updatedDevices: outcome.updatedDevices },
+        });
+        res.message = 'Username updated.';
+        return;
+      default:
+        throw Error(`Unhandled return value ${outcome.str} from updateAccountUsername()`);
+    }
+  } catch (error) {
+    console.error('Unable to update account username:', error?.message || error);
+    next(error);
+  }
+};
+
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const outcome = await AccountsService.deleteAccount(req.username);
+
+    switch (outcome.str) {
+      case 'accountNotExists':
+        res.status(404).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found.',
+        });
+        return;
+      case 'hasDevices':
+        res.status(409).json({
+          status: responseCodes.ACCOUNT_DELETE_HAS_DEVICES || responseCodes.VALIDATION_ERROR,
+          message:
+            'All devices must be unlinked and reset via the sender software (rs.local:3000) before deleting this account.',
+          deviceCount: outcome.deviceCount,
+        });
+        res.message = 'Account deletion blocked: devices still linked';
+        return;
+      case 'success':
+        clearSessionCookies(res);
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'Account deleted.',
+        });
+        res.message = 'Account deleted.';
+        return;
+      default:
+        throw Error(`Unhandled return value ${outcome.str} from deleteAccount()`);
+    }
+  } catch (error) {
+    console.error('Unable to delete account:', error?.message || error);
+    next(error);
+  }
+};
+
 exports.removeCookies = async (req, res, next) => {
   try {
     let message = "Sign out successful"
@@ -743,7 +993,7 @@ exports.getBrgyToken = async (req, res, next) => {
       accessToken: generateAccessToken({
         'username': req.username,
         'role': req.role
-      }),
+      }, 'device'),
     });
     
   } catch (error) {
