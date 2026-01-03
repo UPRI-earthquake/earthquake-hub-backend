@@ -106,6 +106,7 @@ app.use('/messaging', require('./routes/messaging.route'));
 app.use('/notifications', require('./routes/notifications.route'));
 app.use('/eq-events', require('./routes/EQevents.route'));
 app.use('/significant-eqs', require('./routes/significantEQs.route'));
+app.use('/overlays', require('./routes/overlays.route'));
 
 /* Error handler middleware */
 // eslint-disable-next-line no-unused-vars

@@ -20,8 +20,12 @@ ENV NODE_ENV=production
 COPY --chown=node:node package*.json ./
 RUN npm ci --only=production --loglevel=verbose
 
-# copy codebase
+# copy codebase and scripts needed for build-time tasks
 COPY --chown=node:node ./src ./src
+COPY --chown=node:node ./scripts ./scripts
+
+# fetch and trim overlay data at build time so images ship with localized assets
+RUN npm run overlays:fetch
 
 USER node
 CMD ["dumb-init", "npm", "run", "start"]
@@ -29,5 +33,4 @@ CMD ["dumb-init", "npm", "run", "start"]
 LABEL org.opencontainers.image.source="https://github.com/UPRI-earthquake/earthquake-hub-backend"
 LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
 LABEL org.opencontainers.image.authors="earthquake@science.upd.edu.ph"
-
 
