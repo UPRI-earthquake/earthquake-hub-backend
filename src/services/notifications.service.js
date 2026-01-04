@@ -47,9 +47,20 @@ const notifySubscribersEQ = async (message) =>{
       ? place
       : (updatedEvent.text || 'Unknown location')
 
+    const eventTypeRaw = updatedEvent.eventType || message.eventType || 'NEW'
+    const eventType = String(eventTypeRaw || '').toUpperCase()
+    const publicID = updatedEvent.publicID || message.publicID || null
+    const title = eventType === 'UPDATE' ? 'Earthquake Update' : 'Earthquake Alert'
     const payload = JSON.stringify({
-      title: 'Earthquake Alert',
+      title,
       body: `Magnitude ${updatedEvent.magnitude_value} in ${address}`,
+      data: {
+        eventType,
+        publicID,
+        magnitude_value: updatedEvent.magnitude_value,
+        place: address,
+        last_modification: updatedEvent.last_modification || message.last_modification || null,
+      },
     })
 
     if(mongoose.connection.readyState === 1) { // connected to MongoDB
