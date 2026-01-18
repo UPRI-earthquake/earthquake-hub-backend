@@ -3,20 +3,30 @@ const Joi = require('joi');
 
 const WEB_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_WEB || process.env.ACCESS_TOKEN_PRIVATE_KEY;
 const DEVICE_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_DEVICE || process.env.ACCESS_TOKEN_PRIVATE_KEY;
+const BRGY_ACCESS_SECRET =
+  process.env.ACCESS_TOKEN_PRIVATE_KEY_BRGY ||
+  DEVICE_ACCESS_SECRET ||
+  WEB_ACCESS_SECRET;
 const WEB_REFRESH_SECRET =
   process.env.REFRESH_TOKEN_PRIVATE_KEY_WEB ||
   process.env.REFRESH_TOKEN_PRIVATE_KEY ||
   WEB_ACCESS_SECRET;
 const DEVICE_REFRESH_SECRET =
   process.env.REFRESH_TOKEN_PRIVATE_KEY || DEVICE_ACCESS_SECRET;
+const BRGY_REFRESH_SECRET =
+  process.env.REFRESH_TOKEN_PRIVATE_KEY_BRGY ||
+  DEVICE_REFRESH_SECRET ||
+  WEB_REFRESH_SECRET;
 const PASSWORD_RESET_SECRET =
   process.env.PASSWORD_RESET_TOKEN_KEY || WEB_ACCESS_SECRET;
 
 const WEB_ACCESS_EXPIRY = process.env.JWT_WEB_EXPIRY || '12h';
 const DEVICE_ACCESS_EXPIRY = process.env.JWT_DEVICE_EXPIRY || process.env.JWT_EXPIRY || '12h';
+const BRGY_ACCESS_EXPIRY = process.env.JWT_BRGY_EXPIRY || '365d';
 const WEB_REFRESH_EXPIRY = process.env.REFRESH_TOKEN_WEB_EXPIRY || '30 days';
 const DEVICE_REFRESH_EXPIRY =
   process.env.REFRESH_TOKEN_DEVICE_EXPIRY || process.env.REFRESH_TOKEN_EXPIRY || '90 days';
+const BRGY_REFRESH_EXPIRY = process.env.REFRESH_TOKEN_BRGY_EXPIRY || '365d';
 const USERNAME_MIN_LENGTH = parseInt(process.env.USERNAME_MIN_LENGTH, 10) || 3;
 const USERNAME_MAX_LENGTH = parseInt(process.env.USERNAME_MAX_LENGTH, 10) || 32;
 
@@ -32,11 +42,15 @@ if (process.env.USERNAME_ALLOWED_PATTERN) {
 }
 
 function getAccessTokenSecret(scope = 'web') {
-  return scope === 'device' ? DEVICE_ACCESS_SECRET : WEB_ACCESS_SECRET;
+  if (scope === 'device') return DEVICE_ACCESS_SECRET;
+  if (scope === 'brgy') return BRGY_ACCESS_SECRET;
+  return WEB_ACCESS_SECRET;
 }
 
 function getRefreshTokenSecret(scope = 'web') {
-  return scope === 'device' ? DEVICE_REFRESH_SECRET : WEB_REFRESH_SECRET;
+  if (scope === 'device') return DEVICE_REFRESH_SECRET;
+  if (scope === 'brgy') return BRGY_REFRESH_SECRET;
+  return WEB_REFRESH_SECRET;
 }
 
 function getPasswordResetSecret() {
@@ -44,14 +58,24 @@ function getPasswordResetSecret() {
 }
 
 function generateAccessToken(payload, scope = 'web') {
-  const expiresIn = scope === 'device' ? DEVICE_ACCESS_EXPIRY : WEB_ACCESS_EXPIRY;
+  let expiresIn = WEB_ACCESS_EXPIRY;
+  if (scope === 'device') {
+    expiresIn = DEVICE_ACCESS_EXPIRY;
+  } else if (scope === 'brgy') {
+    expiresIn = BRGY_ACCESS_EXPIRY;
+  }
   return jwt.sign(payload, getAccessTokenSecret(scope), {
     expiresIn, // Adds 'exp' in seconds since epoch
   });
 }
 
 function generateRefreshToken(payload, scope = 'web') {
-  const expiresIn = scope === 'device' ? DEVICE_REFRESH_EXPIRY : WEB_REFRESH_EXPIRY;
+  let expiresIn = WEB_REFRESH_EXPIRY;
+  if (scope === 'device') {
+    expiresIn = DEVICE_REFRESH_EXPIRY;
+  } else if (scope === 'brgy') {
+    expiresIn = BRGY_REFRESH_EXPIRY;
+  }
   return jwt.sign(payload, getRefreshTokenSecret(scope), {
     expiresIn,
   });

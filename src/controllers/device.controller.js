@@ -298,13 +298,19 @@ exports.refreshToken = async (req, res, next) => {
     const { refreshToken } = value;
 
     let decoded;
+    let refreshScope = 'device';
     try {
       decoded = jwt.verify(refreshToken, getRefreshTokenSecret('device'));
     } catch (verifyErr) {
-      return res.status(401).json({
-        status: responseCodes.GENERIC_ERROR,
-        message: 'Invalid refresh token',
-      });
+      try {
+        decoded = jwt.verify(refreshToken, getRefreshTokenSecret('brgy'));
+        refreshScope = 'brgy';
+      } catch (verifyErr2) {
+        return res.status(401).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Invalid refresh token',
+        });
+      }
     }
 
     const { username, role } = decoded;
@@ -320,8 +326,10 @@ exports.refreshToken = async (req, res, next) => {
       };
     }
 
-    const accessToken = generateAccessToken({ username, role }, 'device');
-    const newRefresh = generateRefreshToken({ username, role }, 'device');
+    const accessTokenScope = role === 'brgy' ? 'brgy' : 'device';
+    const refreshTokenScope = role === 'brgy' ? 'brgy' : refreshScope;
+    const accessToken = generateAccessToken({ username, role }, accessTokenScope);
+    const newRefresh = generateRefreshToken({ username, role }, refreshTokenScope);
 
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,

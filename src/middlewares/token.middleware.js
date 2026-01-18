@@ -56,7 +56,6 @@ function getTokenFromBearer(req, res, next) {
 
   req.token = token;
   req.tokenSource = 'bearer';
-  req.tokenScope = req.tokenScope || 'device';
   next();
 }
 
@@ -65,27 +64,34 @@ function getTokenFromBearerIfPresent(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) {
     req.token = undefined;
-    req.tokenScope = req.tokenScope || 'device';
     return next();
   }
 
   const token = authHeader.split(" ")[1];
   if (!token) {
     req.token = undefined;
-    req.tokenScope = req.tokenScope || 'device';
     return next();
   }
 
   req.token = token;
-  req.tokenScope = req.tokenScope || 'device';
   next();
+}
+
+function resolveScope(allowedRoles = [], req) {
+  if (req?.tokenScope) {
+    return req.tokenScope;
+  }
+  if (Array.isArray(allowedRoles) && allowedRoles.length === 1 && allowedRoles[0] === 'brgy') {
+    return 'brgy';
+  }
+  return req?.tokenSource === 'cookie' ? 'web' : 'device';
 }
 
 // Verify token is valid, and role in token is role in arg
 function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for custom args
   const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
-    const scope = req.tokenScope || (req.tokenSource === 'cookie' ? 'web' : 'device');
+    const scope = resolveScope(allowedRoles, req);
     jwt.verify(
       req.token,
       getAccessTokenSecret(scope),
@@ -138,7 +144,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
       return next();
     }
 
-    const scope = req.tokenScope || (req.tokenSource === 'cookie' ? 'web' : 'device');
+    const scope = resolveScope(allowedRoles, req);
     jwt.verify(
       req.token,
       getAccessTokenSecret(scope),

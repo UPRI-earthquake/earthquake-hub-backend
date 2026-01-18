@@ -193,11 +193,11 @@ exports.authenticateAccount = async (req, res, next) => {
             accessToken: generateAccessToken({
               'username': authenticatedUsername,
               'role': result.value.role
-            }, 'device'),
+            }, result.value.role === 'brgy' ? 'brgy' : 'device'),
             refreshToken: generateRefreshToken({
               'username': authenticatedUsername,
               'role': result.value.role
-            }, 'device'),
+            }, result.value.role === 'brgy' ? 'brgy' : 'device'),
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
           });
@@ -993,7 +993,11 @@ exports.getBrgyToken = async (req, res, next) => {
       accessToken: generateAccessToken({
         'username': req.username,
         'role': req.role
-      }, 'device'),
+      }, req.role === 'brgy' ? 'brgy' : 'device'),
+      refreshToken: generateRefreshToken({
+        'username': req.username,
+        'role': req.role
+      }, req.role === 'brgy' ? 'brgy' : 'device'),
     });
     
   } catch (error) {
