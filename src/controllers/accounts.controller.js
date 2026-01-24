@@ -154,7 +154,7 @@ exports.authenticateAccount = async (req, res, next) => {
         });
         break;
       case "invalidRole":
-        message = 'Invalid role';
+        message = 'Contributor role does not match this account.';
         res.status(400).json({
           status: responseCodes.AUTHENTICATION_INVALID_ROLE,
           message: message

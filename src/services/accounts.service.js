@@ -154,7 +154,8 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
 
   // check if claimed role reflects allowed role in db
   if(!user.roles.includes(role)){
-    return maskUserNotFound ? 'invalidCredentials' : 'invalidRole';
+    // Return the specific role error so the UI can surface an accurate cause
+    return 'invalidRole';
   }
 
   // Track whether the provided password meets the current policy without blocking legacy users
