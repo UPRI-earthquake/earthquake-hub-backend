@@ -2,6 +2,23 @@ const Device = require('../models/device.model');
 const Account = require('../models/account.model');
 const {generateAMStationCode} = require('../controllers/helpers')
 
+async function clearReleasedEntries({ deviceId, streamId, macAddress }, session = null) {
+  const pullConditions = [];
+  if (deviceId) pullConditions.push({ deviceId });
+  if (streamId) pullConditions.push({ streamId });
+  if (macAddress) pullConditions.push({ macAddress });
+
+  if (!pullConditions.length) return 0;
+
+  const pullQuery = pullConditions.length === 1 ? pullConditions[0] : { $or: pullConditions };
+  const filter = { releasedDevices: { $elemMatch: pullQuery } };
+  const update = { $pull: { releasedDevices: pullQuery } };
+  const options = session ? { session } : undefined;
+
+  const result = await Account.updateMany(filter, update, options);
+  return result?.modifiedCount || result?.nModified || 0;
+}
+
 /***************************************************************************
   * getAllDeviceLocations:
   *     Retrieves all device locations from the database.
@@ -263,6 +280,11 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
       deviceOwned.activity = 'inactive';
       deviceOwned.activityToggleTime = new Date();
       await deviceOwned.save();
+      await clearReleasedEntries({
+        deviceId: deviceOwned._id,
+        streamId,
+        macAddress,
+      });
 
       const payload = {
         deviceInfo: {
@@ -287,6 +309,11 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
         streamId: deviceOwned.streamId
       }
     }
+    await clearReleasedEntries({
+      deviceId: deviceOwned._id,
+      streamId,
+      macAddress,
+    });
     return {str:'alreadyLinked', payload: payload};
   }
 
@@ -316,6 +343,11 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
       // Backfill account association if legacy unlinking removed it.
       await currentAccount.updateOne({
         $addToSet: { devices: device._id }
+      });
+      await clearReleasedEntries({
+        deviceId: device._id,
+        streamId,
+        macAddress,
       });
 
       const payload = {
@@ -358,6 +390,11 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
 
   await currentAccount.updateOne({ // update devices array under accounts collection
     $push: { devices: newDevice._id }
+  });
+  await clearReleasedEntries({
+    deviceId: newDevice._id,
+    streamId,
+    macAddress,
   });
 
   // Query updated device information
