@@ -394,7 +394,7 @@ router.route('/all').get(
   *                   type: string
   *                   description: The message associated with the response.
   *                   example: 'All device locations found'
-  *                 payload:
+  *                 devices:
   *                   type: array
   *                   description: An array of device objects
   *                   items:
@@ -420,6 +420,23 @@ router.route('/all').get(
   *                         type: string
   *                         description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
   *                         example: "Fri, 14 Jul 2023 12:40:37 GMT"
+  *                 releasedDevices:
+  *                   type: array
+  *                   description: An array of released device history entries
+  *                   items:
+  *                     type: object
+  *                     properties:
+  *                       network:
+  *                         type: string
+  *                       station:
+  *                         type: string
+  *                       description:
+  *                         type: string
+  *                       streamId:
+  *                         type: string
+  *                       releasedAt:
+  *                         type: string
+  *                         format: date-time
   *       '403':
   *         description: When no token is present in sent cookie
   *         content:

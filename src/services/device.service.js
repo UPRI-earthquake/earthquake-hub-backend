@@ -124,7 +124,17 @@ exports.getAccountDevices = async (username) => {
 
   return {
     str: 'success',
-    devices: devicePayload
+    devices: devicePayload,
+    releasedDevices: (citizen.releasedDevices || []).filter(Boolean).map((entry) => ({
+      deviceId: entry.deviceId || entry.device || null,
+      network: entry.network,
+      station: entry.station,
+      description: entry.description,
+      streamId: entry.streamId,
+      macAddress: entry.macAddress,
+      releasedAt: entry.releasedAt,
+      reason: entry.reason,
+    })),
   };
 }
 
@@ -243,6 +253,7 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   if(deviceOwned){
     // If the device is marked unlinked, treat this as a relink that restores activity only.
     if (deviceOwned.activity === 'unlinked') {
+      deviceOwned.description = `${username}'s device`;
       deviceOwned.network = (network || deviceOwned.network || '').toUpperCase();
       deviceOwned.station = (station || deviceOwned.station || '').toUpperCase();
       deviceOwned.elevation = elevation;
@@ -290,7 +301,8 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     }
 
     if (device.activity === 'unlinked') {
-      // Relink existing record without changing description/ownership.
+      // Relink existing record and refresh description/ownership.
+      device.description = `${username}'s device`;
       device.network = (network || device.network || '').toUpperCase();
       device.station = (station || device.station || '').toUpperCase();
       device.elevation = elevation;
@@ -414,10 +426,59 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
     return {str:'deviceNotOwned'};
   }
 
-  // Mark device as unlinked without removing ownership association or mutating metadata.
-  device.activity = 'unlinked';
-  device.activityToggleTime = new Date();
-  await device.save();
+  const releaseTimestamp = new Date();
+  const releaseSnapshot = {
+    deviceId: device._id,
+    streamId: device.streamId,
+    macAddress: device.macAddress,
+    network: device.network,
+    station: device.station,
+    description: device.description,
+    releasedAt: releaseTimestamp,
+    reason: 'unlink',
+  };
+
+  const applyRelease = async (session = null) => {
+    const deviceUpdate = {
+      $set: {
+        activity: 'unlinked',
+        activityToggleTime: releaseTimestamp,
+      },
+    };
+    const accountUpdate = {
+      $pull: { devices: device._id },
+      $push: { releasedDevices: releaseSnapshot },
+    };
+
+    if (session) {
+      await Device.updateOne({ _id: device._id }, deviceUpdate, { session });
+      await Account.updateOne({ _id: user._id }, accountUpdate, { session });
+      return;
+    }
+
+    await Device.updateOne({ _id: device._id }, deviceUpdate);
+    await Account.updateOne({ _id: user._id }, accountUpdate);
+  };
+
+  let session = null;
+  try {
+    session = await Account.startSession();
+    await session.withTransaction(async () => {
+      await applyRelease(session);
+    });
+  } catch (err) {
+    const message = String(err?.message || '').toLowerCase();
+    const transactionUnsupported =
+      message.includes('replica set') || message.includes('transactions are not supported');
+    if (!transactionUnsupported) {
+      throw err;
+    }
+    await applyRelease();
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
 
   return {str:'success'}
 }

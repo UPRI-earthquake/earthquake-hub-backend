@@ -64,6 +64,7 @@ exports.getOwnedDevices = async (req, res, next) => {
           status: responseCodes.GENERIC_SUCCESS,
           message,
           devices: returnObj.devices,
+          releasedDevices: returnObj.releasedDevices || [],
         });
         break;
       default:
@@ -262,6 +263,7 @@ exports.linkDevice = async (req, res, next) => {
         res.status(409).json({
           status: responseCodes.GENERIC_ERROR,
           message: message,
+          errorCode: 'DEVICE_LINKED_TO_OTHER_ACCOUNT',
         });
         break;
       case 'invalidRole':

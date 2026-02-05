@@ -76,6 +76,16 @@ const AccountSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Device'
   },],
+  releasedDevices: [{
+    deviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device' },
+    streamId: String,
+    macAddress: String,
+    network: String,
+    station: String,
+    description: String,
+    releasedAt: { type: Date, default: Date.now },
+    reason: { type: String, default: 'unlink' },
+  }],
   ringserverUrl: String,
   ringserverPort: Number,
 }, {
