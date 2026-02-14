@@ -33,10 +33,10 @@ exports.subscribe = async (req, res, next) => {
         }),
     }).required(),
     clientMeta: Joi.object({
-      swScriptUrl: Joi.string().uri().optional(),
-      userAgent: Joi.string().max(500).optional(),
-      appVersion: Joi.string().max(80).optional(),
-      time: Joi.alternatives().try(Joi.date(), Joi.number(), Joi.string()).optional(),
+      swScriptUrl: Joi.string().uri().allow(null).optional(),
+      userAgent: Joi.string().max(500).allow(null).optional(),
+      appVersion: Joi.string().max(80).allow(null).optional(),
+      time: Joi.alternatives().try(Joi.date(), Joi.number(), Joi.string(), Joi.valid(null)).optional(),
     }).optional(),
   });
 
