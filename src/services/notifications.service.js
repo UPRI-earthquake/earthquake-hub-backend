@@ -10,6 +10,29 @@ webpush.setVapidDetails(
 );
 
 const minMagnitudeToNotify = 5.5 // Only notify when EQevent is stronger than this mag
+const invalidCleanupDays = (() => {
+  const n = Number.parseInt(process.env.NOTIF_INVALID_TTL_DAYS, 10);
+  return Number.isFinite(n) && n > 0 ? n : 7;
+})();
+const INVALID_SUBSCRIPTION_CODES = new Set([400, 404, 410]);
+
+const daysFromNow = (days, now = new Date()) => {
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+};
+
+const normalizeExpirationTime = (raw) => {
+  if (raw === null || typeof raw === 'undefined') return null;
+  const asNum = Number(raw);
+  if (Number.isFinite(asNum)) return asNum;
+  const asDate = new Date(raw).getTime();
+  return Number.isFinite(asDate) ? asDate : null;
+};
+
+const normalizeOptionalDate = (raw) => {
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isFinite(ms) ? new Date(ms) : null;
+};
 
 /***************************************************************************
   * notifySubscribersEQ:
@@ -32,75 +55,120 @@ const minMagnitudeToNotify = 5.5 // Only notify when EQevent is stronger than th
   *       invalid subscription from the database.
  ***************************************************************************/
 const notifySubscribersEQ = async (message) =>{
-  if(message.magnitude_value > minMagnitudeToNotify){
-    let updatedEvent = await EQEventsService.addPlacesAttribute([message])
-    updatedEvent = updatedEvent[0]
+  if (!(message.magnitude_value > minMagnitudeToNotify)) {
+    return 'success';
+  }
+  let updatedEvent = await EQEventsService.addPlacesAttribute([message])
+  updatedEvent = updatedEvent[0]
 
-    const place = updatedEvent.place
-    const hasUsablePlace =
-      place &&
-      place.toString().trim().length > 0 &&
-      place.toLowerCase() !== 'unavailable' &&
-      place.toLowerCase() !== 'nominatim unavailable'
+  const place = updatedEvent.place
+  const hasUsablePlace =
+    place &&
+    place.toString().trim().length > 0 &&
+    place.toLowerCase() !== 'unavailable' &&
+    place.toLowerCase() !== 'nominatim unavailable'
 
-    const address = hasUsablePlace
-      ? place
-      : (updatedEvent.text || 'Unknown location')
+  const address = hasUsablePlace
+    ? place
+    : (updatedEvent.text || 'Unknown location')
 
-    const eventTypeRaw = updatedEvent.eventType || message.eventType || 'NEW'
-    const eventType = String(eventTypeRaw || '').toUpperCase()
-    const publicID = updatedEvent.publicID || message.publicID || null
-    const title = eventType === 'UPDATE' ? 'Earthquake Update' : 'Earthquake Alert'
-    const payload = JSON.stringify({
-      title,
-      body: `Magnitude ${updatedEvent.magnitude_value} in ${address}`,
-      data: {
-        eventType,
-        publicID,
-        magnitude_value: updatedEvent.magnitude_value,
-        place: address,
-        last_modification: updatedEvent.last_modification || message.last_modification || null,
-      },
-    })
+  const eventTypeRaw = updatedEvent.eventType || message.eventType || 'NEW'
+  const eventType = String(eventTypeRaw || '').toUpperCase()
+  const publicID = updatedEvent.publicID || message.publicID || null
+  const title = eventType === 'UPDATE' ? 'Earthquake Update' : 'Earthquake Alert'
+  const payload = JSON.stringify({
+    title,
+    body: `Magnitude ${updatedEvent.magnitude_value} in ${address}`,
+    data: {
+      eventType,
+      publicID,
+      magnitude_value: updatedEvent.magnitude_value,
+      place: address,
+      last_modification: updatedEvent.last_modification || message.last_modification || null,
+    },
+  })
 
-    if(mongoose.connection.readyState === 1) { // connected to MongoDB
-      const subscribers = await Subscription.find({});
-      subscribers.forEach(subscriber => {
-        webpush
-          .sendNotification(subscriber, payload)
-          .then(() => {
-            console.log(`Sent notif to ${subscriber._id}`)
-          })
-          .catch((err) => {
-            const status = err && err.statusCode
-            switch (status) {
-              case 400:
-              case 404: // Not Found
-              case 410:
-                console.log(`Subscription gone for ${subscriber._id}`)
-                Subscription.deleteOne({ _id: subscriber._id })
-                  .then(() => console.log(`Deleted ${subscriber._id}`))
-                  .catch((deleteErr) =>
-                    console.error(
-                      `Failed to delete ${subscriber._id}:`,
-                      deleteErr?.message || deleteErr
-                    )
-                  )
-                break;
-              default:
-                console.error(
-                  `Unhandled error in sendNotification():`,
-                  status || '',
-                  err?.message || err
-                )
+  if(mongoose.connection.readyState === 1) { // connected to MongoDB
+    const subscribers = await Subscription.find({ status: { $ne: 'invalid' } });
+    const sendTasks = subscribers.map((subscriber) => {
+      return webpush
+        .sendNotification(subscriber, payload)
+        .then(async () => {
+          console.log(`Sent notif to ${subscriber._id}`)
+          const now = new Date();
+          await Subscription.updateOne(
+            { _id: subscriber._id },
+            {
+              $set: {
+                status: 'active',
+                lastDeliveredAt: now,
+                consecutiveFailures: 0,
+              },
+              $unset: {
+                lastFailureAt: '',
+                lastFailureCode: '',
+                invalidatedAt: '',
+                cleanupAfter: '',
+              },
+            },
+          );
+        })
+        .catch(async (err) => {
+          const status = err && err.statusCode
+          const now = new Date();
+          if (INVALID_SUBSCRIPTION_CODES.has(status)) {
+            console.log(`Subscription gone for ${subscriber._id}`)
+            try {
+              await Subscription.updateOne(
+                { _id: subscriber._id },
+                {
+                  $set: {
+                    status: 'invalid',
+                    invalidatedAt: now,
+                    cleanupAfter: daysFromNow(invalidCleanupDays, now),
+                    lastFailureAt: now,
+                    lastFailureCode: Number.isFinite(status) ? status : 410,
+                  },
+                  $inc: { consecutiveFailures: 1 },
+                },
+              );
+            } catch (updateErr) {
+              console.error(
+                `Failed to mark ${subscriber._id} invalid:`,
+                updateErr?.message || updateErr,
+              );
             }
-          })
-      })
-      return 'success'
-    }else{
-      console.warn("Can't access subscriptions, MongoDB not connected");
-      return 'dbNotAccessible';
-    }
+            return;
+          }
+          console.error(
+            `Unhandled error in sendNotification():`,
+            status || '',
+            err?.message || err
+          )
+          try {
+            await Subscription.updateOne(
+              { _id: subscriber._id },
+              {
+                $set: {
+                  lastFailureAt: now,
+                  lastFailureCode: Number.isFinite(status) ? status : null,
+                },
+                $inc: { consecutiveFailures: 1 },
+              },
+            );
+          } catch (updateErr) {
+            console.error(
+              `Failed to track failure for ${subscriber._id}:`,
+              updateErr?.message || updateErr,
+            );
+          }
+        });
+    });
+    await Promise.allSettled(sendTasks);
+    return 'success'
+  }else{
+    console.warn("Can't access subscriptions, MongoDB not connected");
+    return 'dbNotAccessible';
   }
 }
 
@@ -123,18 +191,51 @@ const notifySubscribersEQ = async (message) =>{
  ***************************************************************************/
 const createSubscription = async (subscriptionRequest) =>{
   if(mongoose.connection.readyState === 1) { // connected to MongoDB
+    const now = new Date();
+    const expirationTime = normalizeExpirationTime(subscriptionRequest.expirationTime);
+    const clientMeta = subscriptionRequest.clientMeta || {};
+    const setDoc = {
+      expirationTime,
+      keys: subscriptionRequest.keys,
+      status: 'active',
+      lastSeenAt: now,
+      consecutiveFailures: 0,
+      clientMeta: {
+        userAgent: clientMeta.userAgent || null,
+        appVersion: clientMeta.appVersion || null,
+        clientTime: normalizeOptionalDate(clientMeta.time),
+      },
+    };
+    if (typeof clientMeta.swScriptUrl === 'string' && clientMeta.swScriptUrl.trim()) {
+      setDoc.sourceSwScript = clientMeta.swScriptUrl.trim();
+    }
 
-    const subExists = await Subscription.exists(
-      {endpoint: subscriptionRequest.endpoint}
-    )
-
-    if(subExists){
+    const writeResult = await Subscription.findOneAndUpdate(
+      { endpoint: subscriptionRequest.endpoint },
+      {
+        $set: setDoc,
+        $unset: {
+          invalidatedAt: '',
+          cleanupAfter: '',
+          lastFailureAt: '',
+          lastFailureCode: '',
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        rawResult: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+    const wasCreated = Boolean(
+      writeResult && writeResult.lastErrorObject && writeResult.lastErrorObject.upserted,
+    );
+    if(!wasCreated){
       console.log('Old subscription found');
       return 'subscriptionExists';
     }
 
-    const subscription = new Subscription(subscriptionRequest);
-    await subscription.save();
     console.log('New subscription created')
     return 'success'
 
