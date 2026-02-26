@@ -100,6 +100,20 @@ function normalizeAlertCode(rawCode, messageType) {
   return 'ALERT';
 }
 
+function isAdminOnlyAlert(eventDetails = {}, payload = {}) {
+  const alertCode = normalizeText(eventDetails.alertCode || payload.alertCode).toUpperCase();
+  if (alertCode.startsWith('AUTO_UPDATE_')) {
+    return true;
+  }
+
+  const scope = normalizeText(
+    payload?.details?.notificationScope
+      || payload?.details?.recipientScope
+      || payload?.details?.audience,
+  ).toLowerCase();
+  return scope === 'admin-only' || scope === 'admin';
+}
+
 function normalizeIsoTimestamp(rawTimestamp) {
   const parsed = new Date(rawTimestamp || Date.now());
   if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
@@ -279,6 +293,7 @@ function buildUserTextBody(eventDetails) {
 async function sendDeviceAlertEmails(payload = {}) {
   const resolvedDevice = await resolveDevice(payload);
   const eventDetails = buildEventDetails(payload, resolvedDevice);
+  const adminOnly = isAdminOnlyAlert(eventDetails, payload);
 
   if (eventDetails.messageType === HEARTBEAT_TYPE) {
     return {
@@ -296,7 +311,9 @@ async function sendDeviceAlertEmails(payload = {}) {
   const optedInRecipients = await getOptedInRecipients(resolvedDevice?._id);
   const adminRecipients = dedupeEmails(getAdminRecipients());
   const adminSet = new Set(adminRecipients.map((email) => email.toLowerCase()));
-  const userRecipients = optedInRecipients.filter((email) => !adminSet.has(email.toLowerCase()));
+  const userRecipients = adminOnly
+    ? []
+    : optedInRecipients.filter((email) => !adminSet.has(email.toLowerCase()));
 
   const threadRoot = buildThreadRootMessageId();
   const commonHeaders = {
