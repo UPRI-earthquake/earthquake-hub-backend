@@ -176,6 +176,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   const passwordStatus = (updatedPolicyVersion >= CURRENT_PASSWORD_POLICY_VERSION && meetsCurrentPolicy)
     ? 'current'
     : 'legacy';
+  const rshakeEmailEnabled = Boolean(user.alertPreferences?.rshakeEmailEnabled);
 
   switch(role) {
     case 'sensor':
@@ -184,6 +185,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         username,
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
+        rshakeEmailEnabled,
       };
     case 'brgy':
       // check if brgy account is approved
@@ -195,6 +197,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         username,
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
+        rshakeEmailEnabled,
       };
     case 'citizen':
       return {
@@ -202,9 +205,16 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         username,
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
+        rshakeEmailEnabled,
       };
   }
-  return { str: "success", username, passwordStatus, passwordPolicyVersion: updatedPolicyVersion };
+  return {
+    str: "success",
+    username,
+    passwordStatus,
+    passwordPolicyVersion: updatedPolicyVersion,
+    rshakeEmailEnabled,
+  };
 }
 
 /***************************************************************************
@@ -413,9 +423,54 @@ exports.getAccountProfile = async (username) => {
         roles: citizen.roles || [],
         passwordPolicyVersion: citizen.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION,
         passwordUpdatedAt: citizen.passwordUpdatedAt,
+        alertPreferences: {
+          rshakeEmailEnabled: Boolean(citizen.alertPreferences?.rshakeEmailEnabled),
+          updatedAt: citizen.alertPreferences?.updatedAt || null,
+        },
       }
     }
 }
+
+/**
+ * Update alert preferences for a logged-in user.
+ * @param {string} username
+ * @param {Object} updates
+ * @param {boolean} updates.rshakeEmailEnabled Whether device alert emails are enabled.
+ * @returns {Promise<Object>} outcome descriptor
+ */
+exports.updateAlertPreferences = async (username, { rshakeEmailEnabled }) => {
+  const account = await User.findOne({ username });
+  if (!account) {
+    return { str: 'accountNotExists' };
+  }
+
+  const nextValue = Boolean(rshakeEmailEnabled);
+  const currentValue = Boolean(account.alertPreferences?.rshakeEmailEnabled);
+  if (currentValue === nextValue) {
+    return {
+      str: 'noChanges',
+      alertPreferences: {
+        rshakeEmailEnabled: currentValue,
+        updatedAt: account.alertPreferences?.updatedAt || null,
+      },
+    };
+  }
+
+  account.alertPreferences = {
+    ...(account.alertPreferences || {}),
+    rshakeEmailEnabled: nextValue,
+    updatedAt: new Date(),
+  };
+  await account.save();
+
+  return {
+    str: 'success',
+    alertPreferences: {
+      rshakeEmailEnabled: Boolean(account.alertPreferences?.rshakeEmailEnabled),
+      updatedAt: account.alertPreferences?.updatedAt || null,
+    },
+  };
+};
 
 /**
  * Update account email and/or password for a logged-in user.

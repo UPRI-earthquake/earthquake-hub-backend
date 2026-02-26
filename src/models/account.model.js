@@ -88,6 +88,13 @@ const AccountSchema = new mongoose.Schema({
   }],
   ringserverUrl: String,
   ringserverPort: Number,
+  alertPreferences: {
+    rshakeEmailEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    updatedAt: Date,
+  },
 }, {
 
   timestamps: { //Mongoose automatic timestamps

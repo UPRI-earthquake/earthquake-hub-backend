@@ -183,6 +183,9 @@ exports.authenticateAccount = async (req, res, next) => {
             username: authenticatedUsername,
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
+            alertPreferences: {
+              rshakeEmailEnabled: Boolean(loginResult?.rshakeEmailEnabled),
+            },
           })
         } else { // origin is not from web app
           res.status(200).json({
@@ -200,6 +203,9 @@ exports.authenticateAccount = async (req, res, next) => {
             }, result.value.role === 'brgy' ? 'brgy' : 'device'),
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
+            alertPreferences: {
+              rshakeEmailEnabled: Boolean(loginResult?.rshakeEmailEnabled),
+            },
           });
         }
         
@@ -213,6 +219,9 @@ exports.authenticateAccount = async (req, res, next) => {
           username: authenticatedUsername,
           passwordStatus: loginResult?.passwordStatus,
           passwordPolicyVersion: loginResult?.passwordPolicyVersion,
+          alertPreferences: {
+            rshakeEmailEnabled: Boolean(loginResult?.rshakeEmailEnabled),
+          },
         });
         break;
       default:
@@ -581,6 +590,10 @@ exports.getAccountProfile = async (req, res, next) => {
             passwordPolicyVersion: returnObj.profile.passwordPolicyVersion,
             passwordUpdatedAt: returnObj.profile.passwordUpdatedAt,
             passwordStatus,
+            alertPreferences: {
+              rshakeEmailEnabled: Boolean(returnObj.profile.alertPreferences?.rshakeEmailEnabled),
+              updatedAt: returnObj.profile.alertPreferences?.updatedAt || null,
+            },
           } 
         });
         break;
@@ -686,6 +699,53 @@ exports.updateAccountProfile = async (req, res, next) => {
     }
   } catch (error) {
     console.error('Unable to update account profile:', error?.message || error);
+    next(error);
+  }
+};
+
+exports.updateAlertPreferences = async (req, res, next) => {
+  const schema = Joi.object()
+    .keys({
+      rshakeEmailEnabled: Joi.boolean().required(),
+    })
+    .messages({
+      'any.required': '{#label} is required.',
+      'boolean.base': '{#label} must be true or false.',
+    });
+
+  try {
+    const result = schema.validate(req.body, { abortEarly: false });
+    if (result.error) throw result.error;
+
+    const outcome = await AccountsService.updateAlertPreferences(req.username, {
+      rshakeEmailEnabled: result.value.rshakeEmailEnabled,
+    });
+
+    switch (outcome.str) {
+      case 'accountNotExists':
+        res.status(404).json({
+          status: responseCodes.AUTHENTICATION_USER_NOT_EXIST,
+          message: 'User not found.',
+        });
+        return;
+      case 'noChanges':
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: outcome.str === 'success'
+            ? 'Alert preference updated.'
+            : 'Alert preference unchanged.',
+          payload: {
+            alertPreferences: outcome.alertPreferences,
+          },
+        });
+        res.message = 'Alert preference updated.';
+        return;
+      default:
+        throw Error(`Unhandled return value ${outcome.str} from updateAlertPreferences()`);
+    }
+  } catch (error) {
+    console.error('Unable to update alert preferences:', error?.message || error);
     next(error);
   }
 };

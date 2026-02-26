@@ -606,6 +606,12 @@ router.route('/profile').patch(
   AccountsController.updateAccountProfile
 );
 
+router.route('/alert-preferences').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAlertPreferences
+);
+
 router.route('/email').patch(
   Middleware.getTokenFromCookie,
   Middleware.verifyTokenWithRole(['citizen', 'brgy']),
