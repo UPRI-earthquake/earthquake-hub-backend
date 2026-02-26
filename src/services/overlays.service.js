@@ -5,6 +5,7 @@ const path = require('path');
 const OVERLAY_PATHS = {
   faults: path.join(__dirname, '..', 'data', 'overlays', 'faults.geojson'),
   plates: path.join(__dirname, '..', 'data', 'overlays', 'plates.geojson'),
+  par: path.join(__dirname, '..', 'data', 'overlays', 'par.geojson'),
 };
 
 async function loadOverlay(key) {

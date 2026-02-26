@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "par",
+        "name": "Philippine Area of Responsibility",
+        "source": "PAGASA"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [115, 5],
+            [115, 15],
+            [120, 21],
+            [120, 25],
+            [135, 25],
+            [135, 5],
+            [115, 5]
+          ]
+        ]
+      }
+    }
+  ]
+}

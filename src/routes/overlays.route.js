@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { loadOverlay } = require('../services/overlays.service');
 
-// Serve cached overlay GeoJSON (faults/plates) from local disk.
-// These are static assets refreshed via scripts/fetch-overlays.js
+// Serve cached overlay GeoJSON (faults/plates/par) from local disk.
+// These are static assets in src/data/overlays/; faults/plates can be refreshed
+// via scripts/fetch-overlays.js.
 const sendOverlay = (key) => async (req, res, next) => {
   try {
     const { buf, mtime } = await loadOverlay(key);
@@ -54,5 +55,23 @@ router.get('/faults', sendOverlay('faults'));
  *         description: Overlay not available
  */
 router.get('/plates', sendOverlay('plates'));
+
+/**
+ * @swagger
+ * /overlays/par:
+ *   get:
+ *     summary: Returns PAR (Philippine Area of Responsibility) GeoJSON
+ *     tags: [Overlays]
+ *     responses:
+ *       200:
+ *         description: GeoJSON FeatureCollection
+ *         content:
+ *           application/geo+json:
+ *             schema:
+ *               type: object
+ *       404:
+ *         description: Overlay not available
+ */
+router.get('/par', sendOverlay('par'));
 
 module.exports = router;

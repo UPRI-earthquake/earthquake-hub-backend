@@ -2588,6 +2588,29 @@
           }
         }
       }
+    },
+    "/overlays/par": {
+      "get": {
+        "summary": "Returns PAR (Philippine Area of Responsibility) GeoJSON",
+        "tags": [
+          "Overlays"
+        ],
+        "responses": {
+          "200": {
+            "description": "GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Overlay not available"
+          }
+        }
+      }
     }
   },
   "tags": []
