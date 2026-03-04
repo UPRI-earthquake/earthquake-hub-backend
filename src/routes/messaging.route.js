@@ -206,6 +206,8 @@ router.post(`${restrictedPath}/new-pick`,
   *     description: >
   *       Restricted endpoint for trusted sender integrations. Stores no state by default;
   *       validates payload then dispatches alert emails to opted-in account owners and admin monitors.
+  *       If `RSHAKE_ALERT_SHARED_SECRET` is configured, caller must send
+  *       `X-RShake-Alert-Secret` header.
   *     tags: [Messaging]
   *     requestBody:
   *       required: true
@@ -237,6 +239,7 @@ router.post(`${restrictedPath}/new-pick`,
   *         description: Email delivery error
   */
 router.post(`${restrictedPath}/rshake-alert`,
+  MessagingMiddleware.requireRshakeAlertSecret,
   MessagingController.newRshakeAlert
 );
 

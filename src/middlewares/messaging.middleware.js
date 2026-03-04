@@ -1,4 +1,5 @@
 const MessagingService = require('../services/messaging.service')
+const crypto = require('crypto');
 
 // create helper middleware so we can reuse server-sent events
 const SSEFormatting= (req, res, next) => {
@@ -40,10 +41,32 @@ const missedEventsResender = (req, res, next) => {
   next();
 }
 
-module.exports = {
-  SSEFormatting,
-  missedEventsResender
+function secretsMatch(provided, expected) {
+  const providedBuffer = Buffer.from(String(provided || ''), 'utf8');
+  const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
+  if (providedBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
+const requireRshakeAlertSecret = (req, res, next) => {
+  const expectedSecret = String(process.env.RSHAKE_ALERT_SHARED_SECRET || '').trim();
+  if (!expectedSecret) return next();
 
+  const providedSecret = String(req.get('X-RShake-Alert-Secret') || '').trim();
+  if (!secretsMatch(providedSecret, expectedSecret)) {
+    res.message = 'Rejected sender alert request (shared secret mismatch)';
+    return res.status(403).json({
+      status: 403,
+      message: 'Forbidden',
+    });
+  }
+
+  return next();
+}
+
+module.exports = {
+  SSEFormatting,
+  missedEventsResender,
+  requireRshakeAlertSecret,
+}
 
