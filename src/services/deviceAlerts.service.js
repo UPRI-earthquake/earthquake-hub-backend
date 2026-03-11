@@ -102,7 +102,12 @@ function normalizeAlertCode(rawCode, messageType) {
 
 function isAdminOnlyAlert(eventDetails = {}, payload = {}) {
   const alertCode = normalizeText(eventDetails.alertCode || payload.alertCode).toUpperCase();
-  if (alertCode.startsWith('AUTO_UPDATE_')) {
+  if (
+    alertCode.startsWith('AUTO_UPDATE_')
+    || alertCode.startsWith('DISK_SPACE_')
+    || alertCode.startsWith('TOKEN_REFRESH_')
+    || alertCode.startsWith('WATCHDOG_')
+  ) {
     return true;
   }
 

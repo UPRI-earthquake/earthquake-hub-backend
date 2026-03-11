@@ -80,6 +80,39 @@ describe('deviceAlerts.service admin-only routing', () => {
     });
   });
 
+  it('routes DISK_SPACE alerts to admin recipients only', async () => {
+    mockAccounts(['user1@example.com']);
+
+    const result = await DeviceAlertsService.sendDeviceAlertEmails(basePayload('DISK_SPACE_WARN'));
+
+    expect(result.str).toBe('success');
+    expect(result.recipients.users).toEqual([]);
+    expect(result.recipients.admin).toEqual(['earthquake@science.upd.edu.ph']);
+    expect(EmailService.sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes TOKEN_REFRESH alerts to admin recipients only', async () => {
+    mockAccounts(['user1@example.com']);
+
+    const result = await DeviceAlertsService.sendDeviceAlertEmails(basePayload('TOKEN_REFRESH_FAILED'));
+
+    expect(result.str).toBe('success');
+    expect(result.recipients.users).toEqual([]);
+    expect(result.recipients.admin).toEqual(['earthquake@science.upd.edu.ph']);
+    expect(EmailService.sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes WATCHDOG alerts to admin recipients only', async () => {
+    mockAccounts(['user1@example.com']);
+
+    const result = await DeviceAlertsService.sendDeviceAlertEmails(basePayload('WATCHDOG_CONTAINER_RESTART_FAILED'));
+
+    expect(result.str).toBe('success');
+    expect(result.recipients.users).toEqual([]);
+    expect(result.recipients.admin).toEqual(['earthquake@science.upd.edu.ph']);
+    expect(EmailService.sendMail).toHaveBeenCalledTimes(1);
+  });
+
   it('routes notificationScope=admin-only to admin recipients only', async () => {
     mockAccounts(['user1@example.com']);
 
