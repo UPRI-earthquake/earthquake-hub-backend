@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
+const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
 const jwt = require('jsonwebtoken');
@@ -477,3 +478,155 @@ exports.resetDeviceLink = async (req, res, next) => {
     next(error);
   }
 }
+
+exports.enrollDeviceTunnel = async (req, res, next) => {
+  const schema = Joi.object({
+    deviceId: Joi.string().trim().max(128),
+    deviceUuid: Joi.string().trim().max(128),
+    network: Joi.string().trim().regex(/^[A-Z0-9]{2,10}$/),
+    station: Joi.string().trim().regex(/^[A-Z0-9]{1,10}$/),
+    tunnelPublicKey: Joi.string().trim().min(32).max(4096).required(),
+    bastionUser: Joi.string().trim().regex(/^[a-z_][a-z0-9._-]{0,31}$/),
+    remotePort: Joi.number().integer().min(1).max(65535),
+  }).required();
+
+  try {
+    const { error, value } = schema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.VALIDATION_ERROR,
+        message: formatErrorMessage(error.details[0].message),
+      });
+    }
+
+    const networkStationId = value.network && value.station
+      ? `${value.network}_${value.station}`
+      : null;
+    const resolvedDeviceId = value.deviceId || value.deviceUuid || networkStationId;
+
+    if (!resolvedDeviceId) {
+      return res.status(400).json({
+        status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.VALIDATION_ERROR,
+        message: 'Device identity is required (deviceId, deviceUuid, or network+station).',
+      });
+    }
+
+    const mapping = await TunnelEnrollmentService.enrollDeviceTunnel({
+      deviceId: resolvedDeviceId,
+      tunnelPublicKey: value.tunnelPublicKey,
+      bastionUser: value.bastionUser,
+      remotePort: value.remotePort,
+    });
+
+    const payload = {
+      deviceId: resolvedDeviceId,
+      REMOTE_TUNNEL_BASTION_HOST: mapping.REMOTE_TUNNEL_BASTION_HOST,
+      REMOTE_TUNNEL_BASTION_PORT: mapping.REMOTE_TUNNEL_BASTION_PORT,
+      REMOTE_TUNNEL_BASTION_USER: mapping.REMOTE_TUNNEL_BASTION_USER,
+      REMOTE_TUNNEL_REMOTE_PORT: mapping.REMOTE_TUNNEL_REMOTE_PORT,
+    };
+
+    if (mapping.REMOTE_TUNNEL_BASTION_HOST_KEY) {
+      payload.REMOTE_TUNNEL_BASTION_HOST_KEY = mapping.REMOTE_TUNNEL_BASTION_HOST_KEY;
+    }
+
+    res.status(200).json({
+      status: responseCodes.TUNNEL_ENROLL_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Device tunnel enrollment successful',
+      payload,
+    });
+    res.message = 'Device tunnel enrollment successful';
+  } catch (error) {
+    if (error?.name === 'TunnelEnrollmentError') {
+      const code = error.code || 'SCRIPT_ERROR';
+      const message = error.message || 'Tunnel enrollment failed';
+      if (code === 'COLLISION') {
+        return res.status(409).json({
+          status: responseCodes.TUNNEL_ENROLL_COLLISION || responseCodes.GENERIC_ERROR,
+          message,
+        });
+      }
+      if (code === 'VALIDATION') {
+        return res.status(400).json({
+          status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.VALIDATION_ERROR,
+          message,
+        });
+      }
+      if (code === 'CONFIG_ERROR') {
+        return res.status(500).json({
+          status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.GENERIC_ERROR,
+          message,
+        });
+      }
+      return res.status(502).json({
+        status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.GENERIC_ERROR,
+        message,
+      });
+    }
+    next(error);
+  }
+};
+
+exports.listDeviceTunnels = async (req, res, next) => {
+  try {
+    const mappings = await TunnelEnrollmentService.listActiveMappings();
+    res.status(200).json({
+      status: responseCodes.TUNNEL_LIST_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Active tunnel mappings retrieved',
+      payload: mappings,
+    });
+    res.message = 'Active tunnel mappings retrieved';
+  } catch (error) {
+    if (error?.name === 'TunnelEnrollmentError') {
+      return res.status(500).json({
+        status: responseCodes.TUNNEL_LIST_ERROR || responseCodes.GENERIC_ERROR,
+        message: error.message || 'Failed to list tunnel mappings',
+      });
+    }
+    next(error);
+  }
+};
+
+exports.revokeDeviceTunnel = async (req, res, next) => {
+  const schema = Joi.object({
+    deviceId: Joi.string().trim().max(128).required(),
+  }).required();
+
+  try {
+    const { error, value } = schema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        status: responseCodes.TUNNEL_REVOKE_ERROR || responseCodes.VALIDATION_ERROR,
+        message: formatErrorMessage(error.details[0].message),
+      });
+    }
+
+    const revoked = await TunnelEnrollmentService.revokeDeviceTunnel(value.deviceId);
+    res.status(200).json({
+      status: responseCodes.TUNNEL_REVOKE_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Device tunnel revoked',
+      payload: revoked,
+    });
+    res.message = 'Device tunnel revoked';
+  } catch (error) {
+    if (error?.name === 'TunnelEnrollmentError') {
+      if (error.code === 'NOT_FOUND') {
+        return res.status(404).json({
+          status: responseCodes.TUNNEL_REVOKE_ERROR || responseCodes.GENERIC_ERROR,
+          message: error.message || 'Device mapping not found',
+        });
+      }
+      if (error.code === 'VALIDATION') {
+        return res.status(400).json({
+          status: responseCodes.TUNNEL_REVOKE_ERROR || responseCodes.VALIDATION_ERROR,
+          message: error.message || 'Invalid revoke request',
+        });
+      }
+      return res.status(502).json({
+        status: responseCodes.TUNNEL_REVOKE_ERROR || responseCodes.GENERIC_ERROR,
+        message: error.message || 'Failed to revoke device tunnel',
+      });
+    }
+    next(error);
+  }
+};

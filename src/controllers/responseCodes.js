@@ -55,6 +55,14 @@ const responseCodes = {
   LINK_RESET_SUCCESS:         62,
   LINK_RESET_ERROR:          162,
 
+  TUNNEL_ENROLL_SUCCESS:      80,
+  TUNNEL_LIST_SUCCESS:        81,
+  TUNNEL_REVOKE_SUCCESS:      82,
+  TUNNEL_ENROLL_ERROR:       190,
+  TUNNEL_ENROLL_COLLISION:   191,
+  TUNNEL_LIST_ERROR:         192,
+  TUNNEL_REVOKE_ERROR:       193,
+
   PASSWORD_RESET_REQUESTED:   70,
   PASSWORD_RESET_SUCCESS:     71,
   PASSWORD_RESET_INVALID:    170,
@@ -100,6 +108,13 @@ const responseMessages = {
   ACCOUNT_DELETE_HAS_DEVICES: "Account deletion blocked: Devices are still linked",
   LINK_RESET_SUCCESS: "Device link reset",
   LINK_RESET_ERROR: "Device link reset error",
+  TUNNEL_ENROLL_SUCCESS: "Device tunnel enrollment success",
+  TUNNEL_LIST_SUCCESS: "Device tunnel mapping list success",
+  TUNNEL_REVOKE_SUCCESS: "Device tunnel revoke success",
+  TUNNEL_ENROLL_ERROR: "Device tunnel enrollment error",
+  TUNNEL_ENROLL_COLLISION: "Device tunnel enrollment collision",
+  TUNNEL_LIST_ERROR: "Device tunnel mapping list error",
+  TUNNEL_REVOKE_ERROR: "Device tunnel revoke error",
 };
 
 module.exports = {

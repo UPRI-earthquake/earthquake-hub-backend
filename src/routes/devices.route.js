@@ -282,6 +282,24 @@ router.route('/reset-link').post(
   DeviceController.resetDeviceLink,
 );
 
+router.route('/tunnel/enroll').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.enrollDeviceTunnel,
+);
+
+router.route('/tunnel/mappings').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.listDeviceTunnels,
+);
+
+router.route('/tunnel/revoke').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.revokeDeviceTunnel,
+);
+
 
 /**
   * @swagger
