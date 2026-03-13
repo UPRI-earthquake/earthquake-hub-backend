@@ -165,6 +165,12 @@ router.route('/refresh-token').post(
   DeviceController.refreshToken
 );
 
+router.route('/alert-credential').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.issueRshakeAlertCredential,
+);
+
 
 /**
   * @swagger

@@ -480,6 +480,8 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
       $set: {
         activity: 'unlinked',
         activityToggleTime: releaseTimestamp,
+        rshakeAlertCredentialHash: null,
+        rshakeAlertCredentialIssuedAt: null,
       },
     };
     const accountUpdate = {

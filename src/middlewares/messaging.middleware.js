@@ -1,5 +1,6 @@
 const MessagingService = require('../services/messaging.service')
 const crypto = require('crypto');
+const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
 
 // create helper middleware so we can reuse server-sent events
 const SSEFormatting= (req, res, next) => {
@@ -48,20 +49,36 @@ function secretsMatch(provided, expected) {
   return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
-const requireRshakeAlertSecret = (req, res, next) => {
+const requireRshakeAlertSecret = async (req, res, next) => {
   const expectedSecret = String(process.env.RSHAKE_ALERT_SHARED_SECRET || '').trim();
-  if (!expectedSecret) return next();
-
   const providedSecret = String(req.get('X-RShake-Alert-Secret') || '').trim();
-  if (!secretsMatch(providedSecret, expectedSecret)) {
-    res.message = 'Rejected sender alert request (shared secret mismatch)';
-    return res.status(403).json({
-      status: 403,
-      message: 'Forbidden',
-    });
+
+  if (expectedSecret && secretsMatch(providedSecret, expectedSecret)) {
+    return next();
   }
 
-  return next();
+  try {
+    const deviceSecretResult = await RshakeAlertCredentialsService.verifyDeviceAlertCredential({
+      providedSecret,
+      device: req.body?.device,
+    });
+
+    if (deviceSecretResult?.matched) {
+      return next();
+    }
+
+    if (!expectedSecret && !deviceSecretResult?.required) {
+      return next();
+    }
+  } catch (error) {
+    return next(error);
+  }
+
+  res.message = 'Rejected sender alert request (shared secret mismatch)';
+  return res.status(403).json({
+    status: 403,
+    message: 'Forbidden',
+  });
 }
 
 module.exports = {
@@ -69,4 +86,3 @@ module.exports = {
   missedEventsResender,
   requireRshakeAlertSecret,
 }
-

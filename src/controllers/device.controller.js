@@ -2,6 +2,7 @@ const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
+const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
 const jwt = require('jsonwebtoken');
@@ -214,11 +215,23 @@ exports.linkDevice = async (req, res, next) => {
       message = 'Device-Account already linked';
       status = responseCodes.LINKING_ALREADY_DONE
     }
+    const alertCredential = await RshakeAlertCredentialsService.issueAlertCredentialForOwnedDevice({
+      username,
+      identifiers: {
+        macAddress,
+        streamId,
+      },
+    });
+    if (alertCredential.str !== 'success') {
+      throw new Error(alertCredential.str);
+    }
+
     res.status(200).json({
       status: status,
       message: message,
       payload: {
         ...returnObj.payload,
+        rshakeAlertCredential: alertCredential.payload,
         accessToken: generateAccessToken({
           'username': username,
           'role': role
@@ -279,6 +292,15 @@ exports.linkDevice = async (req, res, next) => {
         res.status(400).json({
           status: responseCodes.GENERIC_ERROR,
           message: message
+        });
+        break;
+      case 'deviceNotFound':
+      case 'deviceNotOwned':
+      case 'identifierMismatch':
+        message = 'Unable to issue device alert credential after linking';
+        res.status(409).json({
+          status: responseCodes.GENERIC_ERROR,
+          message,
         });
         break;
 
@@ -345,6 +367,71 @@ exports.refreshToken = async (req, res, next) => {
     });
   } catch (error) {
     console.log(`Refresh token error: ${error}`);
+    next(error);
+  }
+}
+
+exports.issueRshakeAlertCredential = async (req, res, next) => {
+  const schema = Joi.object({
+    macAddress: Joi.string().regex(/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/),
+    streamId: Joi.string().regex(/^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$/),
+    network: Joi.string().regex(/^[A-Z]{2}$/),
+    station: Joi.string().regex(/^[A-Z0-9]{3,5}$/),
+  })
+    .or('macAddress', 'streamId', 'network')
+    .and('network', 'station');
+
+  try {
+    const { error, value } = schema.validate(req.body || {}, { abortEarly: false });
+    if (error) throw error;
+
+    const result = await RshakeAlertCredentialsService.issueAlertCredentialForOwnedDevice({
+      username: req.username,
+      identifiers: value,
+    });
+
+    switch (result.str) {
+      case 'success':
+        res.status(200).json({
+          status: responseCodes.GENERIC_SUCCESS,
+          message: 'RShake alert credential issued',
+          payload: result.payload,
+        });
+        res.message = 'RShake alert credential issued';
+        return;
+      case 'usernameNotFound':
+        res.status(404).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Sensor account not found',
+        });
+        res.message = 'Sensor account not found';
+        return;
+      case 'deviceNotFound':
+        res.status(404).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Linked device not found for provided identifiers',
+        });
+        res.message = 'Linked device not found for provided identifiers';
+        return;
+      case 'deviceNotOwned':
+        res.status(403).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Device does not belong to the authenticated sensor',
+        });
+        res.message = 'Device does not belong to the authenticated sensor';
+        return;
+      case 'identifierMismatch':
+        res.status(409).json({
+          status: responseCodes.GENERIC_ERROR,
+          message: 'Provided device identifiers refer to different devices',
+        });
+        res.message = 'Provided device identifiers refer to different devices';
+        return;
+      default:
+        throw new Error(`Unhandled return value ${result?.str} from issueAlertCredentialForOwnedDevice()`);
+    }
+  } catch (error) {
+    console.log(`Issue device alert credential unsuccessful: \n ${error}`);
     next(error);
   }
 }
