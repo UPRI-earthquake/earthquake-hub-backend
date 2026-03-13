@@ -13,8 +13,30 @@ class TunnelEnrollmentError extends Error {
   }
 }
 
+function normalizeExecMode(value) {
+  const normalized = String(value || 'local').trim().toLowerCase();
+  if (normalized === 'local' || normalized === 'ssh') {
+    return normalized;
+  }
+  return 'local';
+}
+
+function isTruthy(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === '1'
+    || normalized === 'true'
+    || normalized === 'yes'
+    || normalized === 'on';
+}
+
+function shellEscape(value) {
+  const raw = String(value || '');
+  return `'${raw.replace(/'/g, "'\"'\"'")}'`;
+}
+
 function resolveConfig() {
   return {
+    execMode: normalizeExecMode(process.env.TUNNEL_SCRIPT_EXEC_MODE || 'local'),
     registerScript: process.env.TUNNEL_REGISTER_SCRIPT || '/opt/upri/bastion/register-device.sh',
     revokeScript: process.env.TUNNEL_REVOKE_SCRIPT || '/opt/upri/bastion/revoke-device.sh',
     registryFile: process.env.TUNNEL_REGISTRY_FILE || '/etc/upri/rshake-tunnels/devices.csv',
@@ -24,6 +46,15 @@ function resolveConfig() {
     portRangeStart: process.env.TUNNEL_PORT_RANGE_START || '',
     portRangeEnd: process.env.TUNNEL_PORT_RANGE_END || '',
     commandTimeoutMs: Number(process.env.TUNNEL_SCRIPT_TIMEOUT_MS || 15000),
+    sshHost: process.env.TUNNEL_SCRIPT_SSH_HOST || '',
+    sshPort: Number(process.env.TUNNEL_SCRIPT_SSH_PORT || 22),
+    sshUser: process.env.TUNNEL_SCRIPT_SSH_USER || '',
+    sshKeyPath: process.env.TUNNEL_SCRIPT_SSH_KEY_PATH || '',
+    sshKnownHostsPath: process.env.TUNNEL_SCRIPT_SSH_KNOWN_HOSTS_PATH || '',
+    sshStrictHostKey: !isTruthy(process.env.TUNNEL_SCRIPT_SSH_STRICT_HOST_KEY || 'true')
+      ? false
+      : true,
+    sshRemotePrefix: process.env.TUNNEL_SCRIPT_SSH_REMOTE_PREFIX || 'sudo -n',
   };
 }
 
@@ -63,11 +94,11 @@ function classifyScriptFailure(errorText = '') {
   return 'SCRIPT_ERROR';
 }
 
-async function runScript(scriptPath, args = [], timeoutMs = 15000) {
+async function runScriptLocal(scriptPath, args = [], timeoutMs = 15000) {
   try {
     await fs.promises.access(scriptPath, fs.constants.X_OK);
   } catch (_error) {
-    throw new TunnelEnrollmentError('CONFIG_ERROR', `Tunnel script is not executable: ${scriptPath}`);
+    throw new TunnelEnrollmentError('CONFIG_ERROR', `Tunnel script is not executable or not found: ${scriptPath}`);
   }
 
   try {
@@ -84,6 +115,98 @@ async function runScript(scriptPath, args = [], timeoutMs = 15000) {
       exitCode: typeof error?.code === 'number' ? error.code : null,
     });
   }
+}
+
+async function runScriptOverSsh(cfg, scriptPath, args = [], timeoutMs = 15000) {
+  if (!cfg.sshHost || !cfg.sshUser) {
+    throw new TunnelEnrollmentError(
+      'CONFIG_ERROR',
+      'TUNNEL_SCRIPT_SSH_HOST and TUNNEL_SCRIPT_SSH_USER are required in ssh exec mode',
+    );
+  }
+
+  if (!Number.isFinite(cfg.sshPort) || cfg.sshPort < 1 || cfg.sshPort > 65535) {
+    throw new TunnelEnrollmentError('CONFIG_ERROR', 'TUNNEL_SCRIPT_SSH_PORT must be between 1 and 65535');
+  }
+
+  if (cfg.sshKeyPath) {
+    try {
+      await fs.promises.access(cfg.sshKeyPath, fs.constants.R_OK);
+    } catch (_error) {
+      throw new TunnelEnrollmentError(
+        'CONFIG_ERROR',
+        `Tunnel SSH private key is not readable: ${cfg.sshKeyPath}`,
+      );
+    }
+  }
+
+  if (cfg.sshStrictHostKey && cfg.sshKnownHostsPath) {
+    try {
+      await fs.promises.access(cfg.sshKnownHostsPath, fs.constants.R_OK);
+    } catch (_error) {
+      throw new TunnelEnrollmentError(
+        'CONFIG_ERROR',
+        `Tunnel SSH known_hosts is not readable: ${cfg.sshKnownHostsPath}`,
+      );
+    }
+  }
+
+  const sshArgs = [
+    '-p',
+    `${cfg.sshPort}`,
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    `ConnectTimeout=${Math.max(5, Math.ceil(timeoutMs / 1000))}`,
+  ];
+
+  if (cfg.sshStrictHostKey) {
+    sshArgs.push('-o', 'StrictHostKeyChecking=yes');
+    if (cfg.sshKnownHostsPath) {
+      sshArgs.push('-o', `UserKnownHostsFile=${cfg.sshKnownHostsPath}`);
+    }
+  } else {
+    sshArgs.push('-o', 'StrictHostKeyChecking=no');
+    sshArgs.push('-o', 'UserKnownHostsFile=/dev/null');
+  }
+
+  if (cfg.sshKeyPath) {
+    sshArgs.push('-i', cfg.sshKeyPath);
+  }
+
+  const remoteTarget = `${cfg.sshUser}@${cfg.sshHost}`;
+  const commandParts = [];
+  const prefix = String(cfg.sshRemotePrefix || '').trim();
+  if (prefix) {
+    commandParts.push(prefix);
+  }
+  commandParts.push(shellEscape(scriptPath));
+  args.forEach((arg) => commandParts.push(shellEscape(arg)));
+
+  sshArgs.push(remoteTarget, commandParts.join(' '));
+
+  try {
+    return await execFileAsync('ssh', sshArgs, { timeout: timeoutMs, maxBuffer: 1024 * 1024 });
+  } catch (error) {
+    const stderr = String(error?.stderr || '').trim();
+    const stdout = String(error?.stdout || '').trim();
+    const errorText = [stderr, stdout, error?.message || ''].filter(Boolean).join('\n');
+    const classified = classifyScriptFailure(errorText);
+
+    throw new TunnelEnrollmentError(classified, errorText || 'Tunnel script execution failed', {
+      scriptPath,
+      args,
+      sshTarget: remoteTarget,
+      exitCode: typeof error?.code === 'number' ? error.code : null,
+    });
+  }
+}
+
+async function runScript(cfg, scriptPath, args = [], timeoutMs = 15000) {
+  if (cfg.execMode === 'ssh') {
+    return runScriptOverSsh(cfg, scriptPath, args, timeoutMs);
+  }
+  return runScriptLocal(scriptPath, args, timeoutMs);
 }
 
 function normalizeMappingFromEnv(deviceId, env, bastionPortFallback, bastionHostKey = '') {
@@ -154,7 +277,7 @@ async function enrollDeviceTunnel({
     args.push('--port-end', `${cfg.portRangeEnd}`);
   }
 
-  const { stdout } = await runScript(cfg.registerScript, args, cfg.commandTimeoutMs);
+  const { stdout } = await runScript(cfg, cfg.registerScript, args, cfg.commandTimeoutMs);
   const env = parseEnvSnippet(stdout);
   return normalizeMappingFromEnv(deviceId, env, cfg.bastionPort, cfg.bastionHostKey);
 }
@@ -172,7 +295,7 @@ async function revokeDeviceTunnel(deviceId) {
     cfg.registryFile,
   ];
 
-  const { stdout } = await runScript(cfg.revokeScript, args, cfg.commandTimeoutMs);
+  const { stdout } = await runScript(cfg, cfg.revokeScript, args, cfg.commandTimeoutMs);
   return {
     deviceId,
     message: String(stdout || '').trim() || 'Device tunnel revoked',

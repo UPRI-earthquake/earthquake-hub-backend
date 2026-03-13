@@ -7,7 +7,8 @@ EXPOSE 5000
 WORKDIR /app
 
 # add non-js deps (for deps other than node_modules)
-RUN apk add --no-cache python3 make g++
+# openssh-client is required for tunnel enrollment ssh exec mode.
+RUN apk add --no-cache python3 make g++ openssh-client
 
 # Stage 2: prod, inherits base, adds src code, pre-installs js deps
 # TODO: Test for production build
@@ -33,4 +34,3 @@ CMD ["dumb-init", "npm", "run", "start"]
 LABEL org.opencontainers.image.source="https://github.com/UPRI-earthquake/earthquake-hub-backend"
 LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
 LABEL org.opencontainers.image.authors="earthquake@science.upd.edu.ph"
-

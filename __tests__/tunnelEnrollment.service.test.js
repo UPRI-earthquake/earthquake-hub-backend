@@ -95,6 +95,22 @@ describe('tunnelEnrollment.service', () => {
     });
   });
 
+  it('validates required SSH settings in ssh exec mode', async () => {
+    process.env.TUNNEL_SCRIPT_EXEC_MODE = 'ssh';
+    delete process.env.TUNNEL_SCRIPT_SSH_HOST;
+    delete process.env.TUNNEL_SCRIPT_SSH_USER;
+
+    await expect(
+      service.enrollDeviceTunnel({
+        deviceId: 'AM_R24FA',
+        tunnelPublicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockPublicKeyValue sender@device',
+      }),
+    ).rejects.toMatchObject({
+      name: 'TunnelEnrollmentError',
+      code: 'CONFIG_ERROR',
+    });
+  });
+
   it('lists active mappings from registry CSV', async () => {
     await fs.writeFile(
       registryFile,

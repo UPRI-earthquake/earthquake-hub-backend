@@ -16,3 +16,13 @@ These endpoints call server-owned bastion scripts configured via:
 - `TUNNEL_REVOKE_SCRIPT`
 - `TUNNEL_REGISTRY_FILE`
 - `TUNNEL_BASTION_HOST`
+
+For containerized deployments, prefer SSH execution mode so scripts run on the bastion host (not inside the app container):
+- `TUNNEL_SCRIPT_EXEC_MODE=ssh`
+- `TUNNEL_SCRIPT_SSH_HOST`
+- `TUNNEL_SCRIPT_SSH_PORT`
+- `TUNNEL_SCRIPT_SSH_USER`
+- `TUNNEL_SCRIPT_SSH_KEY_PATH`
+- `TUNNEL_SCRIPT_SSH_KNOWN_HOSTS_PATH`
+- `TUNNEL_SCRIPT_SSH_STRICT_HOST_KEY`
+- `TUNNEL_SCRIPT_SSH_REMOTE_PREFIX` (default: `sudo -n`)
