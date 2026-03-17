@@ -4,6 +4,13 @@ earthquake-hub-backend program is the server-side component of the EarthquakeHub
 ## Development Setup
 To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
+## Email Branding
+Outgoing HTML emails (device alerts and password-reset emails) support logo branding through environment variables:
+- `EMAIL_LOGO_URL`: remote URL for the logo (preferred for production email clients)
+- `EMAIL_LOGO_PATH`: direct path to an image file
+- `EMAIL_LOGO_PUBLIC_FILE`: file name under `earthquake-hub-frontend/public` (for monorepo local/dev setup)
+- `EMAIL_FRONTEND_PUBLIC_DIR`: optional override of the frontend public directory path
+
 ## Reverse Tunnel Enrollment API
 
 Server-managed remote tunnel enrollment endpoints are exposed under `/device/tunnel/*`:

@@ -295,6 +295,78 @@ function buildUserTextBody(eventDetails) {
   return lines.join('\n');
 }
 
+function buildAlertBadge(eventDetails) {
+  if (eventDetails.messageType === 'device.recovery') {
+    return 'Resolved';
+  }
+  return String(eventDetails.severity || 'warning').toUpperCase();
+}
+
+function buildLayoutDetails(eventDetails, { includeSchemaVersion = false } = {}) {
+  const rows = [
+    { label: 'Message Type', value: eventDetails.messageType },
+    { label: 'Severity', value: eventDetails.severity },
+    { label: 'Alert Code', value: eventDetails.alertCode },
+    { label: 'Status', value: eventDetails.status },
+    { label: 'Station', value: eventDetails.deviceLabel },
+    { label: 'Stream ID', value: eventDetails.device.streamId || 'Unavailable' },
+    { label: 'MAC Address', value: eventDetails.device.macAddress || 'Unavailable' },
+    { label: 'Location', value: eventDetails.locationLabel },
+    { label: 'Occurred At (UTC)', value: eventDetails.occurredAt },
+    { label: 'Message ID', value: eventDetails.messageId },
+    { label: 'Dedupe Key', value: eventDetails.dedupeKey },
+  ];
+
+  if (includeSchemaVersion) {
+    rows.push({ label: 'Schema Version', value: eventDetails.schemaVersion });
+  }
+
+  return rows;
+}
+
+function buildUserAlertLayout(eventDetails) {
+  const isRecovery = eventDetails.messageType === 'device.recovery';
+  const title = isRecovery
+    ? `${eventDetails.deviceLabel} recovered`
+    : `${eventDetails.deviceLabel} reported ${eventDetails.alertCode}`;
+
+  return {
+    preheader: `${eventDetails.deviceLabel} ${eventDetails.alertCode}`,
+    eyebrow: 'RShake Device Alert',
+    badge: buildAlertBadge(eventDetails),
+    title,
+    lead: eventDetails.summary,
+    paragraphs: [
+      isRecovery
+        ? 'The sender reported a recovery state.'
+        : 'The sender reported an alert state that needs review.',
+      'Check the sender health panel and logs if you need to validate this event.',
+    ],
+    details: buildLayoutDetails(eventDetails, { includeSchemaVersion: false }),
+    codeBlock: eventDetails.details || '',
+    footer:
+      'You are receiving this message because RShake device email alerts are enabled on your account.',
+  };
+}
+
+function buildAdminAlertLayout(eventDetails) {
+  return {
+    preheader: `Admin monitor event ${eventDetails.deviceLabel} ${eventDetails.alertCode}`,
+    eyebrow: 'UPRI Monitoring',
+    badge: buildAlertBadge(eventDetails),
+    title: 'Sender Alert Monitor Event',
+    lead: eventDetails.summary,
+    paragraphs: [
+      'This alert was accepted by the restricted RShake ingestion endpoint.',
+      'Use the metadata below for triage, correlation, and audit tracking.',
+    ],
+    details: buildLayoutDetails(eventDetails, { includeSchemaVersion: true }),
+    codeBlock: eventDetails.details || '',
+    footer:
+      'This monitor email is sent to admin recipients configured through ALERT_EMAIL_ADMIN_TO.',
+  };
+}
+
 async function sendDeviceAlertEmails(payload = {}) {
   const resolvedDevice = await resolveDevice(payload);
   const eventDetails = buildEventDetails(payload, resolvedDevice);
@@ -334,6 +406,7 @@ async function sendDeviceAlertEmails(payload = {}) {
         to: userRecipients.join(','),
         subject: buildUserSubject(eventDetails),
         text: buildUserTextBody(eventDetails),
+        layout: buildUserAlertLayout(eventDetails),
       }),
     );
   }
@@ -343,6 +416,7 @@ async function sendDeviceAlertEmails(payload = {}) {
         to: adminRecipients.join(','),
         subject: 'UPRI RShake Device Alerts',
         text: buildAdminTextBody(eventDetails),
+        layout: buildAdminAlertLayout(eventDetails),
         headers: commonHeaders,
       }),
     );

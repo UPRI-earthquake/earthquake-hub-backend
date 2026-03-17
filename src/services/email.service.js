@@ -1,12 +1,326 @@
+const fs = require('fs');
+const path = require('path');
 const nodemailer = require('nodemailer');
 
 const DEFAULT_FROM = 'UPRI Earthquake Hub <no-reply@upri.edu.ph>';
+const DEFAULT_BRAND_NAME = 'UPRI Earthquake Hub';
+const DEFAULT_ACCENT_COLOR = '#8a1538';
+const DEFAULT_LOGO_CID = 'upri-earthquake-hub-logo';
+const DEFAULT_FRONTEND_PUBLIC_DIR = path.resolve(
+  __dirname,
+  '../../../earthquake-hub-frontend/public',
+);
 
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null) return fallback;
   if (typeof value === 'boolean') return value;
   const normalized = String(value).trim().toLowerCase();
   return normalized === 'true' || normalized === '1' || normalized === 'yes';
+}
+
+function normalizeText(value) {
+  return String(value || '').trim();
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function toArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === '') return [];
+  return [value];
+}
+
+function formatCellValue(value) {
+  return escapeHtml(value).replace(/\n/g, '<br />');
+}
+
+let cachedLogoAsset;
+
+function resolveLogoPath(rawPath) {
+  const normalized = normalizeText(rawPath);
+  if (!normalized) return null;
+  return path.isAbsolute(normalized) ? normalized : path.resolve(process.cwd(), normalized);
+}
+
+function resolvePublicLogoPath(rawFileName) {
+  const fileName = path.basename(normalizeText(rawFileName));
+  if (!fileName) return null;
+
+  const publicDir = resolveLogoPath(process.env.EMAIL_FRONTEND_PUBLIC_DIR) || DEFAULT_FRONTEND_PUBLIC_DIR;
+  return path.resolve(publicDir, fileName);
+}
+
+function getLogoAsset() {
+  if (typeof cachedLogoAsset !== 'undefined') return cachedLogoAsset;
+
+  const logoUrl = normalizeText(process.env.EMAIL_LOGO_URL);
+  if (logoUrl) {
+    cachedLogoAsset = { type: 'url', url: logoUrl };
+    return cachedLogoAsset;
+  }
+
+  const candidatePaths = [
+    resolveLogoPath(process.env.EMAIL_LOGO_PATH),
+    resolvePublicLogoPath(process.env.EMAIL_LOGO_PUBLIC_FILE),
+    resolvePublicLogoPath('badge-92x92.png'),
+  ].filter(Boolean);
+
+  const existingPath = candidatePaths.find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch (_err) {
+      return false;
+    }
+  });
+
+  if (!existingPath) {
+    cachedLogoAsset = null;
+    return cachedLogoAsset;
+  }
+
+  cachedLogoAsset = {
+    type: 'cid',
+    cid: DEFAULT_LOGO_CID,
+    path: existingPath,
+    filename: path.basename(existingPath),
+  };
+  return cachedLogoAsset;
+}
+
+function buildLogoMarkup({ showLogo, brandName }) {
+  if (showLogo === false) {
+    return { html: '', attachments: [] };
+  }
+
+  const logo = getLogoAsset();
+  if (logo && logo.type === 'url') {
+    return {
+      html: `
+        <img
+          src="${escapeAttribute(logo.url)}"
+          alt="${escapeAttribute(brandName)} logo"
+          width="52"
+          style="display:block;width:52px;height:52px;border:0;outline:none;text-decoration:none;background:#ffffff;border-radius:8px;padding:4px;"
+        />
+      `.trim(),
+      attachments: [],
+    };
+  }
+
+  if (logo && logo.type === 'cid') {
+    return {
+      html: `
+        <img
+          src="cid:${escapeAttribute(logo.cid)}"
+          alt="${escapeAttribute(brandName)} logo"
+          width="52"
+          style="display:block;width:52px;height:52px;border:0;outline:none;text-decoration:none;background:#ffffff;border-radius:8px;padding:4px;"
+        />
+      `.trim(),
+      attachments: [{
+        filename: logo.filename,
+        path: logo.path,
+        cid: logo.cid,
+      }],
+    };
+  }
+
+  return {
+    html: `
+      <div style="padding:10px 12px;background:#ffffff;border-radius:8px;color:#111827;font-weight:700;font-size:13px;line-height:1;">
+        UPRI
+      </div>
+    `.trim(),
+    attachments: [],
+  };
+}
+
+function renderDetailsTable(details) {
+  const rows = toArray(details)
+    .map((entry) => ({
+      label: normalizeText(entry && entry.label),
+      value: normalizeText(entry && entry.value),
+    }))
+    .filter((entry) => entry.label || entry.value);
+
+  if (rows.length === 0) return '';
+
+  const rowsHtml = rows.map((entry) => `
+    <tr>
+      <td style="padding:9px 10px;border-bottom:1px solid #e5e7eb;color:#4b5563;font-size:13px;font-weight:600;vertical-align:top;width:38%;">
+        ${formatCellValue(entry.label || 'Detail')}
+      </td>
+      <td style="padding:9px 10px;border-bottom:1px solid #e5e7eb;color:#111827;font-size:13px;vertical-align:top;">
+        ${formatCellValue(entry.value || 'n/a')}
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e5e7eb;border-radius:8px;border-collapse:separate;overflow:hidden;margin:18px 0;">
+      ${rowsHtml}
+    </table>
+  `;
+}
+
+function renderParagraphs(paragraphs) {
+  const list = toArray(paragraphs)
+    .map((entry) => normalizeText(entry))
+    .filter(Boolean);
+
+  if (list.length === 0) return '';
+
+  return list
+    .map((entry) => `
+      <p style="margin:0 0 12px;color:#374151;font-size:14px;line-height:22px;">
+        ${formatCellValue(entry)}
+      </p>
+    `)
+    .join('');
+}
+
+function renderBrandedLayout(layout = {}) {
+  const brandName = normalizeText(layout.brandName) || DEFAULT_BRAND_NAME;
+  const accentColor = normalizeText(layout.accentColor) || DEFAULT_ACCENT_COLOR;
+  const preheader = normalizeText(layout.preheader) || `${brandName} notification`;
+  const eyebrow = normalizeText(layout.eyebrow);
+  const badge = normalizeText(layout.badge);
+  const title = normalizeText(layout.title) || `${brandName} Notification`;
+  const lead = normalizeText(layout.lead);
+  const codeBlock = normalizeText(layout.codeBlock);
+  const ctaLabel = normalizeText(layout.ctaLabel) || 'View details';
+  const ctaUrl = normalizeText(layout.ctaUrl);
+  const footer = normalizeText(layout.footer)
+    || `This is an automated message from ${brandName}. Please do not reply to this email.`;
+
+  const paragraphsHtml = renderParagraphs(layout.paragraphs);
+  const detailsHtml = renderDetailsTable(layout.details);
+  const codeBlockHtml = codeBlock
+    ? `
+      <pre style="margin:18px 0 0;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:12px;color:#111827;font-size:12px;line-height:18px;white-space:pre-wrap;word-break:break-word;">${formatCellValue(codeBlock)}</pre>
+    `
+    : '';
+  const ctaHtml = ctaUrl
+    ? `
+      <p style="margin:20px 0 0;">
+        <a
+          href="${escapeAttribute(ctaUrl)}"
+          style="display:inline-block;background:${escapeAttribute(accentColor)};color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 16px;border-radius:8px;"
+        >
+          ${escapeHtml(ctaLabel)}
+        </a>
+      </p>
+      <p style="margin:10px 0 0;color:#6b7280;font-size:12px;line-height:18px;word-break:break-all;">
+        ${escapeHtml(ctaUrl)}
+      </p>
+    `
+    : '';
+
+  const { html: logoHtml, attachments } = buildLogoMarkup({
+    showLogo: layout.showLogo,
+    brandName,
+  });
+
+  const html = `
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;line-height:1px;color:transparent;">
+      ${escapeHtml(preheader)}
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;margin:0;padding:0;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background:${escapeAttribute(accentColor)};padding:16px 22px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="vertical-align:middle;width:68px;">${logoHtml}</td>
+                    <td style="vertical-align:middle;text-align:right;color:#ffffff;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;">
+                      ${escapeHtml(brandName)}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                ${eyebrow ? `<p style="margin:0 0 8px;color:#6b7280;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;">${escapeHtml(eyebrow)}</p>` : ''}
+                ${badge ? `<p style="margin:0 0 10px;"><span style="display:inline-block;background:#fce7ea;color:${escapeAttribute(accentColor)};border:1px solid #f8c7d0;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${escapeHtml(badge)}</span></p>` : ''}
+                <h1 style="margin:0 0 12px;color:#111827;font-size:23px;line-height:30px;font-weight:700;">
+                  ${escapeHtml(title)}
+                </h1>
+                ${lead ? `<p style="margin:0 0 14px;color:#1f2937;font-size:15px;line-height:23px;font-weight:600;">${formatCellValue(lead)}</p>` : ''}
+                ${paragraphsHtml}
+                ${detailsHtml}
+                ${codeBlockHtml}
+                ${ctaHtml}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 24px;background:#fafafa;border-top:1px solid #e5e7eb;">
+                <p style="margin:0;color:#6b7280;font-size:12px;line-height:18px;">
+                  ${escapeHtml(footer)}
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`.trim();
+
+  return {
+    html,
+    attachments,
+  };
+}
+
+function buildLayoutText(layout = {}) {
+  const brandName = normalizeText(layout.brandName) || DEFAULT_BRAND_NAME;
+  const lines = [brandName];
+  const title = normalizeText(layout.title);
+  const lead = normalizeText(layout.lead);
+  const paragraphs = toArray(layout.paragraphs).map((entry) => normalizeText(entry)).filter(Boolean);
+  const details = toArray(layout.details)
+    .map((entry) => ({
+      label: normalizeText(entry && entry.label),
+      value: normalizeText(entry && entry.value),
+    }))
+    .filter((entry) => entry.label || entry.value);
+  const codeBlock = normalizeText(layout.codeBlock);
+  const ctaLabel = normalizeText(layout.ctaLabel) || 'Open link';
+  const ctaUrl = normalizeText(layout.ctaUrl);
+  const footer = normalizeText(layout.footer);
+
+  if (title) lines.push('', title);
+  if (lead) lines.push('', lead);
+  if (paragraphs.length > 0) lines.push('', ...paragraphs);
+  if (details.length > 0) {
+    lines.push('', 'Details:');
+    details.forEach((entry) => {
+      lines.push(`- ${entry.label || 'Detail'}: ${entry.value || 'n/a'}`);
+    });
+  }
+  if (codeBlock) lines.push('', codeBlock);
+  if (ctaUrl) lines.push('', `${ctaLabel}: ${ctaUrl}`);
+  if (footer) lines.push('', footer);
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 let transporterPromise = null;
@@ -44,10 +358,34 @@ async function getTransporter() {
  */
 async function sendMail(options = {}) {
   const transporter = await getTransporter();
+  const { layout, ...baseOptions } = options;
   const mailOptions = {
     from: process.env.EMAIL_FROM || DEFAULT_FROM,
-    ...options,
+    ...baseOptions,
   };
+
+  if (layout && typeof layout === 'object') {
+    const renderedLayout = renderBrandedLayout(layout);
+    if (!mailOptions.html) {
+      mailOptions.html = renderedLayout.html;
+    }
+    if (!mailOptions.text) {
+      mailOptions.text = buildLayoutText(layout);
+    }
+    if (renderedLayout.attachments.length > 0) {
+      const existingAttachments = Array.isArray(mailOptions.attachments)
+        ? mailOptions.attachments
+        : mailOptions.attachments
+          ? [mailOptions.attachments]
+          : [];
+      const hasLogoAttachment = existingAttachments.some(
+        (attachment) => attachment && attachment.cid === DEFAULT_LOGO_CID,
+      );
+      mailOptions.attachments = hasLogoAttachment
+        ? existingAttachments
+        : existingAttachments.concat(renderedLayout.attachments);
+    }
+  }
 
   if (!mailOptions.to) {
     throw new Error('Email recipient (to) is required.');

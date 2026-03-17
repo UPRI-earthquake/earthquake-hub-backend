@@ -41,6 +41,27 @@ function buildResetLink(token) {
   return `${base}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
+function buildPasswordResetEmailLayout(resetUrl) {
+  return {
+    preheader: 'Reset your UPRI Earthquake Hub password',
+    eyebrow: 'Account Security',
+    badge: 'Action Required',
+    title: 'Reset your password',
+    lead: 'We received a request to reset your UPRI Earthquake Hub password.',
+    paragraphs: [
+      'Use the secure button below to set a new password.',
+      'If you did not request this reset, you can safely ignore this email.',
+    ],
+    details: [
+      { label: 'Reset Link Expiry', value: PASSWORD_RESET_TOKEN_EXPIRY },
+    ],
+    ctaLabel: 'Reset Password',
+    ctaUrl: resetUrl,
+    footer:
+      `For your security, this reset link expires in ${PASSWORD_RESET_TOKEN_EXPIRY}.`,
+  };
+}
+
 /***************************************************************************
   * createUniqueAccount:
   *     Creates a new account entry in DB if it doesn't yet exist. 
@@ -820,12 +841,7 @@ exports.createPasswordResetToken = async (email) => {
           `Reset link: ${resetUrl}`,
           `This link expires in ${PASSWORD_RESET_TOKEN_EXPIRY}.`,
         ].join('\n'),
-        html: `
-          <p>We received a request to reset your UPRI Earthquake Hub password.</p>
-          <p>If you did not request this, you can safely ignore this email.</p>
-          <p><a href="${resetUrl}">Reset your password</a></p>
-          <p style="color:#444;">This link expires in ${PASSWORD_RESET_TOKEN_EXPIRY}.</p>
-        `,
+        layout: buildPasswordResetEmailLayout(resetUrl),
       });
     } catch (err) {
       console.error('Password reset email delivery failed:', err?.message || err);
