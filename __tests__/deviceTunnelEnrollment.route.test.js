@@ -77,6 +77,8 @@ describe('Device tunnel enrollment routes', () => {
       REMOTE_TUNNEL_BASTION_USER: 'rt-am_r24fa',
       REMOTE_TUNNEL_REMOTE_PORT: 22501,
       REMOTE_TUNNEL_BASTION_HOST_KEY: 'ops.example.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockHostKey',
+      REMOTE_TUNNEL_WSS_URL: 'wss://earthquake.science.upd.edu.ph',
+      REMOTE_TUNNEL_WSS_PATH_PREFIX: 'api/ws-tunnel/test-secret',
     });
 
     const token = signDeviceToken();
@@ -93,6 +95,8 @@ describe('Device tunnel enrollment routes', () => {
     expect(response.body?.payload?.REMOTE_TUNNEL_BASTION_HOST).toBe('ops.example.org');
     expect(response.body?.payload?.REMOTE_TUNNEL_BASTION_USER).toBe('rt-am_r24fa');
     expect(response.body?.payload?.REMOTE_TUNNEL_REMOTE_PORT).toBe(22501);
+    expect(response.body?.payload?.REMOTE_TUNNEL_WSS_URL).toBe('wss://earthquake.science.upd.edu.ph');
+    expect(response.body?.payload?.REMOTE_TUNNEL_WSS_PATH_PREFIX).toBe('api/ws-tunnel/test-secret');
     expect(TunnelEnrollmentService.enrollDeviceTunnel).toHaveBeenCalledWith(
       expect.objectContaining({
         deviceId: 'AM_R24FA',

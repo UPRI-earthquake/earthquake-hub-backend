@@ -35,6 +35,7 @@ function shellEscape(value) {
 }
 
 function resolveConfig() {
+  const wssPathPrefixRaw = String(process.env.TUNNEL_WSS_PATH_PREFIX || '').trim();
   return {
     execMode: normalizeExecMode(process.env.TUNNEL_SCRIPT_EXEC_MODE || 'local'),
     registerScript: process.env.TUNNEL_REGISTER_SCRIPT || '/opt/upri/bastion/register-device.sh',
@@ -55,6 +56,8 @@ function resolveConfig() {
       ? false
       : true,
     sshRemotePrefix: process.env.TUNNEL_SCRIPT_SSH_REMOTE_PREFIX || 'sudo -n',
+    tunnelWssUrl: String(process.env.TUNNEL_WSS_URL || '').trim(),
+    tunnelWssPathPrefix: wssPathPrefixRaw.replace(/^\/+|\/+$/g, ''),
   };
 }
 
@@ -209,11 +212,21 @@ async function runScript(cfg, scriptPath, args = [], timeoutMs = 15000) {
   return runScriptLocal(scriptPath, args, timeoutMs);
 }
 
-function normalizeMappingFromEnv(deviceId, env, bastionPortFallback, bastionHostKey = '') {
+function normalizeMappingFromEnv(
+  deviceId,
+  env,
+  bastionPortFallback,
+  bastionHostKey = '',
+  tunnelWssUrl = '',
+  tunnelWssPathPrefix = '',
+) {
   const bastionHost = env.REMOTE_TUNNEL_BASTION_HOST || '';
   const bastionUser = env.REMOTE_TUNNEL_BASTION_USER || '';
   const remotePortRaw = env.REMOTE_TUNNEL_REMOTE_PORT || '';
   const bastionPortRaw = env.REMOTE_TUNNEL_BASTION_PORT || `${bastionPortFallback || 443}`;
+  const wssUrlRaw = String(env.REMOTE_TUNNEL_WSS_URL || tunnelWssUrl || '').trim();
+  const wssPathPrefixRaw = String(env.REMOTE_TUNNEL_WSS_PATH_PREFIX || tunnelWssPathPrefix || '').trim();
+  const wssPathPrefix = wssPathPrefixRaw.replace(/^\/+|\/+$/g, '');
   const remotePort = Number(remotePortRaw);
   const bastionPort = Number(bastionPortRaw);
 
@@ -232,6 +245,8 @@ function normalizeMappingFromEnv(deviceId, env, bastionPortFallback, bastionHost
     REMOTE_TUNNEL_BASTION_USER: bastionUser,
     REMOTE_TUNNEL_REMOTE_PORT: remotePort,
     REMOTE_TUNNEL_BASTION_HOST_KEY: bastionHostKey || '',
+    REMOTE_TUNNEL_WSS_URL: wssUrlRaw,
+    REMOTE_TUNNEL_WSS_PATH_PREFIX: wssPathPrefix,
   };
 }
 
@@ -279,7 +294,14 @@ async function enrollDeviceTunnel({
 
   const { stdout } = await runScript(cfg, cfg.registerScript, args, cfg.commandTimeoutMs);
   const env = parseEnvSnippet(stdout);
-  return normalizeMappingFromEnv(deviceId, env, cfg.bastionPort, cfg.bastionHostKey);
+  return normalizeMappingFromEnv(
+    deviceId,
+    env,
+    cfg.bastionPort,
+    cfg.bastionHostKey,
+    cfg.tunnelWssUrl,
+    cfg.tunnelWssPathPrefix,
+  );
 }
 
 async function revokeDeviceTunnel(deviceId) {

@@ -6,7 +6,7 @@ To run this repository on your local machine, please follow the instructions pro
 
 ## Reverse Tunnel Enrollment API
 
-Server-managed reverse SSH enrollment endpoints are exposed under `/device/tunnel/*`:
+Server-managed remote tunnel enrollment endpoints are exposed under `/device/tunnel/*`:
 - `POST /device/tunnel/enroll` (sensor bearer token required)
 - `GET /device/tunnel/mappings` (admin cookie session required)
 - `POST /device/tunnel/revoke` (admin cookie session required)
@@ -16,6 +16,8 @@ These endpoints call server-owned bastion scripts configured via:
 - `TUNNEL_REVOKE_SCRIPT`
 - `TUNNEL_REGISTRY_FILE`
 - `TUNNEL_BASTION_HOST`
+- `TUNNEL_WSS_URL` (optional; returned to sender enrollment clients)
+- `TUNNEL_WSS_PATH_PREFIX` (optional; returned to sender enrollment clients)
 
 For containerized deployments, prefer SSH execution mode so scripts run on the bastion host (not inside the app container):
 - `TUNNEL_SCRIPT_EXEC_MODE=ssh`

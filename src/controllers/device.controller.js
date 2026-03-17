@@ -616,6 +616,12 @@ exports.enrollDeviceTunnel = async (req, res, next) => {
     if (mapping.REMOTE_TUNNEL_BASTION_HOST_KEY) {
       payload.REMOTE_TUNNEL_BASTION_HOST_KEY = mapping.REMOTE_TUNNEL_BASTION_HOST_KEY;
     }
+    if (mapping.REMOTE_TUNNEL_WSS_URL) {
+      payload.REMOTE_TUNNEL_WSS_URL = mapping.REMOTE_TUNNEL_WSS_URL;
+    }
+    if (mapping.REMOTE_TUNNEL_WSS_PATH_PREFIX) {
+      payload.REMOTE_TUNNEL_WSS_PATH_PREFIX = mapping.REMOTE_TUNNEL_WSS_PATH_PREFIX;
+    }
 
     res.status(200).json({
       status: responseCodes.TUNNEL_ENROLL_SUCCESS || responseCodes.GENERIC_SUCCESS,
