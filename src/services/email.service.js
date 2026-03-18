@@ -4,7 +4,8 @@ const nodemailer = require('nodemailer');
 
 const DEFAULT_FROM = 'UPRI Earthquake Hub <no-reply@upri.edu.ph>';
 const DEFAULT_BRAND_NAME = 'UPRI Earthquake Hub';
-const DEFAULT_ACCENT_COLOR = '#8a1538';
+const DEFAULT_PRIMARY_COLOR = '#0ea5e9';
+const DEFAULT_ACCENT_COLOR = '#10b981';
 const DEFAULT_LOGO_CID = 'upri-earthquake-hub-logo';
 const DEFAULT_FRONTEND_PUBLIC_DIR = path.resolve(
   __dirname,
@@ -46,6 +47,20 @@ function formatCellValue(value) {
 }
 
 let cachedLogoAsset;
+let logoLookupLogged = false;
+let logoSelectionLogged = false;
+
+function dedupePaths(paths = []) {
+  const seen = new Set();
+  return paths.filter((entry) => {
+    const normalized = normalizeText(entry);
+    if (!normalized) return false;
+    const key = path.normalize(normalized);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 function resolveLogoPath(rawPath) {
   const normalized = normalizeText(rawPath);
@@ -53,12 +68,22 @@ function resolveLogoPath(rawPath) {
   return path.isAbsolute(normalized) ? normalized : path.resolve(process.cwd(), normalized);
 }
 
-function resolvePublicLogoPath(rawFileName) {
-  const fileName = path.basename(normalizeText(rawFileName));
-  if (!fileName) return null;
+function getFrontendPublicDirCandidates() {
+  return dedupePaths([
+    resolveLogoPath(process.env.EMAIL_FRONTEND_PUBLIC_DIR),
+    DEFAULT_FRONTEND_PUBLIC_DIR,
+    path.resolve(process.cwd(), 'earthquake-hub-frontend/public'),
+    path.resolve(process.cwd(), '../earthquake-hub-frontend/public'),
+    path.resolve(process.cwd(), '../../earthquake-hub-frontend/public'),
+    path.resolve(process.cwd(), '../earthquake-hub-web-client/earthquake-hub-frontend/public'),
+    path.resolve(process.cwd(), 'frontend/public'),
+  ]);
+}
 
-  const publicDir = resolveLogoPath(process.env.EMAIL_FRONTEND_PUBLIC_DIR) || DEFAULT_FRONTEND_PUBLIC_DIR;
-  return path.resolve(publicDir, fileName);
+function resolvePublicLogoCandidates(rawFileName) {
+  const fileName = path.basename(normalizeText(rawFileName));
+  if (!fileName) return [];
+  return getFrontendPublicDirCandidates().map((publicDir) => path.resolve(publicDir, fileName));
 }
 
 function getLogoAsset() {
@@ -70,11 +95,13 @@ function getLogoAsset() {
     return cachedLogoAsset;
   }
 
-  const candidatePaths = [
+  const candidatePaths = dedupePaths([
     resolveLogoPath(process.env.EMAIL_LOGO_PATH),
-    resolvePublicLogoPath(process.env.EMAIL_LOGO_PUBLIC_FILE),
-    resolvePublicLogoPath('badge-92x92.png'),
-  ].filter(Boolean);
+    ...resolvePublicLogoCandidates(process.env.EMAIL_LOGO_PUBLIC_FILE),
+    ...resolvePublicLogoCandidates('badge-92x92.png'),
+    ...resolvePublicLogoCandidates('logo192.png'),
+    ...resolvePublicLogoCandidates('logo512.png'),
+  ]);
 
   const existingPath = candidatePaths.find((candidate) => {
     try {
@@ -85,8 +112,19 @@ function getLogoAsset() {
   });
 
   if (!existingPath) {
+    if (!logoLookupLogged) {
+      logoLookupLogged = true;
+      console.warn(
+        `[email] Branding logo not found. Set EMAIL_LOGO_URL or EMAIL_LOGO_PATH, or set EMAIL_FRONTEND_PUBLIC_DIR + EMAIL_LOGO_PUBLIC_FILE. Last tried: ${candidatePaths.slice(0, 4).join(', ') || 'n/a'}`,
+      );
+    }
     cachedLogoAsset = null;
     return cachedLogoAsset;
+  }
+
+  if (!logoSelectionLogged && process.env.NODE_ENV !== 'production') {
+    logoSelectionLogged = true;
+    console.log(`[email] Branding logo resolved from file: ${existingPath}`);
   }
 
   cachedLogoAsset = {
@@ -192,6 +230,7 @@ function renderParagraphs(paragraphs) {
 
 function renderBrandedLayout(layout = {}) {
   const brandName = normalizeText(layout.brandName) || DEFAULT_BRAND_NAME;
+  const primaryColor = normalizeText(layout.primaryColor) || DEFAULT_PRIMARY_COLOR;
   const accentColor = normalizeText(layout.accentColor) || DEFAULT_ACCENT_COLOR;
   const preheader = normalizeText(layout.preheader) || `${brandName} notification`;
   const eyebrow = normalizeText(layout.eyebrow);
@@ -216,7 +255,7 @@ function renderBrandedLayout(layout = {}) {
       <p style="margin:20px 0 0;">
         <a
           href="${escapeAttribute(ctaUrl)}"
-          style="display:inline-block;background:${escapeAttribute(accentColor)};color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 16px;border-radius:8px;"
+          style="display:inline-block;background:linear-gradient(120deg, ${escapeAttribute(primaryColor)}, ${escapeAttribute(accentColor)});color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 16px;border-radius:8px;"
         >
           ${escapeHtml(ctaLabel)}
         </a>
@@ -235,16 +274,16 @@ function renderBrandedLayout(layout = {}) {
   const html = `
 <!doctype html>
 <html lang="en">
-  <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+  <body style="margin:0;padding:0;background:#f1f8ff;font-family:Arial,Helvetica,sans-serif;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;line-height:1px;color:transparent;">
       ${escapeHtml(preheader)}
     </div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;margin:0;padding:0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f8ff;margin:0;padding:0;">
       <tr>
         <td align="center" style="padding:24px 12px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background:${escapeAttribute(accentColor)};padding:16px 22px;">
+              <td style="background:linear-gradient(120deg, ${escapeAttribute(primaryColor)}, ${escapeAttribute(accentColor)});padding:16px 22px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
                     <td style="vertical-align:middle;width:68px;">${logoHtml}</td>
@@ -258,7 +297,7 @@ function renderBrandedLayout(layout = {}) {
             <tr>
               <td style="padding:24px;">
                 ${eyebrow ? `<p style="margin:0 0 8px;color:#6b7280;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;">${escapeHtml(eyebrow)}</p>` : ''}
-                ${badge ? `<p style="margin:0 0 10px;"><span style="display:inline-block;background:#fce7ea;color:${escapeAttribute(accentColor)};border:1px solid #f8c7d0;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${escapeHtml(badge)}</span></p>` : ''}
+                ${badge ? `<p style="margin:0 0 10px;"><span style="display:inline-block;background:#e0f2fe;color:#0b4f6c;border:1px solid #bae6fd;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${escapeHtml(badge)}</span></p>` : ''}
                 <h1 style="margin:0 0 12px;color:#111827;font-size:23px;line-height:30px;font-weight:700;">
                   ${escapeHtml(title)}
                 </h1>
