@@ -133,6 +133,9 @@ exports.getAccountDevices = async (username) => {
         status: status,
         statusSince: statusSince,
         activityToggleTime: device.activityToggleTime,
+        longitude: device.longitude,
+        latitude: device.latitude,
+        elevation: device.elevation,
       };
 
       return deviceInfo;
@@ -149,6 +152,9 @@ exports.getAccountDevices = async (username) => {
       description: entry.description,
       streamId: entry.streamId,
       macAddress: entry.macAddress,
+      longitude: entry.longitude,
+      latitude: entry.latitude,
+      elevation: entry.elevation,
       releasedAt: entry.releasedAt,
       reason: entry.reason,
     })),
@@ -471,6 +477,9 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
     network: device.network,
     station: device.station,
     description: device.description,
+    longitude: device.longitude,
+    latitude: device.latitude,
+    elevation: device.elevation,
     releasedAt: releaseTimestamp,
     reason: 'unlink',
   };
