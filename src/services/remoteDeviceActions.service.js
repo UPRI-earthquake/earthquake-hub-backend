@@ -34,6 +34,19 @@ function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
+function shellEscape(value) {
+  const raw = String(value || '');
+  return `'${raw.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function normalizeExecMode(value) {
+  const normalized = String(value || 'auto').trim().toLowerCase();
+  if (normalized === 'auto' || normalized === 'direct' || normalized === 'relay') {
+    return normalized;
+  }
+  return 'auto';
+}
+
 function normalizeDeviceId(value = '') {
   return String(value || '').trim().toUpperCase();
 }
@@ -55,7 +68,15 @@ function normalizeAction(value) {
 
 function resolveConfig() {
   const strictHostKey = isTruthy(process.env.TUNNEL_REMOTE_ACTION_SSH_STRICT_HOST_KEY || 'false');
+  const scriptStrictHostKey = isTruthy(process.env.TUNNEL_SCRIPT_SSH_STRICT_HOST_KEY || 'true');
+  const scriptExecMode = String(process.env.TUNNEL_SCRIPT_EXEC_MODE || 'local').trim().toLowerCase();
+  const configuredExecMode = normalizeExecMode(process.env.TUNNEL_REMOTE_ACTION_EXEC_MODE || 'auto');
+  const execMode = configuredExecMode === 'auto'
+    ? (scriptExecMode === 'ssh' ? 'relay' : 'direct')
+    : configuredExecMode;
+
   return {
+    execMode,
     sshHost: String(
       process.env.TUNNEL_REMOTE_ACTION_SSH_HOST
       || process.env.TUNNEL_SCRIPT_SSH_HOST
@@ -64,17 +85,143 @@ function resolveConfig() {
     sshUser: String(process.env.TUNNEL_REMOTE_ACTION_SSH_USER || 'myshake').trim(),
     sshKeyPath: String(
       process.env.TUNNEL_REMOTE_ACTION_SSH_KEY_PATH
-      || process.env.TUNNEL_SCRIPT_SSH_KEY_PATH
-      || '/opt/upri/bastion/ssh/tunnel-admin_id_ed25519',
+      || '/opt/upri/bastion/ssh/operator-remote-actions_id_ed25519',
     ).trim(),
     sshKnownHostsPath: String(
       process.env.TUNNEL_REMOTE_ACTION_SSH_KNOWN_HOSTS_PATH
       || process.env.TUNNEL_SCRIPT_SSH_KNOWN_HOSTS_PATH
       || '',
     ).trim(),
+    relayTargetHost: String(
+      process.env.TUNNEL_REMOTE_ACTION_TARGET_SSH_HOST
+      || '127.0.0.1',
+    ).trim(),
     sshStrictHostKey: strictHostKey,
     commandTimeoutMs: Number(process.env.TUNNEL_REMOTE_ACTION_TIMEOUT_MS || 20000),
+    relay: {
+      sshHost: String(process.env.TUNNEL_SCRIPT_SSH_HOST || '').trim(),
+      sshPort: Number(process.env.TUNNEL_SCRIPT_SSH_PORT || 22),
+      sshUser: String(process.env.TUNNEL_SCRIPT_SSH_USER || '').trim(),
+      sshKeyPath: String(process.env.TUNNEL_SCRIPT_SSH_KEY_PATH || '').trim(),
+      sshKnownHostsPath: String(process.env.TUNNEL_SCRIPT_SSH_KNOWN_HOSTS_PATH || '').trim(),
+      sshStrictHostKey: scriptStrictHostKey,
+      sshRemotePrefix: String(process.env.TUNNEL_SCRIPT_SSH_REMOTE_PREFIX || '').trim(),
+    },
   };
+}
+
+async function assertReadableFile(pathValue, messagePrefix) {
+  if (!pathValue) return;
+  try {
+    await fs.promises.access(pathValue, fs.constants.R_OK);
+  } catch (_error) {
+    throw new RemoteDeviceActionError(
+      'config_error',
+      `${messagePrefix}: ${pathValue}`,
+      500,
+    );
+  }
+}
+
+function buildDirectSshArgs({ cfg, remotePort, action, payloadB64 }) {
+  const sshArgs = [
+    '-T',
+    '-p',
+    `${remotePort}`,
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    `ConnectTimeout=${Math.max(5, Math.ceil(cfg.commandTimeoutMs / 1000))}`,
+  ];
+
+  if (cfg.sshStrictHostKey) {
+    sshArgs.push('-o', 'StrictHostKeyChecking=yes');
+    if (cfg.sshKnownHostsPath) {
+      sshArgs.push('-o', `UserKnownHostsFile=${cfg.sshKnownHostsPath}`);
+    }
+  } else {
+    sshArgs.push('-o', 'StrictHostKeyChecking=no');
+    sshArgs.push('-o', 'UserKnownHostsFile=/dev/null');
+  }
+
+  if (cfg.sshKeyPath) {
+    sshArgs.push('-i', cfg.sshKeyPath);
+  }
+
+  sshArgs.push(
+    `${cfg.sshUser}@${cfg.sshHost}`,
+    `REMOTE_ACTION_EXECUTE ${action} ${payloadB64}`,
+  );
+  return sshArgs;
+}
+
+function buildRelayRemoteCommand({ cfg, remotePort, action, payloadB64 }) {
+  const innerArgs = [
+    'ssh',
+    '-T',
+    '-p',
+    `${remotePort}`,
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    `ConnectTimeout=${Math.max(5, Math.ceil(cfg.commandTimeoutMs / 1000))}`,
+  ];
+
+  if (cfg.sshStrictHostKey) {
+    innerArgs.push('-o', 'StrictHostKeyChecking=yes');
+    if (cfg.sshKnownHostsPath) {
+      innerArgs.push('-o', `UserKnownHostsFile=${cfg.sshKnownHostsPath}`);
+    }
+  } else {
+    innerArgs.push('-o', 'StrictHostKeyChecking=no');
+    innerArgs.push('-o', 'UserKnownHostsFile=/dev/null');
+  }
+
+  if (cfg.sshKeyPath) {
+    innerArgs.push('-i', cfg.sshKeyPath);
+  }
+
+  innerArgs.push(
+    `${cfg.sshUser}@${cfg.relayTargetHost}`,
+    `REMOTE_ACTION_EXECUTE ${action} ${payloadB64}`,
+  );
+
+  const innerCommand = innerArgs.map((arg) => shellEscape(arg)).join(' ');
+  return cfg.relay.sshRemotePrefix
+    ? `${cfg.relay.sshRemotePrefix} ${innerCommand}`
+    : innerCommand;
+}
+
+function buildRelaySshArgs({ cfg, remotePort, action, payloadB64 }) {
+  const sshArgs = [
+    '-T',
+    '-p',
+    `${cfg.relay.sshPort}`,
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    `ConnectTimeout=${Math.max(5, Math.ceil(cfg.commandTimeoutMs / 1000))}`,
+  ];
+
+  if (cfg.relay.sshStrictHostKey) {
+    sshArgs.push('-o', 'StrictHostKeyChecking=yes');
+    if (cfg.relay.sshKnownHostsPath) {
+      sshArgs.push('-o', `UserKnownHostsFile=${cfg.relay.sshKnownHostsPath}`);
+    }
+  } else {
+    sshArgs.push('-o', 'StrictHostKeyChecking=no');
+    sshArgs.push('-o', 'UserKnownHostsFile=/dev/null');
+  }
+
+  if (cfg.relay.sshKeyPath) {
+    sshArgs.push('-i', cfg.relay.sshKeyPath);
+  }
+
+  sshArgs.push(
+    `${cfg.relay.sshUser}@${cfg.relay.sshHost}`,
+    buildRelayRemoteCommand({ cfg, remotePort, action, payloadB64 }),
+  );
+  return sshArgs;
 }
 
 async function resolveOwnedDeviceSet(username) {
@@ -146,14 +293,6 @@ function parseRemoteActionMarker(output = '') {
 async function runRemoteCommand({ remotePort, action, payload }) {
   const cfg = resolveConfig();
 
-  if (!cfg.sshHost || !cfg.sshUser) {
-    throw new RemoteDeviceActionError(
-      'config_error',
-      'Remote action SSH host/user is not configured.',
-      500,
-    );
-  }
-
   if (!Number.isFinite(cfg.commandTimeoutMs) || cfg.commandTimeoutMs < 1000) {
     throw new RemoteDeviceActionError(
       'config_error',
@@ -162,59 +301,73 @@ async function runRemoteCommand({ remotePort, action, payload }) {
     );
   }
 
-  if (cfg.sshKeyPath) {
-    try {
-      await fs.promises.access(cfg.sshKeyPath, fs.constants.R_OK);
-    } catch (_error) {
+  let sshArgs = [];
+  if (cfg.execMode === 'relay') {
+    if (!cfg.relay.sshHost || !cfg.relay.sshUser) {
       throw new RemoteDeviceActionError(
         'config_error',
-        `Remote action SSH key is not readable: ${cfg.sshKeyPath}`,
+        'Remote action relay SSH host/user is not configured.',
         500,
       );
     }
-  }
-
-  if (cfg.sshStrictHostKey && cfg.sshKnownHostsPath) {
-    try {
-      await fs.promises.access(cfg.sshKnownHostsPath, fs.constants.R_OK);
-    } catch (_error) {
+    if (!Number.isFinite(cfg.relay.sshPort) || cfg.relay.sshPort < 1 || cfg.relay.sshPort > 65535) {
       throw new RemoteDeviceActionError(
         'config_error',
-        `Remote action known_hosts is not readable: ${cfg.sshKnownHostsPath}`,
+        'Remote action relay SSH port must be between 1 and 65535.',
         500,
       );
     }
-  }
-
-  const payloadB64 = Buffer.from(JSON.stringify(payload || {}), 'utf8').toString('base64');
-  const sshArgs = [
-    '-T',
-    '-p',
-    `${remotePort}`,
-    '-o',
-    'BatchMode=yes',
-    '-o',
-    `ConnectTimeout=${Math.max(5, Math.ceil(cfg.commandTimeoutMs / 1000))}`,
-  ];
-
-  if (cfg.sshStrictHostKey) {
-    sshArgs.push('-o', 'StrictHostKeyChecking=yes');
-    if (cfg.sshKnownHostsPath) {
-      sshArgs.push('-o', `UserKnownHostsFile=${cfg.sshKnownHostsPath}`);
+    if (!cfg.relayTargetHost) {
+      throw new RemoteDeviceActionError(
+        'config_error',
+        'Remote action relay target host is not configured.',
+        500,
+      );
     }
+
+    await assertReadableFile(
+      cfg.relay.sshKeyPath,
+      'Remote action relay SSH key is not readable',
+    );
+    if (cfg.relay.sshStrictHostKey) {
+      await assertReadableFile(
+        cfg.relay.sshKnownHostsPath,
+        'Remote action relay known_hosts is not readable',
+      );
+    }
+    sshArgs = buildRelaySshArgs({
+      cfg,
+      remotePort,
+      action,
+      payloadB64: Buffer.from(JSON.stringify(payload || {}), 'utf8').toString('base64'),
+    });
   } else {
-    sshArgs.push('-o', 'StrictHostKeyChecking=no');
-    sshArgs.push('-o', 'UserKnownHostsFile=/dev/null');
-  }
+    if (!cfg.sshHost || !cfg.sshUser) {
+      throw new RemoteDeviceActionError(
+        'config_error',
+        'Remote action SSH host/user is not configured.',
+        500,
+      );
+    }
 
-  if (cfg.sshKeyPath) {
-    sshArgs.push('-i', cfg.sshKeyPath);
-  }
+    await assertReadableFile(
+      cfg.sshKeyPath,
+      'Remote action SSH key is not readable',
+    );
+    if (cfg.sshStrictHostKey) {
+      await assertReadableFile(
+        cfg.sshKnownHostsPath,
+        'Remote action known_hosts is not readable',
+      );
+    }
 
-  sshArgs.push(
-    `${cfg.sshUser}@${cfg.sshHost}`,
-    `REMOTE_ACTION_EXECUTE ${action} ${payloadB64}`,
-  );
+    sshArgs = buildDirectSshArgs({
+      cfg,
+      remotePort,
+      action,
+      payloadB64: Buffer.from(JSON.stringify(payload || {}), 'utf8').toString('base64'),
+    });
+  }
 
   try {
     const { stdout, stderr } = await execFileAsync('ssh', sshArgs, {
@@ -271,6 +424,7 @@ async function runRemoteCommand({ remotePort, action, payload }) {
       'Remote action failed while connecting to sender.',
       502,
       {
+        mode: cfg.execMode,
         stderr: String(error?.stderr || '').trim(),
         stdout: String(error?.stdout || '').trim(),
       },
