@@ -263,59 +263,68 @@ exports.verifySensorToken = async (token, brgyUsername) => {
     // Verify SENSOR token in body, valid if it enters callback w/o err
     jwt.verify(token, getAccessTokenSecret('device'), async (err, decodedToken) => {
       if (err) {
-        if (err.name == 'JsonWebTokenError'){
-          resolve({str: err.name})
-        } else if (err.name == 'TokenExpiredError'){
-          resolve({str: err.name})
+        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+          return resolve({ str: err.name });
         }
-        reject(err)
+        return reject(err);
       }
 
-      // NOTE: A brgy can also act as a sender to UP ringserver...
-      if (! (decodedToken.role == 'sensor' || decodedToken.role == 'brgy')) { // check that role is sensor or brgy (since a token can have a different role and still be valid)
-        resolve({str: 'tokenRoleInvalid'});
-      }
-
-      // Get streamIds (will be sent as response) and ObjectId (used to update brgy table) of sensor
-      const sensor = await User.findOne({ 'username': decodedToken.username }).populate('devices'); // populate devices array with object itself instead of just ids
-      const sensorStreamIds = sensor.devices.map(device => device.streamId)
-      const sensorDeviceIds = sensor.devices.map(device => device._id)
-
-      // Update device list of brgy to include this sensor (so that UP server, which can
-      // be seen as also a brgy, will allow this brgy to forward sensor's data)
-      // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
-      const brgy = await User.findOne({ 'username': brgyUsername });  // brgy account, username is on req.username due to verifyTokenRole middleware
-      if( ! brgy) {
-        console.log( 'Brgy account is valid but not found in DB!!')
-        resolve({str: 'brgyNotFound'});
-      }
-
-      // Add sensorDeviceIds to brgy table
-      let brgyAccountUpdated = false
-      for (let i = 0; i < sensorDeviceIds.length; i++) {              // for each deviceId, check if brgy.devices already contains it
-        const deviceId = sensorDeviceIds[i];
-
-        if (brgy.devices.includes(deviceId)) {                        // If the device is already in the brgy.devices array, skip it
-          continue;
+      try {
+        // NOTE: A brgy can also act as a sender to UP ringserver...
+        if (!(decodedToken?.role === 'sensor' || decodedToken?.role === 'brgy')) {
+          return resolve({ str: 'tokenRoleInvalid' });
         }
 
-        brgy.devices.push(deviceId);                                  // If the device is not in the brgy.devices array, add it
-        brgyAccountUpdated = true;
-      }
-
-      if (brgyAccountUpdated === true) {
-        await brgy.save();                                            // Save the updated brgy account object
-      }
-
-      resolve({
-        str: 'sensorIsValid',
-        sensor:{
-          username: decodedToken.username,
-          role: decodedToken.role, 
-          streamIds: sensorStreamIds,
-          tokenExp: decodedToken.exp,
+        // Get streamIds (will be sent as response) and ObjectId (used to update brgy table) of sensor
+        const sensor = await User.findOne({ username: decodedToken.username }).populate('devices');
+        if (!sensor) {
+          return resolve({ str: 'tokenRoleInvalid' });
         }
-      });
+
+        const sensorDevices = Array.isArray(sensor.devices) ? sensor.devices : [];
+        const sensorStreamIds = sensorDevices.map((device) => device.streamId);
+        const sensorDeviceIds = sensorDevices.map((device) => device._id);
+
+        // Update device list of brgy to include this sensor (so that UP server, which can
+        // be seen as also a brgy, will allow this brgy to forward sensor's data)
+        // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
+        const brgy = await User.findOne({ username: brgyUsername });  // brgy account, username is on req.username due to verifyTokenRole middleware
+        if (!brgy) {
+          console.log('Brgy account is valid but not found in DB!!');
+          return resolve({ str: 'brgyNotFound' });
+        }
+
+        if (!Array.isArray(brgy.devices)) {
+          brgy.devices = [];
+        }
+
+        // Add sensorDeviceIds to brgy table
+        let brgyAccountUpdated = false;
+        for (let i = 0; i < sensorDeviceIds.length; i++) {
+          const deviceId = sensorDeviceIds[i];
+          if (brgy.devices.some((existingId) => String(existingId) === String(deviceId))) {
+            continue;
+          }
+          brgy.devices.push(deviceId);
+          brgyAccountUpdated = true;
+        }
+
+        if (brgyAccountUpdated === true) {
+          await brgy.save();
+        }
+
+        return resolve({
+          str: 'sensorIsValid',
+          sensor: {
+            username: decodedToken.username,
+            role: decodedToken.role,
+            streamIds: sensorStreamIds,
+            tokenExp: decodedToken.exp,
+          },
+        });
+      } catch (callbackError) {
+        return reject(callbackError);
+      }
     }) //end of jwt.verify()
   }) //end of Promise
 }

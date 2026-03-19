@@ -369,7 +369,7 @@ exports.verifySensorToken = async (req, res, next) => {
     if(result.error){ throw result.error }
 
     // Perform Task
-    returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
+    const returnObj = await AccountsService.verifySensorToken(result.value.token, req.username)
 
     // Respond based on returned value
     let message = "";
@@ -1013,7 +1013,7 @@ exports.getActiveRingserverHosts = async (req, res, next) => {
 
   try {
     // Perform Task
-    returnObj = await AccountsService.getActiveRingserverHosts()
+    const returnObj = await AccountsService.getActiveRingserverHosts()
 
     // Respond based on returned value
     switch (returnObj.str) {
