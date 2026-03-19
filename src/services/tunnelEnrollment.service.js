@@ -46,6 +46,7 @@ function resolveConfig() {
     bastionPort: Number(process.env.TUNNEL_BASTION_PORT || 443),
     bastionHostKey: (process.env.TUNNEL_BASTION_HOST_KEY || '').trim(),
     remoteActionOperatorPublicKey: String(process.env.TUNNEL_REMOTE_ACTIONS_OPERATOR_PUBLIC_KEY || '').trim(),
+    operatorSshPublicKey: String(process.env.TUNNEL_OPERATOR_SSH_PUBLIC_KEY || '').trim(),
     portRangeStart: process.env.TUNNEL_PORT_RANGE_START || '',
     portRangeEnd: process.env.TUNNEL_PORT_RANGE_END || '',
     commandTimeoutMs: Number(process.env.TUNNEL_SCRIPT_TIMEOUT_MS || 15000),
@@ -222,6 +223,7 @@ function normalizeMappingFromEnv(
   tunnelWssUrl = '',
   tunnelWssPathPrefix = '',
   remoteActionOperatorPublicKey = '',
+  operatorSshPublicKey = '',
 ) {
   const bastionHost = env.REMOTE_TUNNEL_BASTION_HOST || '';
   const bastionUser = env.REMOTE_TUNNEL_BASTION_USER || '';
@@ -252,6 +254,9 @@ function normalizeMappingFromEnv(
     REMOTE_TUNNEL_WSS_PATH_PREFIX: wssPathPrefix,
     REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY: String(
       env.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY || remoteActionOperatorPublicKey || '',
+    ).trim(),
+    REMOTE_TUNNEL_OPERATOR_SSH_PUBLIC_KEY: String(
+      env.REMOTE_TUNNEL_OPERATOR_SSH_PUBLIC_KEY || operatorSshPublicKey || '',
     ).trim(),
   };
 }
@@ -308,6 +313,7 @@ async function enrollDeviceTunnel({
     cfg.tunnelWssUrl,
     cfg.tunnelWssPathPrefix,
     cfg.remoteActionOperatorPublicKey,
+    cfg.operatorSshPublicKey,
   );
 }
 

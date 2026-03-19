@@ -626,6 +626,9 @@ exports.enrollDeviceTunnel = async (req, res, next) => {
     if (mapping.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY) {
       payload.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY = mapping.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY;
     }
+    if (mapping.REMOTE_TUNNEL_OPERATOR_SSH_PUBLIC_KEY) {
+      payload.REMOTE_TUNNEL_OPERATOR_SSH_PUBLIC_KEY = mapping.REMOTE_TUNNEL_OPERATOR_SSH_PUBLIC_KEY;
+    }
 
     res.status(200).json({
       status: responseCodes.TUNNEL_ENROLL_SUCCESS || responseCodes.GENERIC_SUCCESS,
