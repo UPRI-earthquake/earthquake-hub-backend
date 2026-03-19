@@ -4,6 +4,7 @@ const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
 const RemoteDeviceActionsService = require('../services/remoteDeviceActions.service');
 const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
+const logger = require('../middlewares/logger.middleware');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
 const jwt = require('jsonwebtoken');
@@ -710,6 +711,14 @@ function mapRemoteActionErrorStatus(code = '') {
   }
 }
 
+function serializeRemoteActionMeta(meta = {}) {
+  try {
+    return JSON.stringify(meta || {});
+  } catch (_error) {
+    return '[unserializable-meta]';
+  }
+}
+
 exports.getRemoteActionCapabilities = async (req, res, next) => {
   try {
     const deviceIds = parseRemoteActionDeviceIds(req.query);
@@ -811,6 +820,16 @@ exports.executeRemoteAction = async (req, res, next) => {
     res.message = 'Remote action executed.';
   } catch (error) {
     if (error?.name === 'RemoteDeviceActionError') {
+      const rawDeviceId = String(req?.body?.deviceId || '').trim().toUpperCase();
+      const rawAction = String(req?.body?.action || '').trim().toUpperCase();
+      res.message = `Remote action failed (${error.code || 'remote_actions_error'})`;
+      logger.error(
+        `Remote action failed: code=${error.code || 'remote_actions_error'} `
+        + `user=${req.username || 'unknown'} deviceId=${rawDeviceId || 'unknown'} `
+        + `action=${rawAction || 'unknown'} message="${error.message || 'n/a'}" `
+        + `meta=${serializeRemoteActionMeta(error.meta)}`,
+        { label: 'remoteActions', ip: req.ip },
+      );
       return res.status(mapRemoteActionErrorStatus(error.code)).json({
         status: responseCodes.REMOTE_ACTION_EXECUTE_ERROR || responseCodes.GENERIC_ERROR,
         message: error.message || 'Remote action execution failed.',
