@@ -2,6 +2,7 @@ const Joi = require('joi');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
+const RemoteDeviceActionsService = require('../services/remoteDeviceActions.service');
 const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
@@ -622,6 +623,9 @@ exports.enrollDeviceTunnel = async (req, res, next) => {
     if (mapping.REMOTE_TUNNEL_WSS_PATH_PREFIX) {
       payload.REMOTE_TUNNEL_WSS_PATH_PREFIX = mapping.REMOTE_TUNNEL_WSS_PATH_PREFIX;
     }
+    if (mapping.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY) {
+      payload.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY = mapping.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY;
+    }
 
     res.status(200).json({
       status: responseCodes.TUNNEL_ENROLL_SUCCESS || responseCodes.GENERIC_SUCCESS,
@@ -654,6 +658,160 @@ exports.enrollDeviceTunnel = async (req, res, next) => {
       return res.status(502).json({
         status: responseCodes.TUNNEL_ENROLL_ERROR || responseCodes.GENERIC_ERROR,
         message,
+      });
+    }
+    next(error);
+  }
+};
+
+function parseRemoteActionDeviceIds(query = {}) {
+  const normalized = [];
+  const collect = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    if (value === undefined || value === null) {
+      return;
+    }
+    String(value)
+      .split(',')
+      .map((token) => token.trim().toUpperCase())
+      .filter(Boolean)
+      .forEach((token) => normalized.push(token));
+  };
+
+  collect(query.deviceId);
+  collect(query.deviceIds);
+  return Array.from(new Set(normalized)).slice(0, 100);
+}
+
+function mapRemoteActionErrorStatus(code = '') {
+  switch (String(code || '').toLowerCase()) {
+    case 'not_owned':
+      return 403;
+    case 'validation_error':
+      return 400;
+    case 'not_mapped':
+    case 'revoked':
+    case 'offline':
+      return 409;
+    case 'timeout':
+      return 504;
+    case 'remote_failed':
+      return 502;
+    case 'config_error':
+      return 500;
+    default:
+      return 500;
+  }
+}
+
+exports.getRemoteActionCapabilities = async (req, res, next) => {
+  try {
+    const deviceIds = parseRemoteActionDeviceIds(req.query);
+    const capabilities = await RemoteDeviceActionsService.listRemoteActionCapabilities({
+      username: req.username,
+      deviceIds,
+    });
+
+    res.status(200).json({
+      status: responseCodes.REMOTE_ACTION_CAPABILITIES_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Remote action capabilities retrieved.',
+      payload: {
+        capabilities,
+        availableActions: Object.values(RemoteDeviceActionsService.ACTIONS),
+      },
+    });
+    res.message = 'Remote action capabilities retrieved.';
+  } catch (error) {
+    if (error?.name === 'RemoteDeviceActionError') {
+      return res.status(mapRemoteActionErrorStatus(error.code)).json({
+        status: responseCodes.REMOTE_ACTION_CAPABILITIES_ERROR || responseCodes.GENERIC_ERROR,
+        message: error.message || 'Failed to resolve remote action capabilities.',
+        errorCode: error.code || 'remote_actions_error',
+      });
+    }
+    next(error);
+  }
+};
+
+exports.getRemoteActionServers = async (req, res, next) => {
+  const schema = Joi.object({
+    deviceId: Joi.string().trim().max(128).required(),
+  }).required();
+
+  try {
+    const { error, value } = schema.validate(req.query);
+    if (error) {
+      return res.status(400).json({
+        status: responseCodes.REMOTE_ACTION_SERVERS_ERROR || responseCodes.VALIDATION_ERROR,
+        message: formatErrorMessage(error.details[0].message),
+      });
+    }
+
+    const result = await RemoteDeviceActionsService.listRemoteDeviceServers({
+      username: req.username,
+      deviceId: value.deviceId,
+    });
+
+    res.status(200).json({
+      status: responseCodes.REMOTE_ACTION_SERVERS_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Remote device servers retrieved.',
+      payload: result,
+    });
+    res.message = 'Remote device servers retrieved.';
+  } catch (error) {
+    if (error?.name === 'RemoteDeviceActionError') {
+      return res.status(mapRemoteActionErrorStatus(error.code)).json({
+        status: responseCodes.REMOTE_ACTION_SERVERS_ERROR || responseCodes.GENERIC_ERROR,
+        message: error.message || 'Failed to read remote device servers.',
+        errorCode: error.code || 'remote_actions_error',
+      });
+    }
+    next(error);
+  }
+};
+
+exports.executeRemoteAction = async (req, res, next) => {
+  const schema = Joi.object({
+    deviceId: Joi.string().trim().max(128).required(),
+    action: Joi.string()
+      .trim()
+      .uppercase()
+      .valid(...Object.values(RemoteDeviceActionsService.ACTIONS))
+      .required(),
+    payload: Joi.object().unknown(true).default({}),
+  }).required();
+
+  try {
+    const { error, value } = schema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        status: responseCodes.REMOTE_ACTION_EXECUTE_ERROR || responseCodes.VALIDATION_ERROR,
+        message: formatErrorMessage(error.details[0].message),
+      });
+    }
+
+    const result = await RemoteDeviceActionsService.executeRemoteDeviceAction({
+      username: req.username,
+      deviceId: value.deviceId,
+      action: value.action,
+      payload: value.payload,
+    });
+
+    res.status(200).json({
+      status: responseCodes.REMOTE_ACTION_EXECUTE_SUCCESS || responseCodes.GENERIC_SUCCESS,
+      message: 'Remote action executed.',
+      payload: result,
+    });
+    res.message = 'Remote action executed.';
+  } catch (error) {
+    if (error?.name === 'RemoteDeviceActionError') {
+      return res.status(mapRemoteActionErrorStatus(error.code)).json({
+        status: responseCodes.REMOTE_ACTION_EXECUTE_ERROR || responseCodes.GENERIC_ERROR,
+        message: error.message || 'Remote action execution failed.',
+        errorCode: error.code || 'remote_actions_error',
       });
     }
     next(error);

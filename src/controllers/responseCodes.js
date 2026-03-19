@@ -58,10 +58,16 @@ const responseCodes = {
   TUNNEL_ENROLL_SUCCESS:      80,
   TUNNEL_LIST_SUCCESS:        81,
   TUNNEL_REVOKE_SUCCESS:      82,
+  REMOTE_ACTION_CAPABILITIES_SUCCESS: 83,
+  REMOTE_ACTION_EXECUTE_SUCCESS: 84,
+  REMOTE_ACTION_SERVERS_SUCCESS: 85,
   TUNNEL_ENROLL_ERROR:       190,
   TUNNEL_ENROLL_COLLISION:   191,
   TUNNEL_LIST_ERROR:         192,
   TUNNEL_REVOKE_ERROR:       193,
+  REMOTE_ACTION_CAPABILITIES_ERROR: 194,
+  REMOTE_ACTION_EXECUTE_ERROR: 195,
+  REMOTE_ACTION_SERVERS_ERROR: 196,
 
   PASSWORD_RESET_REQUESTED:   70,
   PASSWORD_RESET_SUCCESS:     71,
@@ -111,10 +117,16 @@ const responseMessages = {
   TUNNEL_ENROLL_SUCCESS: "Device tunnel enrollment success",
   TUNNEL_LIST_SUCCESS: "Device tunnel mapping list success",
   TUNNEL_REVOKE_SUCCESS: "Device tunnel revoke success",
+  REMOTE_ACTION_CAPABILITIES_SUCCESS: "Remote action capabilities success",
+  REMOTE_ACTION_EXECUTE_SUCCESS: "Remote action execute success",
+  REMOTE_ACTION_SERVERS_SUCCESS: "Remote action servers success",
   TUNNEL_ENROLL_ERROR: "Device tunnel enrollment error",
   TUNNEL_ENROLL_COLLISION: "Device tunnel enrollment collision",
   TUNNEL_LIST_ERROR: "Device tunnel mapping list error",
   TUNNEL_REVOKE_ERROR: "Device tunnel revoke error",
+  REMOTE_ACTION_CAPABILITIES_ERROR: "Remote action capabilities error",
+  REMOTE_ACTION_EXECUTE_ERROR: "Remote action execute error",
+  REMOTE_ACTION_SERVERS_ERROR: "Remote action servers error",
 };
 
 module.exports = {

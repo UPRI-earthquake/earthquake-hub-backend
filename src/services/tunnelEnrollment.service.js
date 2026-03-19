@@ -40,10 +40,12 @@ function resolveConfig() {
     execMode: normalizeExecMode(process.env.TUNNEL_SCRIPT_EXEC_MODE || 'local'),
     registerScript: process.env.TUNNEL_REGISTER_SCRIPT || '/opt/upri/bastion/register-device.sh',
     revokeScript: process.env.TUNNEL_REVOKE_SCRIPT || '/opt/upri/bastion/revoke-device.sh',
+    resolveScript: process.env.TUNNEL_RESOLVE_SCRIPT || '/opt/upri/bastion/resolve-device.sh',
     registryFile: process.env.TUNNEL_REGISTRY_FILE || '/etc/upri/rshake-tunnels/devices.csv',
     bastionHost: process.env.TUNNEL_BASTION_HOST || '',
     bastionPort: Number(process.env.TUNNEL_BASTION_PORT || 443),
     bastionHostKey: (process.env.TUNNEL_BASTION_HOST_KEY || '').trim(),
+    remoteActionOperatorPublicKey: String(process.env.TUNNEL_REMOTE_ACTIONS_OPERATOR_PUBLIC_KEY || '').trim(),
     portRangeStart: process.env.TUNNEL_PORT_RANGE_START || '',
     portRangeEnd: process.env.TUNNEL_PORT_RANGE_END || '',
     commandTimeoutMs: Number(process.env.TUNNEL_SCRIPT_TIMEOUT_MS || 15000),
@@ -219,6 +221,7 @@ function normalizeMappingFromEnv(
   bastionHostKey = '',
   tunnelWssUrl = '',
   tunnelWssPathPrefix = '',
+  remoteActionOperatorPublicKey = '',
 ) {
   const bastionHost = env.REMOTE_TUNNEL_BASTION_HOST || '';
   const bastionUser = env.REMOTE_TUNNEL_BASTION_USER || '';
@@ -247,6 +250,9 @@ function normalizeMappingFromEnv(
     REMOTE_TUNNEL_BASTION_HOST_KEY: bastionHostKey || '',
     REMOTE_TUNNEL_WSS_URL: wssUrlRaw,
     REMOTE_TUNNEL_WSS_PATH_PREFIX: wssPathPrefix,
+    REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY: String(
+      env.REMOTE_TUNNEL_OPERATOR_PUBLIC_KEY || remoteActionOperatorPublicKey || '',
+    ).trim(),
   };
 }
 
@@ -301,6 +307,7 @@ async function enrollDeviceTunnel({
     cfg.bastionHostKey,
     cfg.tunnelWssUrl,
     cfg.tunnelWssPathPrefix,
+    cfg.remoteActionOperatorPublicKey,
   );
 }
 
@@ -322,6 +329,47 @@ async function revokeDeviceTunnel(deviceId) {
     deviceId,
     message: String(stdout || '').trim() || 'Device tunnel revoked',
   };
+}
+
+function normalizeResolveMappingFromEnv(deviceId, env = {}) {
+  const remotePort = Number(env.REMOTE_PORT || env.REMOTE_TUNNEL_REMOTE_PORT || '');
+  const status = String(env.STATUS || '').trim().toLowerCase();
+  const listener = String(env.LISTENER || '').trim().toLowerCase();
+  const bastionUser = String(env.BASTION_USER || env.REMOTE_TUNNEL_BASTION_USER || '').trim();
+
+  if (!Number.isFinite(remotePort) || remotePort < 1 || remotePort > 65535) {
+    throw new TunnelEnrollmentError(
+      'SCRIPT_ERROR',
+      'Resolve script output missing a valid REMOTE_PORT',
+      { env },
+    );
+  }
+
+  return {
+    deviceId,
+    bastionUser,
+    remotePort,
+    status: status || 'unknown',
+    listener: listener || 'unknown',
+  };
+}
+
+async function resolveDeviceMapping(deviceId) {
+  const cfg = resolveConfig();
+  if (!deviceId || typeof deviceId !== 'string') {
+    throw new TunnelEnrollmentError('VALIDATION', 'deviceId is required');
+  }
+
+  const args = [
+    '--device-id',
+    deviceId,
+    '--registry-file',
+    cfg.registryFile,
+  ];
+
+  const { stdout } = await runScript(cfg, cfg.resolveScript, args, cfg.commandTimeoutMs);
+  const env = parseEnvSnippet(stdout);
+  return normalizeResolveMappingFromEnv(deviceId, env);
 }
 
 function parseCsvLine(line) {
@@ -372,4 +420,5 @@ module.exports = {
   enrollDeviceTunnel,
   revokeDeviceTunnel,
   listActiveMappings,
+  resolveDeviceMapping,
 };

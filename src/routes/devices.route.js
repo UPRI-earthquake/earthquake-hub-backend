@@ -306,6 +306,24 @@ router.route('/tunnel/revoke').post(
   DeviceController.revokeDeviceTunnel,
 );
 
+router.route('/remote-actions/capabilities').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionCapabilities,
+);
+
+router.route('/remote-actions/servers').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionServers,
+);
+
+router.route('/remote-actions/execute').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.executeRemoteAction,
+);
+
 
 /**
   * @swagger
