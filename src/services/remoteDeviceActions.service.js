@@ -105,7 +105,7 @@ function resolveConfig() {
       sshKeyPath: String(process.env.TUNNEL_SCRIPT_SSH_KEY_PATH || '').trim(),
       sshKnownHostsPath: String(process.env.TUNNEL_SCRIPT_SSH_KNOWN_HOSTS_PATH || '').trim(),
       sshStrictHostKey: scriptStrictHostKey,
-      sshRemotePrefix: String(process.env.TUNNEL_SCRIPT_SSH_REMOTE_PREFIX || '').trim(),
+      sshRemotePrefix: String(process.env.TUNNEL_REMOTE_ACTION_RELAY_SSH_REMOTE_PREFIX || '').trim(),
     },
   };
 }
