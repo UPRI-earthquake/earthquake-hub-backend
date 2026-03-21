@@ -7,6 +7,30 @@ const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
 const Device = require('../models/device.model');
 
+const rshakeAlertDeviceSchema = Joi.object({
+  network: Joi.string().trim().uppercase().min(2).max(4),
+  station: Joi.string().trim().uppercase().min(3).max(8),
+  streamId: Joi.string().trim().min(3),
+  macAddress: Joi.string().trim().min(8),
+})
+  .required()
+  .custom((device, helpers) => {
+    const hasNetwork = Boolean(device.network);
+    const hasStation = Boolean(device.station);
+    const hasStreamId = Boolean(device.streamId);
+    const hasMacAddress = Boolean(device.macAddress);
+
+    if (hasNetwork !== hasStation) {
+      return helpers.message('Device network and station must be provided together.');
+    }
+
+    if (hasStreamId || hasMacAddress || (hasNetwork && hasStation)) {
+      return device;
+    }
+
+    return helpers.message('Device must include streamId, macAddress, or both network and station.');
+  });
+
 exports.setupSSEConnection = async (req, res, next) => {
   try {
     console.log('SSE connection opened:', req.ip)
@@ -170,14 +194,7 @@ exports.newRshakeAlert = async (req, res, next) => {
     messageId: Joi.string().trim().required(),
     type: Joi.string().trim().valid('device.alert', 'device.recovery', 'device.heartbeat').required(),
     occurredAt: Joi.string().isoDate().required(),
-    device: Joi.object({
-      network: Joi.string().trim().uppercase().min(2).max(4),
-      station: Joi.string().trim().uppercase().min(3).max(8),
-      streamId: Joi.string().trim().min(3),
-      macAddress: Joi.string().trim().min(8),
-    })
-      .required()
-      .or('network', 'station', 'streamId', 'macAddress'),
+    device: rshakeAlertDeviceSchema,
     location: Joi.object({
       latitude: Joi.number().min(-90).max(90),
       longitude: Joi.number().min(-180).max(180),

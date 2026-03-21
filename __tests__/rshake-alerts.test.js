@@ -9,6 +9,16 @@ const app = require('../src/app');
 
 describe('RShake alerts route smoke', () => {
   const originalSecret = process.env.RSHAKE_ALERT_SHARED_SECRET;
+  const validAlertPayload = {
+    schemaVersion: '1.0',
+    messageId: 'msg-1',
+    type: 'device.alert',
+    occurredAt: '2026-03-13T00:00:00.000Z',
+    device: {
+      streamId: 'AM_TEST1_.*/MSEED',
+    },
+    summary: 'Test alert',
+  };
 
   afterEach(() => {
     jest.clearAllMocks();
@@ -19,9 +29,20 @@ describe('RShake alerts route smoke', () => {
     }
   });
 
-  it('POST /messaging/restricted/rshake-alert with invalid body returns 400', async () => {
+  it('returns 403 when no alert credential is provided and no global secret is configured', async () => {
     const res = await request(app)
       .post('/messaging/restricted/rshake-alert')
+      .send({})
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /messaging/restricted/rshake-alert with invalid body returns 400 after auth succeeds', async () => {
+    process.env.RSHAKE_ALERT_SHARED_SECRET = 'test-shared-secret';
+    const res = await request(app)
+      .post('/messaging/restricted/rshake-alert')
+      .set('X-RShake-Alert-Secret', 'test-shared-secret')
       .send({})
       .set('Content-Type', 'application/json');
 
@@ -87,5 +108,21 @@ describe('RShake alerts route smoke', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty('status');
+  });
+
+  it('rejects partial network/station identifiers even after auth succeeds', async () => {
+    process.env.RSHAKE_ALERT_SHARED_SECRET = 'test-shared-secret';
+    const res = await request(app)
+      .post('/messaging/restricted/rshake-alert')
+      .set('X-RShake-Alert-Secret', 'test-shared-secret')
+      .send({
+        ...validAlertPayload,
+        device: {
+          station: 'TEST1',
+        },
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(400);
   });
 });

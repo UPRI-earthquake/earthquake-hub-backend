@@ -67,14 +67,11 @@ const requireRshakeAlertSecret = async (req, res, next) => {
       return next();
     }
 
-    if (!expectedSecret && !deviceSecretResult?.required) {
-      return next();
-    }
   } catch (error) {
     return next(error);
   }
 
-  res.message = 'Rejected sender alert request (shared secret mismatch)';
+  res.message = 'Rejected sender alert request (missing or invalid alert credential)';
   return res.status(403).json({
     status: 403,
     message: 'Forbidden',

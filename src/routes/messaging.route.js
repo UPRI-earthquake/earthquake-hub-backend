@@ -206,8 +206,8 @@ router.post(`${restrictedPath}/new-pick`,
   *     description: >
   *       Restricted endpoint for trusted sender integrations. Stores no state by default;
   *       validates payload then dispatches alert emails to opted-in account owners and admin monitors.
-  *       If `RSHAKE_ALERT_SHARED_SECRET` is configured, caller must send
-  *       `X-RShake-Alert-Secret` header.
+  *       Caller must send either a configured `RSHAKE_ALERT_SHARED_SECRET`
+  *       or a device-scoped `X-RShake-Alert-Secret` issued during device linking.
   *     tags: [Messaging]
   *     requestBody:
   *       required: true
