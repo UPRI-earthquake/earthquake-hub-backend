@@ -4,10 +4,13 @@ const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
 const RemoteDeviceActionsService = require('../services/remoteDeviceActions.service');
 const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
+const Account = require('../models/account.model');
 const logger = require('../middlewares/logger.middleware');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
 const jwt = require('jsonwebtoken');
+
+const ALLOWED_REFRESH_ROLES = new Set(['sensor', 'brgy']);
 
 exports.getAllDeviceLocations = async (req, res, next) => {
   // No validation for GET request
@@ -341,6 +344,26 @@ exports.refreshToken = async (req, res, next) => {
     }
 
     const { username, role } = decoded;
+    if (!ALLOWED_REFRESH_ROLES.has(role)) {
+      return res.status(403).json({
+        status: responseCodes.AUTHENTICATION_INVALID_ROLE,
+        message: 'Session role not permitted for this route',
+      });
+    }
+
+    const accountRecord = await Account.findOne({ username });
+    if (!accountRecord || !Array.isArray(accountRecord.roles) || !accountRecord.roles.includes(role)) {
+      return res.status(401).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: 'Invalid refresh token',
+      });
+    }
+    if (role === 'brgy' && !accountRecord.isApproved) {
+      return res.status(403).json({
+        status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
+        message: 'Account is not yet approved',
+      });
+    }
 
     // Build device info payload if available
     const account = await DeviceService.getAccountDevices(username);
