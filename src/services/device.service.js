@@ -269,7 +269,7 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   }
 
   // Parse device details early
-  const [network, station, loc, channel] = streamId.split(",")[0].split("_")
+  const [network, station] = streamId.split(",")[0].split("_")
 
   // check if user already has the device in their record
   const deviceOwned = currentAccount.devices.find(device => device.macAddress === macAddress);
@@ -454,7 +454,7 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
 
   // Must be an existing user account to accept device unlinking request - update db.
   // get device with same Network and Station
-  const [network, station, loc, channel] = streamId.split(",")[0].split("_")
+  const [network, station] = streamId.split(",")[0].split("_")
   const device = await Device.findOne({ network:network, station:station })
 
   if(!device){

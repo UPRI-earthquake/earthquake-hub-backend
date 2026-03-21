@@ -167,7 +167,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   let passwordIsValid = bcrypt.compareSync(
     password,      // received password
     user.password  // password in db
-  )
+  );
 
   if(!passwordIsValid){
     return maskUserNotFound ? 'invalidCredentials' : 'wrongPassword';
