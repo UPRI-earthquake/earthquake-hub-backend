@@ -968,7 +968,7 @@ exports.deleteAccount = async (req, res, next) => {
         res.status(409).json({
           status: responseCodes.ACCOUNT_DELETE_HAS_DEVICES || responseCodes.VALIDATION_ERROR,
           message:
-            'All devices must be unlinked from this account via the sender software (rs.local:3000) before deleting this account.',
+            'All devices must be unlinked from this account before deleting this account.',
           deviceCount: outcome.deviceCount,
         });
         res.message = 'Account deletion blocked: devices still linked';
