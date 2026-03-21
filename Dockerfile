@@ -25,8 +25,8 @@ RUN npm ci --only=production --loglevel=verbose
 COPY --chown=node:node ./src ./src
 COPY --chown=node:node ./scripts ./scripts
 
-# fetch and trim overlay data at build time so images ship with localized assets
-RUN npm run overlays:fetch
+# Overlay GeoJSON assets are committed under src/data/overlays.
+# Refresh them separately via npm run overlays:fetch when source datasets change.
 
 USER node
 CMD ["dumb-init", "npm", "run", "start"]
