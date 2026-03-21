@@ -52,6 +52,13 @@ exports.getEarthquakeInfo = async (req, res, next) => {
         let message = "";
 
         switch (returnObj.str){
+            case "invalidId":
+                message = "Invalid earthquake id";
+                res.status(400).json({
+                    status: responseCodes.VALIDATION_ERROR,
+                    message: message
+                });
+                break;
             case "noEarthquakeInfoFound":
                 message = "No Earthquake Information found in DB!";
                 res.status(400).json({

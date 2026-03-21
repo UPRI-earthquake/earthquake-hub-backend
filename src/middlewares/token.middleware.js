@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const {responseCodes} = require('../controllers/responseCodes')
+const { responseCodes } = require('../controllers/responseCodes');
+const { getAccessTokenSecret } = require('../controllers/helpers');
 
 // Citizen role request sends tokens thru cookie in requests
 function getTokenFromCookie(req, res, next) {
@@ -9,12 +10,15 @@ function getTokenFromCookie(req, res, next) {
   }
 
   const token = req.cookies.accessToken;
+  req.refreshToken = req.cookies.refreshToken;
   if(!token) {
     res.status(403).json({ status: 403, message: "Token in cookie missing" })
     return;
   }
 
   req.token = token;
+  req.tokenSource = 'cookie';
+  req.tokenScope = 'web';
   next();
 }
 
@@ -22,6 +26,10 @@ function getTokenFromCookie(req, res, next) {
 function getTokenFromCookieIfPresent(req, res, next) {
   // Normalize flags used by optional verifiers
   req.isAuthenticated = false;
+  req.sessionError = null;
+  req.refreshToken = req.cookies ? req.cookies.refreshToken : undefined;
+  req.tokenSource = 'cookie';
+  req.tokenScope = 'web';
 
   // If cookies are unavailable or token not present, proceed without setting req.token
   if (!req.cookies || !req.cookies.accessToken) {
@@ -47,15 +55,47 @@ function getTokenFromBearer(req, res, next) {
   }
 
   req.token = token;
+  req.tokenSource = 'bearer';
   next();
+}
+
+// Optional bearer reader: does not error when header/token is missing
+function getTokenFromBearerIfPresent(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) {
+    req.token = undefined;
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    req.token = undefined;
+    return next();
+  }
+
+  req.token = token;
+  next();
+}
+
+function resolveScope(allowedRoles = [], req) {
+  if (req?.tokenScope) {
+    return req.tokenScope;
+  }
+  if (Array.isArray(allowedRoles) && allowedRoles.length === 1 && allowedRoles[0] === 'brgy') {
+    return 'brgy';
+  }
+  return req?.tokenSource === 'cookie' ? 'web' : 'device';
 }
 
 // Verify token is valid, and role in token is role in arg
 function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for custom args
+  const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
-    jwt.verify(req.token, 
-      process.env.ACCESS_TOKEN_PRIVATE_KEY, 
-      {ignoreExpiration: ignoreExpiration}, 
+    const scope = resolveScope(allowedRoles, req);
+    jwt.verify(
+      req.token,
+      getAccessTokenSecret(scope),
+      { ignoreExpiration },
       (err, decodedToken) => {
 
       if (err) {
@@ -73,7 +113,7 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
         return;
       }
 
-      if (decodedToken.role !== role) {
+      if (!allowedRoles.includes(decodedToken.role)) {
         res.status(403).json({
           status: responseCodes.VERIFICATION_INVALID_ROLE,
           message: "Role invalid"
@@ -95,27 +135,32 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
 
 // Verify token with role but do not error; sets req.isAuthenticated=false on failures
 function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
+  const allowedRoles = Array.isArray(role) ? role : [role];
   return (req, res, next) => {
     // If no token provided, skip verification; treat as unauthenticated
     if (!req.token) {
       req.isAuthenticated = false;
+      req.sessionError = req.sessionError || 'missing';
       return next();
     }
 
+    const scope = resolveScope(allowedRoles, req);
     jwt.verify(
       req.token,
-      process.env.ACCESS_TOKEN_PRIVATE_KEY,
+      getAccessTokenSecret(scope),
       { ignoreExpiration },
       (err, decodedToken) => {
         if (err) {
           // Invalid or expired token — treat as unauthenticated without responding
           req.isAuthenticated = false;
+          req.sessionError = err.name === 'TokenExpiredError' ? 'expired' : 'invalid';
           return next();
         }
 
-        if (decodedToken.role !== role) {
+        if (!allowedRoles.includes(decodedToken.role)) {
           // Role mismatch — treat as unauthenticated without responding
           req.isAuthenticated = false;
+          req.sessionError = 'invalidRole';
           return next();
         }
 
@@ -127,6 +172,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
           req.streamIds = decodedToken.streamIds;
         }
         req.isAuthenticated = true;
+        req.sessionError = null;
         next();
       }
     );
@@ -137,6 +183,7 @@ module.exports = {
   getTokenFromCookie,
   getTokenFromCookieIfPresent,
   getTokenFromBearer,
+  getTokenFromBearerIfPresent,
   verifyTokenWithRole,
   verifyTokenWithRoleOptional,
 }

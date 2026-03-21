@@ -97,7 +97,7 @@ router.route('/register').post(
   * @swagger
   * /accounts/authenticate:
   *   post:
-  *     summary: Return a JWT in exchange for username, password, & role
+  *     summary: Return a JWT in exchange for identifier (username or email), password, & role
   *     tags: [Accounts]
   *     requestBody:
   *       description: User credentials for authentication
@@ -107,9 +107,12 @@ router.route('/register').post(
   *           schema:
   *             type: object
   *             properties:
+  *               identifier:
+  *                 type: string
+  *                 description: Username or contact email
   *               username:
   *                 type: string
-  *                 description: Registered username
+  *                 description: (Legacy) Registered username; identifier is preferred
   *               password:
   *                 type: string
   *                 description: Account's password
@@ -125,7 +128,7 @@ router.route('/register').post(
   *                 type: string
   *                 description: Publicly accessible RingServer URL of the Institution registering as brgy. Only present when chosen role is brgy.
   *           example:
-  *             username: citizen
+  *             identifier: citizen@example.com
   *             password: testpassword
   *             role: citizen
   *     responses:
@@ -211,6 +214,82 @@ router.route('/register').post(
   */
 router.route('/authenticate').post(
   AccountsController.authenticateAccount
+);
+
+/**
+  * @swagger
+  * /accounts/forgot-password:
+  *   post:
+  *     summary: Start password reset flow for a contributor account
+  *     tags: [Accounts]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               email:
+  *                 type: string
+  *                 description: Registered contributor email
+  *           example:
+  *             email: contributor@example.com
+  *     responses:
+  *       '200':
+  *         description: Password reset request accepted
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.PASSWORD_RESET_REQUESTED
+  *                 message:
+  *                   type: string
+  */
+router.route('/forgot-password').post(
+  AccountsController.requestPasswordReset
+);
+
+/**
+  * @swagger
+  * /accounts/reset-password:
+  *   post:
+  *     summary: Complete password reset with a verification token
+  *     tags: [Accounts]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               token:
+  *                 type: string
+  *                 description: Verification token received via email
+  *               password:
+  *                 type: string
+  *                 description: New password
+  *               confirmPassword:
+  *                 type: string
+  *                 description: Confirmation of new password
+  *     responses:
+  *       '200':
+  *         description: Password reset successful
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.PASSWORD_RESET_SUCCESS
+  *                 message:
+  *                   type: string
+  */
+router.route('/reset-password').post(
+  AccountsController.resetPassword
 );
 
 
@@ -380,6 +459,77 @@ router.route('/verify-sensor-token').post(
   AccountsController.verifySensorToken    // Verify sensor's token as provided by the brgy
 )
 
+/**
+  * @swagger
+  * /accounts/brgy/remove-device:
+  *   post:
+  *     summary: Remove a device from a brgy account's devices list
+  *     tags: [Accounts]
+  *     security:
+  *       - bearerAuth: []  # Sensor bearer token required
+  *     requestBody:
+  *       description: Identify the brgy account and device to remove
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               brgyUsername:
+  *                 type: string
+  *                 description: Username of the brgy account
+  *                 example: "barangay-001"
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *                 description: Stream ID of the device
+  *                 example: "AM_RE722_.*\/MSEED"
+  *             required:
+  *               - brgyUsername
+  *               - streamId
+  *     responses:
+  *       '200':
+  *         description: Device removed (or already absent) from brgy account
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_SUCCESS
+  *                 message:
+  *                   type: string
+  *                   example: "Device removed from brgy account"
+  *       '400':
+  *         description: Missing or invalid identifiers, or accounts/devices not found
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  *       '403':
+  *         description: Requesting sensor does not own the device
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                 message:
+  *                   type: string
+  */
+router.route('/brgy/remove-device').post(
+  Middleware.getTokenFromBearer,
+  Middleware.verifyTokenWithRole('sensor'),
+  AccountsController.removeDeviceFromBrgy,
+);
+
 
 /**
   * @swagger
@@ -446,8 +596,96 @@ router.route('/verify-sensor-token').post(
 router.route('/profile').get(
   // Optional auth: do not emit 403 when cookie/token is missing or invalid
   Middleware.getTokenFromCookieIfPresent,
-  Middleware.verifyTokenWithRoleOptional('citizen'),
+  Middleware.verifyTokenWithRoleOptional(['citizen', 'brgy']),
   AccountsController.getAccountProfile
+);
+
+router.route('/profile').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountProfile
+);
+
+router.route('/alert-preferences').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAlertPreferences
+);
+
+router.route('/email').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountEmail
+);
+
+router.route('/password').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountPassword
+);
+
+/**
+  * @swagger
+  * /accounts/username:
+  *   patch:
+  *     summary: Update username for the authenticated account
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               newUsername:
+  *                 type: string
+  *                 description: New username to apply
+  *               currentPassword:
+  *                 type: string
+  *                 description: Current password for verification
+  *           example:
+  *             newUsername: contributor123
+  *             currentPassword: SupersafePassword!
+  *     responses:
+  *       200:
+  *         description: Username updated
+  *       400:
+  *         description: Validation error or username already in use
+  *       401:
+  *         description: Current password is incorrect
+  *       409:
+  *         description: Unable to update username
+  */
+router.route('/username').patch(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.updateAccountUsername
+);
+
+/**
+  * @swagger
+  * /accounts:
+  *   delete:
+  *     summary: Delete the authenticated account (only when no devices remain)
+  *     tags: [Accounts]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Account deleted
+  *       401:
+  *         description: Not authenticated
+  *       404:
+  *         description: Account not found
+  *       409:
+  *         description: Account still has linked devices
+  */
+router.route('/').delete(
+  Middleware.getTokenFromCookie,
+  Middleware.verifyTokenWithRole(['citizen', 'brgy']),
+  AccountsController.deleteAccount
 );
 
 

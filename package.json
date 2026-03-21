@@ -9,7 +9,8 @@
     "start:dev": "nodemon --ignore docs/ -r dotenv/config src/index.js",
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
-    "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'"
+    "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
+    "overlays:fetch": "node scripts/fetch-overlays.js"
   },
   "repository": {
     "type": "git",
@@ -26,14 +27,15 @@
     "app-root-path": "^3.1.0",
     "axios": "^1.0.0",
     "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
     "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "eventsource": "^2.0.2",
     "express": "^4.17.1",
     "joi": "^17.9.1",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0",
+    "nodemailer": "^7.0.12",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
     "web-push": "^3.4.5",
@@ -41,9 +43,9 @@
   },
   "devDependencies": {
     "dotenv": "^16.0.0",
-    "redis": "^4.6.14",
     "jest": "^29.5.0",
     "nodemon": "^2.0.21",
+    "redis": "^4.6.14",
     "supertest": "^6.3.3",
     "testcontainers": "^9.1.3"
   },

@@ -198,6 +198,51 @@ router.post(`${restrictedPath}/new-pick`,
   MessagingController.newPick
 );
 
+/**
+  * @swagger
+  * /messaging/restricted/rshake-alert:
+  *   post:
+  *     summary: Receive sender-originated RShake alert payloads and dispatch email notifications.
+  *     description: >
+  *       Restricted endpoint for trusted sender integrations. Stores no state by default;
+  *       validates payload then dispatches alert emails to opted-in account owners and admin monitors.
+  *       Caller must send either a configured `RSHAKE_ALERT_SHARED_SECRET`
+  *       or a device-scoped `X-RShake-Alert-Secret` issued during device linking.
+  *     tags: [Messaging]
+  *     requestBody:
+  *       required: true
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               schemaVersion:
+  *                 type: string
+  *               messageId:
+  *                 type: string
+  *               type:
+  *                 type: string
+  *                 enum: [device.alert, device.recovery, device.heartbeat]
+  *               occurredAt:
+  *                 type: string
+  *                 format: date-time
+  *               device:
+  *                 type: object
+  *               summary:
+  *                 type: string
+  *     responses:
+  *       202:
+  *         description: Alert accepted
+  *       400:
+  *         description: Validation error
+  *       502:
+  *         description: Email delivery error
+  */
+router.post(`${restrictedPath}/rshake-alert`,
+  MessagingMiddleware.requireRshakeAlertSecret,
+  MessagingController.newRshakeAlert
+);
+
 
 /**
   * @swagger

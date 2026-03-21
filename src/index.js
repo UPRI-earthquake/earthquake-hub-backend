@@ -3,6 +3,7 @@ const os = require('os');
 const http = require('http');
 const app = require('./app');
 const MessagingService = require('./services/messaging.service');
+const SubscriptionCleanupService = require('./services/subscriptionCleanup.service');
 const logger = require('./middlewares/logger.middleware');
 
 const port = process.env.NODE_ENV === 'production'
@@ -12,6 +13,7 @@ const port = process.env.NODE_ENV === 'production'
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
 const mongodb = require('./services/mongodb.service');
 mongodb.connect(); // Required by notifs router
+SubscriptionCleanupService.startSubscriptionCleanupScheduler();
 console.log('mongodb-host: ' + process.env.MONGO_HOST);
 
 // Run Server

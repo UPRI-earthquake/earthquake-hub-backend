@@ -3,7 +3,9 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
+  getTokenFromBearerIfPresent,
   verifyTokenWithRole,
+  verifyTokenWithRoleOptional,
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -158,6 +160,17 @@ router.route('/link').post(
   DeviceController.linkDevice
 );
 
+// Exchange refresh token for new access/refresh pair
+router.route('/refresh-token').post(
+  DeviceController.refreshToken
+);
+
+router.route('/alert-credential').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.issueRshakeAlertCredential,
+);
+
 
 /**
   * @swagger
@@ -234,9 +247,82 @@ router.route('/link').post(
   */
 router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
 getTokenFromBearer,
-verifyTokenWithRole('sensor', ignoreExpiration = true),
+verifyTokenWithRole('sensor', true),
 DeviceController.unlinkDevice
 )
+
+/**
+  * @swagger
+  * /device/reset-link:
+  *   post:
+  *     summary: Hard reset a device link and delete the device record
+  *     tags: [Device]
+  *     requestBody:
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *             required:
+  *               - macAddress
+  *               - streamId
+  *     responses:
+  *       200:
+  *         description: Device reset and record removed
+  *       403:
+  *         description: Device belongs to another account
+  *       404:
+  *         description: Device not found
+  *       409:
+  *         description: Identifier mismatch
+  */
+router.route('/reset-link').post(
+  getTokenFromBearerIfPresent,
+  verifyTokenWithRoleOptional('sensor', true),
+  DeviceController.resetDeviceLink,
+);
+
+router.route('/tunnel/enroll').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.enrollDeviceTunnel,
+);
+
+router.route('/tunnel/mappings').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.listDeviceTunnels,
+);
+
+router.route('/tunnel/revoke').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.revokeDeviceTunnel,
+);
+
+router.route('/remote-actions/capabilities').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionCapabilities,
+);
+
+router.route('/remote-actions/servers').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionServers,
+);
+
+router.route('/remote-actions/execute').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.executeRemoteAction,
+);
 
 
 /**
@@ -350,7 +436,7 @@ router.route('/all').get(
   *                   type: string
   *                   description: The message associated with the response.
   *                   example: 'All device locations found'
-  *                 payload:
+  *                 devices:
   *                   type: array
   *                   description: An array of device objects
   *                   items:
@@ -376,6 +462,23 @@ router.route('/all').get(
   *                         type: string
   *                         description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
   *                         example: "Fri, 14 Jul 2023 12:40:37 GMT"
+  *                 releasedDevices:
+  *                   type: array
+  *                   description: An array of released device history entries
+  *                   items:
+  *                     type: object
+  *                     properties:
+  *                       network:
+  *                         type: string
+  *                       station:
+  *                         type: string
+  *                       description:
+  *                         type: string
+  *                       streamId:
+  *                         type: string
+  *                       releasedAt:
+  *                         type: string
+  *                         format: date-time
   *       '403':
   *         description: When no token is present in sent cookie
   *         content:
@@ -404,9 +507,9 @@ router.route('/all').get(
   *                   example: "Server error occured"
   */
 router.route('/my-devices').get(
-  // Strict auth: require citizen cookie and role
+  // Allow both citizen and brgy accounts to view their linked devices
   getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
+  verifyTokenWithRole(['citizen', 'brgy']),
   DeviceController.getOwnedDevices,
 );
 

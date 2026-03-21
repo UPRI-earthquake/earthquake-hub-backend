@@ -6,12 +6,15 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const fs = require('fs');
+const gaMiddleware = require('./middlewares/ga.middleware');
 
 const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
 const logger = require('./middlewares/logger.middleware');
 
 const app = express();
+
+app.set('trust proxy', true);
 
 // Compression: skip for SSE
 app.use(
@@ -68,6 +71,9 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Google Analytics Measurement Protocol: API request tracking (conditionally enabled)
+app.use(gaMiddleware());
+
 // Request logging
 app.use((req, _, next) => {
   logger.info(`${req.method} request to ${req.path}`, { label: 'requests', ip: req.ip });
@@ -100,6 +106,7 @@ app.use('/messaging', require('./routes/messaging.route'));
 app.use('/notifications', require('./routes/notifications.route'));
 app.use('/eq-events', require('./routes/EQevents.route'));
 app.use('/significant-eqs', require('./routes/significantEQs.route'));
+app.use('/overlays', require('./routes/overlays.route'));
 
 /* Error handler middleware */
 // eslint-disable-next-line no-unused-vars
@@ -124,4 +131,3 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
-
