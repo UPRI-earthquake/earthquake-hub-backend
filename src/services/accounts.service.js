@@ -688,14 +688,18 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
       throw new Error('accountMissingDuringUpdate');
     }
     accountToUpdate.username = nextUsername;
-    await accountToUpdate.save({ session });
+    if (session) {
+      await accountToUpdate.save({ session });
+    } else {
+      await accountToUpdate.save();
+    }
 
     if (deviceIds.length > 0) {
-      const updateResult = await Device.updateMany(
-        { _id: { $in: deviceIds } },
-        { $set: { description: newDescription } },
-        { session }
-      );
+      const filter = { _id: { $in: deviceIds } };
+      const update = { $set: { description: newDescription } };
+      const updateResult = session
+        ? await Device.updateMany(filter, update, { session })
+        : await Device.updateMany(filter, update);
       return updateResult?.modifiedCount || updateResult?.nModified || 0;
     }
     return 0;

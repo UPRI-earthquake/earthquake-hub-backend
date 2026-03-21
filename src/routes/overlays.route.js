@@ -15,7 +15,9 @@ const sendOverlay = (key) => async (req, res, next) => {
     res.send(buf);
     res.message = `${key} overlay served`;
   } catch (err) {
-    err.statusCode = 404;
+    if (err?.code === 'ENOENT') {
+      err.statusCode = 404;
+    }
     next(err);
   }
 };
