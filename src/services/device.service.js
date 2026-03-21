@@ -533,7 +533,8 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
 
 /***************************************************************************
   * resetDeviceLink:
-  *     Removes a device record entirely and detaches all account references.
+  *     Removes a device record entirely and detaches all account references,
+  *     including released-device history entries that still point to it.
   * 
   * Inputs:
   *     username:    string // Requesting user's username (from token)
@@ -584,6 +585,11 @@ exports.resetDeviceLink = async (username, macAddress, streamId) => {
     { devices: device._id },
     { $pull: { devices: device._id } },
   );
+  await clearReleasedEntries({
+    deviceId: device._id,
+    streamId: device.streamId || streamId,
+    macAddress: device.macAddress || macAddress,
+  });
 
   await Device.deleteOne({ _id: device._id });
 
