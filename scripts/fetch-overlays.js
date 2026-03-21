@@ -3,6 +3,7 @@
 const fs = require('fs');
 const fsPromises = require('fs/promises');
 const path = require('path');
+const { pipeline } = require('stream/promises');
 const axios = require('axios');
 const { OVERLAY_PATHS } = require('../src/services/overlays.service');
 
@@ -51,12 +52,8 @@ async function download(key, url, destPath) {
   await ensureDir(destPath);
   // Stream to file to avoid holding large buffers
   const res = await axios.get(url, { responseType: 'stream' });
-  await new Promise((resolve, reject) => {
-    const write = fs.createWriteStream(destPath);
-    res.data.pipe(write);
-    write.on('finish', resolve);
-    write.on('error', reject);
-  });
+  const write = fs.createWriteStream(destPath);
+  await pipeline(res.data, write);
   const stat = await fsPromises.stat(destPath);
   console.log(`✓ ${key} saved (${(stat.size / 1024 / 1024).toFixed(2)} MB) -> ${destPath}`);
 }
