@@ -19,7 +19,7 @@ RUN apk add dumb-init
 # install node modules
 ENV NODE_ENV=production
 COPY --chown=node:node package*.json ./
-RUN npm ci --only=production --loglevel=verbose
+RUN npm ci --omit=dev --loglevel=verbose
 
 # copy codebase and scripts needed for build-time tasks
 COPY --chown=node:node ./src ./src

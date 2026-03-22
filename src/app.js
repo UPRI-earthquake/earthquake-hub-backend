@@ -1,6 +1,5 @@
 const express = require('express');
 const compression = require('compression');
-const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
@@ -67,8 +66,8 @@ const allowedOrigins = [W1_host, W3_host];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 // Parsers
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Google Analytics Measurement Protocol: API request tracking (conditionally enabled)
