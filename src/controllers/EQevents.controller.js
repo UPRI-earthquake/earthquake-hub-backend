@@ -46,3 +46,23 @@ exports.getEQEvents = async (req, res, next) => {
     next(err)
   }
 }
+
+// update onlineStations for all events
+exports.updateOnlineStations = async (req, res, next) => {
+  try {
+    const result = await EQEventsService.updateOnlineStations();
+
+    const message = `Updated onlineStations: ${result.modifiedCount} events modified, ${result.matchedCount} events matched, using ${result.usableDevicesCount} devices.`;
+    console.log(message);
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: message,
+      sampleOnlineStation: result.sampleOnlineStations,
+      payload: result
+    });
+  } catch (err) {
+    console.trace(`Updating onlineStations unsuccessful \n ${err}`);
+    next(err);
+  }
+};

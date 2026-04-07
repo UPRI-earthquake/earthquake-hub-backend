@@ -1,6 +1,7 @@
 const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
+const Device = require('../models/device.model');
 
 /***************************************************************************
   * getEventsList:
@@ -55,6 +56,21 @@ function distKM(lat1, lon1, lat2, lon2){
 
   return (earth_rad*c).toFixed(0)
 }
+
+/***************************************************************************
+  * distKMFloat:
+  *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
+  * 
+  * Inputs:
+  *     lat1: number       // Latitude of the first point in degrees.
+  *     lon1: number       // Longitude of the first point in degrees.
+  *     lat2: number       // Latitude of the second point in degrees.
+  *     lon2: number       // Longitude of the second point in degrees.
+  * 
+  * Returns:
+  *     The calculated great-circle distance in kilometers between the two points as a float rounded to one decimal place.
+  * 
+ ***************************************************************************/
 
 /***************************************************************************
   * direction:
@@ -231,8 +247,80 @@ async function addEQEvent(
   return 'success';
 }
 
+/***************************************************************************
+  * updateOnlineStations:
+  *     Updates all events with their closest online stations based on geographic distance.
+  * 
+  * Outputs:
+  *     An object with matchedCount, modifiedCount, and usableDevicesCount.
+  * 
+ ***************************************************************************/
+async function updateOnlineStations() {
+  const turf = await import('@turf/turf');
+
+  const [events, devices] = await Promise.all([
+    EQEvents.find({}).lean(),
+    Device.find({}).lean()
+  ]);
+
+  const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+
+  if (eventsWithCoords.length === 0) {
+    return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
+  }
+
+  const usableDevices = devices.filter(device => device.longitude != null && device.latitude != null);
+
+  const operations = eventsWithCoords.map(event => {
+    const epicenter = turf.point([event.longitude_value, event.latitude_value]);
+
+    const stationsWithDistance = usableDevices
+      .map(device => {
+        const stationPoint = turf.point([device.longitude, device.latitude]);
+        const distanceKm = turf.distance(epicenter, stationPoint, { units: 'kilometers' });
+
+        return {
+          ...device,
+          distanceKm: Math.round(distanceKm * 10) / 10
+        };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 3)
+      .map(({ _id, __v, ...station }) => station);
+
+    return {
+      updateOne: {
+        filter: { _id: event._id },
+        update: {
+          $set: {
+            onlineStations: stationsWithDistance
+          }
+        }
+      }
+    };
+  });
+
+  const result = await EQEvents.bulkWrite(operations);
+
+  console.log('Bulk write result:', result);
+
+  // Verify by logging a sample event's onlineStations
+  const sampleEvent = await EQEvents.findOne({}).lean();
+  if (sampleEvent) {
+    console.log('Sample event onlineStations:', sampleEvent.onlineStations);
+  }
+
+  return {
+    matchedCount: result.matchedCount,
+    modifiedCount: result.modifiedCount,
+    usableDevicesCount: usableDevices.length,
+    sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
+  };
+}
+
 module.exports = {
   getEventsList,
   addPlacesAttribute,
   addEQEvent,
-}
+  updateOnlineStations,
+};
