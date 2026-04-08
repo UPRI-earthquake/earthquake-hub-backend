@@ -70,7 +70,7 @@ const eventSchema = new mongoose.Schema(
     type: String, // upstream eventType
     text: String,
     place: String,
-    onlineStations: [Device.schema], // populated via EQEventsService.addPlacesAttribute
+    onlineStations: [String],
     last_modification: Date,
   },
   {

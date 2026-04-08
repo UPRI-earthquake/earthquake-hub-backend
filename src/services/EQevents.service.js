@@ -3,6 +3,12 @@ const Joi = require('joi');
 const EQEvents = require('../models/events.model');
 const Device = require('../models/device.model');
 
+const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.science.upd.edu.ph/fdsnws/dataselect/1/query';
+const FDSN_NETWORK = process.env.FDSNWS_NETWORK || 'AM';
+const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
+const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
+const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
+
 /***************************************************************************
   * getEventsList:
   *     Retrieves a list of earthquake events from the database that occurred within the specified time range.
@@ -247,6 +253,98 @@ async function addEQEvent(
   return 'success';
 }
 
+function formatFdsnTime(date) {
+  const iso = date.toISOString();
+  return iso.slice(0, 19);
+}
+
+function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
+  const epicenter = turf.point([epicenterLng, epicenterLat]);
+
+  return devices
+    .map((device) => {
+      const stationPoint = turf.point([device.longitude, device.latitude]);
+      const distanceKm = turf.distance(epicenter, stationPoint, { units: 'kilometers' });
+
+      return {
+        ...device,
+        distanceKm: Math.round(distanceKm * 10) / 10,
+      };
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 3);
+}
+
+async function checkStationRecording(stationCode, startTime, endTime) {
+  const params = new URLSearchParams({
+    starttime: startTime,
+    endtime: endTime,
+    network: FDSN_NETWORK,
+    station: stationCode,
+    location: FDSN_LOCATION,
+    channel: FDSN_CHANNEL,
+    nodata: '404',
+  });
+
+  const url = `${FDSNWS_BASE}?${params.toString()}`;
+
+  try {
+    const response = await axios.get(url, {
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+    return response.status !== 404;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function getEventOnlineStations(event, stationDevices, turf) {
+  const eventTime = new Date(event.OT);
+  if (Number.isNaN(eventTime.getTime())) {
+    return {
+      onlineStations: [],
+      respondingStations: [],
+    };
+  }
+
+  const startTime = formatFdsnTime(eventTime);
+  const endTime = formatFdsnTime(new Date(eventTime.getTime() + (FDSN_WINDOW_SECONDS * 1000)));
+
+  const checks = await Promise.all(
+    stationDevices.map(async (device) => ({
+      device,
+      hasRecording: await checkStationRecording(device.station, startTime, endTime),
+    })),
+  );
+
+  const recordedDevices = checks
+    .filter((entry) => entry.hasRecording)
+    .map((entry) => entry.device);
+
+  const respondingStations = recordedDevices
+    .map((device) => device.station)
+    .filter(Boolean)
+    .map((station) => String(station));
+
+  const nearestStations = getNearestStations(
+    recordedDevices,
+    event.longitude_value,
+    event.latitude_value,
+    turf,
+  );
+
+  const onlineStations = nearestStations
+    .map((station) => station.station)
+    .filter(Boolean)
+    .map((station) => String(station));
+
+  return {
+    onlineStations,
+    respondingStations,
+  };
+}
+
 /***************************************************************************
   * updateOnlineStations:
   *     Updates all events with their closest online stations based on geographic distance.
@@ -263,42 +361,59 @@ async function updateOnlineStations() {
     Device.find({}).lean()
   ]);
 
+  console.log(`[updateOnlineStations] Loaded ${events.length} events and ${devices.length} devices`);
+
   const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+  console.log(`[updateOnlineStations] Events with coordinates: ${eventsWithCoords.length}`);
 
   if (eventsWithCoords.length === 0) {
+    console.log('[updateOnlineStations] No events with coordinates found. Skipping station checks.');
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
   }
 
-  const usableDevices = devices.filter(device => device.longitude != null && device.latitude != null);
+  const usableDevices = devices.filter(
+    (device) => device.station && device.longitude != null && device.latitude != null,
+  );
+  console.log(`[updateOnlineStations] Usable station devices: ${usableDevices.length}`);
 
-  const operations = eventsWithCoords.map(event => {
-    const epicenter = turf.point([event.longitude_value, event.latitude_value]);
+  const eventStationPairs = [];
+  for (let index = 0; index < eventsWithCoords.length; index += 1) {
+    const event = eventsWithCoords[index];
+    const eventLabel = event.publicID || String(event._id);
+    // console.log(
+    //   `[updateOnlineStations] Processing event ${index + 1}/${eventsWithCoords.length}: ${eventLabel} (OT: ${event.OT})`,
+    // );
 
-    const stationsWithDistance = usableDevices
-      .map(device => {
-        const stationPoint = turf.point([device.longitude, device.latitude]);
-        const distanceKm = turf.distance(epicenter, stationPoint, { units: 'kilometers' });
+    const { onlineStations, respondingStations } = await getEventOnlineStations(event, usableDevices, turf);
+    // console.log(
+    //   `[updateOnlineStations] Non-404 stations for ${eventLabel}: ${JSON.stringify(respondingStations)}`,
+    // );
+    console.log(
+      `[updateOnlineStations] Completed event ${index + 1}/${eventsWithCoords.length}: ${eventLabel} -> onlineStations=${JSON.stringify(onlineStations)}`,
+    );
 
-        return {
-          ...device,
-          distanceKm: Math.round(distanceKm * 10) / 10
-        };
-      })
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 3)
-      .map(({ _id, __v, ...station }) => station);
+    eventStationPairs.push({ eventId: event._id, onlineStations });
+  }
 
+  const operations = eventStationPairs.map(({ eventId, onlineStations }) => ({
+    updateOne: {
+      filter: { _id: eventId },
+      update: {
+        $set: {
+          onlineStations,
+        },
+      },
+    },
+  }));
+
+  if (operations.length === 0) {
     return {
-      updateOne: {
-        filter: { _id: event._id },
-        update: {
-          $set: {
-            onlineStations: stationsWithDistance
-          }
-        }
-      }
+      matchedCount: 0,
+      modifiedCount: 0,
+      usableDevicesCount: usableDevices.length,
+      sampleOnlineStations: null,
     };
-  });
+  }
 
   const result = await EQEvents.bulkWrite(operations);
 
