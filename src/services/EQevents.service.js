@@ -302,10 +302,7 @@ async function checkStationRecording(stationCode, startTime, endTime) {
 async function getEventOnlineStations(event, stationDevices, turf) {
   const eventTime = new Date(event.OT);
   if (Number.isNaN(eventTime.getTime())) {
-    return {
-      onlineStations: [],
-      respondingStations: [],
-    };
+    return [];
   }
 
   const startTime = formatFdsnTime(eventTime);
@@ -322,11 +319,6 @@ async function getEventOnlineStations(event, stationDevices, turf) {
     .filter((entry) => entry.hasRecording)
     .map((entry) => entry.device);
 
-  const respondingStations = recordedDevices
-    .map((device) => device.station)
-    .filter(Boolean)
-    .map((station) => String(station));
-
   const nearestStations = getNearestStations(
     recordedDevices,
     event.longitude_value,
@@ -334,15 +326,10 @@ async function getEventOnlineStations(event, stationDevices, turf) {
     turf,
   );
 
-  const onlineStations = nearestStations
+  return nearestStations
     .map((station) => station.station)
     .filter(Boolean)
     .map((station) => String(station));
-
-  return {
-    onlineStations,
-    respondingStations,
-  };
 }
 
 /***************************************************************************
@@ -361,36 +348,20 @@ async function updateOnlineStations() {
     Device.find({}).lean()
   ]);
 
-  console.log(`[updateOnlineStations] Loaded ${events.length} events and ${devices.length} devices`);
-
   const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
-  console.log(`[updateOnlineStations] Events with coordinates: ${eventsWithCoords.length}`);
 
   if (eventsWithCoords.length === 0) {
-    console.log('[updateOnlineStations] No events with coordinates found. Skipping station checks.');
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
   }
 
   const usableDevices = devices.filter(
     (device) => device.station && device.longitude != null && device.latitude != null,
   );
-  console.log(`[updateOnlineStations] Usable station devices: ${usableDevices.length}`);
 
   const eventStationPairs = [];
   for (let index = 0; index < eventsWithCoords.length; index += 1) {
     const event = eventsWithCoords[index];
-    const eventLabel = event.publicID || String(event._id);
-    // console.log(
-    //   `[updateOnlineStations] Processing event ${index + 1}/${eventsWithCoords.length}: ${eventLabel} (OT: ${event.OT})`,
-    // );
-
-    const { onlineStations, respondingStations } = await getEventOnlineStations(event, usableDevices, turf);
-    // console.log(
-    //   `[updateOnlineStations] Non-404 stations for ${eventLabel}: ${JSON.stringify(respondingStations)}`,
-    // );
-    console.log(
-      `[updateOnlineStations] Completed event ${index + 1}/${eventsWithCoords.length}: ${eventLabel} -> onlineStations=${JSON.stringify(onlineStations)}`,
-    );
+    const onlineStations = await getEventOnlineStations(event, usableDevices, turf);
 
     eventStationPairs.push({ eventId: event._id, onlineStations });
   }
@@ -417,13 +388,7 @@ async function updateOnlineStations() {
 
   const result = await EQEvents.bulkWrite(operations);
 
-  console.log('Bulk write result:', result);
-
-  // Verify by logging a sample event's onlineStations
   const sampleEvent = await EQEvents.findOne({}).lean();
-  if (sampleEvent) {
-    console.log('Sample event onlineStations:', sampleEvent.onlineStations);
-  }
 
   return {
     matchedCount: result.matchedCount,
