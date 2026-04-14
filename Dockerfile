@@ -8,13 +8,28 @@ WORKDIR /app
 
 # add non-js deps (for deps other than node_modules)
 # openssh-client is required for tunnel enrollment ssh exec mode.
-RUN apk add --no-cache python3 make g++ openssh-client
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    openssh-client \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# 2. Tell Puppeteer to skip downloading its own Chrome (saves 300MB+) 
+# and point it to the system Chromium binary
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Stage 2: prod, inherits base, adds src code, pre-installs js deps
 # TODO: Test for production build
 FROM base AS prod
 
-RUN apk add dumb-init
+RUN apk add --no-cache dumb-init
 
 # install node modules
 ENV NODE_ENV=production

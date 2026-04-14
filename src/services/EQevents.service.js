@@ -2,13 +2,16 @@ const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
 const Device = require('../models/device.model');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 
 const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.science.upd.edu.ph/fdsnws/dataselect/1/query';
 const FDSN_NETWORK = process.env.FDSNWS_NETWORK || 'AM';
 const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
 const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
 const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
+
+const turfHelpers  = require('@turf/helpers');
+const turfDistance = require('@turf/distance'); 
 
 /************************ 
  * 
@@ -443,10 +446,9 @@ function _toRounded(value, digits = 3) {
 }
 
 function _getDistanceKm(lat1, lon1, lat2, lon2) {
-  const { point, distance } = require('@turf/turf');
-  const from = point([lon1, lat1]);
-  const to   = point([lon2, lat2]);
-  return distance(from, to, { units: 'kilometers' });
+  const from = turfHelpers.point([lon1, lat1]);
+  const to   = turfHelpers.point([lon2, lat2]);
+  return turfDistance.default(from, to, { units: 'kilometers' });
 }
 
 function _computeScore(timeDiffMinutes, distanceKm, magDiff, floorBoost = 0) {
@@ -635,15 +637,26 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
  ***************************************************************************/
 // Could be a one time thing, might implement a dedicated function integrated into eq event pipeline
 async function addAdditionalInformation() {
-  const browser = await puppeteer.launch({ headless: 'new' });
+  console.log('launching browser.,...')
+  const browser = await puppeteer.launch({
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--in-process-gpu',     // GPU runs in browser process, no separate GPU subprocess
+      '--headless',
+    ]
+  });
+
 
   try {
     const page         = await browser.newPage();
     const phivolcsCache = new Map();
 
-    const events = await EQEvents.find({
-      additionalInformation: { $exists: false },
-    }).lean();
+    const events = await EQEvents.find({}).lean();
 
     console.log(`addAdditionalInformation: processing ${events.length} event(s) without additionalInformation`);
 
