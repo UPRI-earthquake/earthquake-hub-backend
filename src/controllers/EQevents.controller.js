@@ -66,3 +66,20 @@ exports.updateOnlineStations = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.addAdditionalInformation = async (req, res, next) => {
+  try {
+    console.log('inside add additional information')
+    const result = await EQEventsService.addAdditionalInformation();
+    const message = `Added additional information to events: ${result.modifiedCount} events modified, ${result.skippedCount} events skipped, out of ${result.totalProcessed} total processed.`;
+    console.log(message);
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: message,
+      payload: result
+    });
+  } catch (err) {
+    console.trace(`Adding additional information unsuccessful \n ${err}`);
+    next(err);
+  }
+}
