@@ -72,6 +72,45 @@ const eventSchema = new mongoose.Schema(
     place: String,
     onlineStations: [String],
     last_modification: Date,
+    
+    additionalInformation: {
+      phivolcs: { 
+        source: String,
+        dateTime: String,
+        detailUrl: String,
+        hasFeltIntensity: Boolean,
+        time: Date,
+        latitude: Number,
+        longitude: Number,
+        depthKm: Number,
+        magnitude: Number,
+        location: String,
+        distanceKm: Number,
+        timeDifferenceMinutes: Number,
+        magnitudeDifference: Number,
+        score: Number
+      },
+      usgs: {
+        source: String,
+        id: String,
+        title: String,
+        place: String,
+        url: String,
+        detail: String,
+        queryUrl: String,
+        time: Date,
+        latitude: Number,
+        longitude: Number,
+        depth: Number,
+        magnitude: Number,
+        distanceKm: Number,
+        timeDifferenceMinutes: Number,
+        magnitudeDifference: Number,
+        latitudeFloorMatch: Boolean,
+        longitudeFloorMatch: Boolean,
+        score: Number
+      }
+    }
   },
   {
     timestamps: true, // createdAt/updatedAt for troubleshooting
