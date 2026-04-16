@@ -1,86 +1,132 @@
 /**
  * @swagger
- * components:
- * schemas:
- * Event:
- * type: object
- * properties:
- * _id:
- * type: string
- * description: Auto-generated ObjectId
- * publicID:
- * type: string
- * description: Unique SeisComP public ID (Unique index enforced)
- * OT:
- * type: string
- * format: date-time
- * description: Origin time of the event
- * latitude_value:
- * type: number
- * longitude_value:
- * type: number
- * depth_value:
- * type: number
- * magnitude_value:
- * type: number
- * type:
- * type: string
- * description: Upstream eventType (e.g., NEW, UPDATE)
- * text:
- * type: string
- * description: SeisComP's derived place name
- * place:
- * type: string
- * description: Attribute added via Geoserve API
- * onlineStations:
- * type: array
- * items:
- * type: string
- * last_modification:
- * type: string
- * format: date-time
- * description: Used for deterministic conflict resolution
- * additionalInformation:
- * type: object
- * properties:
- * phivolcs:
- * $ref: '#/components/schemas/PhivolcsInfo'
- * usgs:
- * $ref: '#/components/schemas/UsgsInfo'
- * createdAt:
- * type: string
- * format: date-time
- * updatedAt:
- * type: string
- * format: date-time
+ *   components:
+ *     schemas:
+ *       Event:
+ *         type: object
+ *         properties:
+ *           _id:
+ *             type: string
+ *             description: Auto-generated ObjectId
+ *           publicID:
+ *             type: string
+ *             description: Unique SeisComP public ID (unique index enforced)
+ *           OT:
+ *             type: string
+ *             format: date-time
+ *             description: Origin time of the event
+ *           latitude_value:
+ *             type: number
+ *           longitude_value:
+ *             type: number
+ *           depth_value:
+ *             type: number
+ *           magnitude_value:
+ *             type: number
+ *           type:
+ *             type: string
+ *             description: Upstream event type such as NEW or UPDATE
+ *           text:
+ *             type: string
+ *             description: SeisComP derived place name
+ *           place:
+ *             type: string
+ *             description: Place attribute added via the Geoserve API
+ *           onlineStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *           last_modification:
+ *             type: string
+ *             format: date-time
+ *             description: Used for deterministic conflict resolution
+ *           additionalInformation:
+ *             type: object
+ *             properties:
+ *               phivolcs:
+ *                 $ref: '#/components/schemas/PhivolcsInfo'
+ *               usgs:
+ *                 $ref: '#/components/schemas/UsgsInfo'
+ *           createdAt:
+ *             type: string
+ *             format: date-time
+ *           updatedAt:
+ *             type: string
+ *             format: date-time
  *
- * PhivolcsInfo:
- * type: object
- * properties:
- * source: { type: string }
- * dateTime: { type: string }
- * detailUrl: { type: string }
- * hasFeltIntensity: { type: boolean }
- * time: { type: string, format: date-time }
- * latitude: { type: number }
- * longitude: { type: number }
- * depthKm: { type: number }
- * magnitude: { type: number }
- * location: { type: string }
- * score: { type: number }
+ *       PhivolcsInfo:
+ *         type: object
+ *         properties:
+ *           source:
+ *             type: string
+ *           dateTime:
+ *             type: string
+ *           detailUrl:
+ *             type: string
+ *           hasFeltIntensity:
+ *             type: boolean
+ *           time:
+ *             type: string
+ *             format: date-time
+ *           latitude:
+ *             type: number
+ *           longitude:
+ *             type: number
+ *           depthKm:
+ *             type: number
+ *           magnitude:
+ *             type: number
+ *           location:
+ *             type: string
+ *           distanceKm:
+ *             type: number
+ *           timeDifferenceMinutes:
+ *             type: number
+ *           magnitudeDifference:
+ *             type: number
+ *           score:
+ *             type: number
  *
- * UsgsInfo:
- * type: object
- * properties:
- * source: { type: string }
- * id: { type: string }
- * title: { type: string }
- * time: { type: string, format: date-time }
- * latitude: { type: number }
- * longitude: { type: number }
- * depth: { type: number }
- * magnitude: { type: number }
- * score: { type: number }
+ *       UsgsInfo:
+ *         type: object
+ *         properties:
+ *           source:
+ *             type: string
+ *           id:
+ *             type: string
+ *           title:
+ *             type: string
+ *           place:
+ *             type: string
+ *           url:
+ *             type: string
+ *           detail:
+ *             type: string
+ *           queryUrl:
+ *             type: string
+ *           time:
+ *             type: string
+ *             format: date-time
+ *           latitude:
+ *             type: number
+ *           longitude:
+ *             type: number
+ *           depth:
+ *             type: number
+ *           magnitude:
+ *             type: number
+ *           distanceKm:
+ *             type: number
+ *           timeDifferenceMinutes:
+ *             type: number
+ *           magnitudeDifference:
+ *             type: number
+ *           latitudeFloorMatch:
+ *             type: boolean
+ *           longitudeFloorMatch:
+ *             type: boolean
+ *           score:
+ *             type: number
  */
 
 const mongoose = require('mongoose');
