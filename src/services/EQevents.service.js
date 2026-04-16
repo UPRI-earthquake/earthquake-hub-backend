@@ -589,6 +589,7 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
     .map((feature) => {
       const [longitude, latitude, depth] = feature.geometry.coordinates;
       const magnitude        = _parseNumber(feature.properties.mag);
+      if (!Number.isFinite(magnitude)) return null;
       const eventTime        = new Date(feature.properties.time);
       const timeDiffMinutes  = Math.abs(eventTime.getTime() - ref.OT.getTime()) / 60_000;
       const distanceKm       = _getDistanceKm(ref.latitude, ref.longitude, latitude, longitude);
@@ -619,6 +620,7 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
         score:                 _toRounded(score, 2),
       };
     })
+    .filter(Boolean)
     .sort((a, b) => a.score - b.score);
 
   return candidates[0] ?? null;
