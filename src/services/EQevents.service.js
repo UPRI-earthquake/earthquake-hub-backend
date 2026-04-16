@@ -312,7 +312,7 @@ async function checkStationRecording(stationCode, startTime, endTime) {
       timeout: 10000,
       validateStatus: () => true,
     });
-    return response.status !== 404;
+    return response.status >= 200 && response.status < 300;
   } catch (_error) {
     return false;
   }

@@ -172,7 +172,7 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
   *                   example: responseCodes.GENERIC_ERROR
   *                 message:
   *                   type: string
-  *                   example: "Server error occured"
+  *                   example: "Server error occurred"
   */
 router.post('/update-online-stations', EQEventsController.updateOnlineStations);
 

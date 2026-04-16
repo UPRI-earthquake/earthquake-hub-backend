@@ -2195,7 +2195,7 @@
                     },
                     "message": {
                       "type": "string",
-                      "example": "Server error occured"
+                      "example": "Server error occurred"
                     }
                   }
                 }
