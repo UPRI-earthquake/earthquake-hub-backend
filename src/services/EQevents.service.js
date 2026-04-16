@@ -83,21 +83,6 @@ function distKM(lat1, lon1, lat2, lon2){
 }
 
 /***************************************************************************
-  * distKMFloat:
-  *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
-  * 
-  * Inputs:
-  *     lat1: number       // Latitude of the first point in degrees.
-  *     lon1: number       // Longitude of the first point in degrees.
-  *     lat2: number       // Latitude of the second point in degrees.
-  *     lon2: number       // Longitude of the second point in degrees.
-  * 
-  * Returns:
-  *     The calculated great-circle distance in kilometers between the two points as a float rounded to one decimal place.
-  * 
- ***************************************************************************/
-
-/***************************************************************************
   * direction:
   *     Calculates the cardinal direction from a reference point to a target point on the Earth's surface.
   * 
@@ -639,7 +624,6 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
  ***************************************************************************/
 // Could be a one time thing, might implement a dedicated function integrated into eq event pipeline
 async function addAdditionalInformation() {
-  console.log('launching browser.,...')
   const browser = await puppeteer.launch({
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
     args: [
