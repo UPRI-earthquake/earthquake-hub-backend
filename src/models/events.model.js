@@ -51,7 +51,6 @@
   */
 
 const mongoose = require('mongoose');
-const Device = require('./device.model');
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
 //   uniqueness so a single earthquake cannot be duplicated as multiple
