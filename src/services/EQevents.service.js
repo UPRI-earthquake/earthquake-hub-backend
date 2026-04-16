@@ -234,6 +234,16 @@ async function addEQEvent(
   text,
   last_modification,
 ){
+  // Resolve nearest currently active stations inline during ingest. This
+  // reflects device activity at processing time, not guaranteed waveform
+  // availability for the event time window.
+  let onlineStations = [];
+  try {
+    onlineStations = await getNearestActiveStations(latitude_value, longitude_value);
+  } catch (err) {
+    console.error(`addEQEvent [${publicID}]: onlineStations lookup failed - ${err.message}`);
+  }
+
   // Idempotent upsert by publicID. This prevents duplicates when a previous
   // bug or out-of-order messages would otherwise create separate NEW/UPDATE
   // documents for the same quake. The unique index on publicID enforces this
@@ -248,6 +258,7 @@ async function addEQEvent(
       magnitude_value,
       type: eventType,
       text,
+      onlineStations,
       ...(last_modification ? { last_modification: last_modification } : {}),
     },
     $setOnInsert: { publicID },
@@ -277,6 +288,46 @@ function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
     })
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, 3);
+}
+
+/***************************************************************************
+  * getNearestActiveStations:
+  *     Finds the 3 nearest stations to an epicenter from the list of
+  *     currently active devices. No FDSN waveform check is performed.
+  *
+  * Inputs:
+  *     latitude_value: number
+  *     longitude_value: number
+  *
+  * Outputs:
+  *     An array of up to 3 station code strings.
+  *
+ ***************************************************************************/
+async function getNearestActiveStations(latitude_value, longitude_value) {
+  if (latitude_value == null || longitude_value == null) {
+    return [];
+  }
+
+  const activeDevices = await Device.find({ activity: 'active' }).lean();
+  if (activeDevices.length === 0) {
+    return [];
+  }
+
+  const usableDevices = activeDevices.filter(
+    (device) => device.station && device.longitude != null && device.latitude != null,
+  );
+
+  const nearestStations = getNearestStations(
+    usableDevices,
+    longitude_value,
+    latitude_value,
+    {
+      point: turfHelpers.point,
+      distance: turfDistance.default,
+    },
+  );
+
+  return nearestStations.map((station) => String(station.station));
 }
 
 async function checkStationRecording(stationCode, startTime, endTime) {
