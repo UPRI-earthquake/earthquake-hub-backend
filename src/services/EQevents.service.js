@@ -658,7 +658,13 @@ async function addAdditionalInformation() {
     const page         = await browser.newPage();
     const phivolcsCache = new Map();
 
-    const events = await EQEvents.find({}).lean();
+    const events = await EQEvents.find({
+      $or: [
+        { additionalInformation: { $exists: false } },
+        { 'additionalInformation.phivolcs': { $exists: false } },
+        { 'additionalInformation.usgs': { $exists: false } },
+      ],
+    }).lean();
 
     console.log(`addAdditionalInformation: processing ${events.length} event(s) without additionalInformation`);
 
