@@ -58,7 +58,6 @@ exports.updateOnlineStations = async (req, res, next) => {
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message: message,
-      sampleOnlineStation: result.sampleOnlineStations,
       payload: result
     });
   } catch (err) {
