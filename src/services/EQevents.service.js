@@ -696,8 +696,7 @@ async function addAdditionalInformation() {
     const events = await EQEvents.find({
       $or: [
         { additionalInformation: { $exists: false } },
-        { 'additionalInformation.phivolcs': { $exists: false } },
-        { 'additionalInformation.usgs': { $exists: false } },
+        { additionalInformation: null },
       ],
     }).lean();
 
