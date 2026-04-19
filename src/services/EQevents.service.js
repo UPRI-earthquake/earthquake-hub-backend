@@ -664,16 +664,29 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
 
 /***************************************************************************
   * addAdditionalInformation:
-  *     Enriches all earthquake events that do not yet have an
-  *     `additionalInformation` field by fetching the best-matching entry
-  *     from PHIVOLCS (via headless browser) and USGS (via REST API) and
-  *     saving the results back to the database.
+  *     Batch-enriches earthquake events with matching entries from PHIVOLCS
+  *     (via headless browser) and USGS (via REST API).
+  *
+  *     Only events satisfying ALL of the following are processed:
+  *       - upForEnrichment is true
+  *       - OT is older than ENRICHMENT_MIN_AGE_HOURS (gives external catalogs
+  *         time to publish their entries before we query them)
+  *       - enrichmentAttempts < MAX_ENRICHMENT_ATTEMPTS (prevents indefinite
+  *         retries on persistent infrastructure failures)
+  *
+  *     After each event is processed:
+  *       - On success:           upForEnrichment = false, attempts incremented
+  *       - On missing core data: upForEnrichment = false, attempts incremented
+  *       - On transient error:   upForEnrichment stays true, attempts incremented
+  *         (will be retried next run until MAX_ENRICHMENT_ATTEMPTS is reached)
+  *
+  *     Once enrichmentAttempts reaches MAX_ENRICHMENT_ATTEMPTS the event is
+  *     excluded from the query entirely, so it is never processed again.
   *
   * Outputs:
-  *     An object with modifiedCount, skippedCount, and totalProcessed.
+  *     An object with modifiedCount, skippedCount, exhaustedCount, and totalProcessed.
   *
  ***************************************************************************/
-// Could be a one time thing, might implement a dedicated function integrated into eq event pipeline
 async function addAdditionalInformation() {
   const browser = await puppeteer.launch({
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
@@ -683,49 +696,64 @@ async function addAdditionalInformation() {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',
-      '--in-process-gpu',     // GPU runs in browser process, no separate GPU subprocess
+      '--in-process-gpu',
       '--headless',
-    ]
+    ],
   });
-
-
+ 
   try {
-    const page         = await browser.newPage();
+    const page          = await browser.newPage();
     const phivolcsCache = new Map();
-
+ 
+    // Only fetch events that:
+    //   1. Still need enrichment
+    //   2. Are old enough for external catalogs to have published them
+    //   3. Have not yet exhausted their retry budget
+    const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
+ 
     const events = await EQEvents.find({
-      $or: [
-        { additionalInformation: { $exists: false } },
-        { 'additionalInformation.phivolcs': { $exists: false } },
-        { 'additionalInformation.usgs': { $exists: false } },
-      ],
+      upForEnrichment:    true,
+      OT:                 { $lte: cutoff },
+      enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
     }).lean();
-
-    console.log(`addAdditionalInformation: processing ${events.length} event(s) without additionalInformation`);
-
-    let modifiedCount = 0;
-    let skippedCount  = 0;
-
+ 
+    console.log(
+      `addAdditionalInformation: processing ${events.length} event(s) ` +
+      `(minAge=${ENRICHMENT_MIN_AGE_HOURS}h, maxAttempts=${MAX_ENRICHMENT_ATTEMPTS})`
+    );
+ 
+    let modifiedCount  = 0;
+    let skippedCount   = 0;
+    let exhaustedCount = 0;
+ 
     for (let i = 0; i < events.length; i += 1) {
-      const event        = events[i];
-      const ref          = _buildReferenceEvent(event);
+      const event         = events[i];
+      const ref           = _buildReferenceEvent(event);
       const missingFields = _validateReferenceEvent(ref);
-      const label        = event.publicID ?? String(event._id);
-
-      process.stdout.write(`[${i + 1}/${events.length}] ${label} ... `);
-
-      // If the event is missing core fields, store nulls and move on
+      const label         = event.publicID ?? String(event._id);
+      const nextAttempts  = (event.enrichmentAttempts ?? 0) + 1;
+      const willExhaust   = nextAttempts >= MAX_ENRICHMENT_ATTEMPTS;
+ 
+      process.stdout.write(
+        `[${i + 1}/${events.length}] ${label} (attempt ${nextAttempts}/${MAX_ENRICHMENT_ATTEMPTS}) ... `
+      );
+ 
+      // ── Missing core fields: no point retrying, close it out ──────────
       if (missingFields.length > 0) {
         await EQEvents.updateOne(
           { _id: event._id },
-          { $set: { additionalInformation: { phivolcs: null, usgs: null } } }
+          {
+            $set: { additionalInformation: { phivolcs: null, usgs: null }, upForEnrichment: false },
+            $inc: { enrichmentAttempts: 1 },
+          },
         );
         process.stdout.write(`skipped (missing: ${missingFields.join(', ')})\n`);
         skippedCount  += 1;
         modifiedCount += 1;
         continue;
       }
-
+ 
+      // ── Normal enrichment attempt ──────────────────────────────────────
       try {
         const [phivolcsMatch, usgsMatch] = await Promise.all([
           _fetchPhivolcsMatch(ref, page, phivolcsCache).catch((err) => {
@@ -737,35 +765,57 @@ async function addAdditionalInformation() {
             return null;
           }),
         ]);
-
+ 
         const additionalInformation = { phivolcs: phivolcsMatch, usgs: usgsMatch };
-
+ 
+        // Success: write results and mark enrichment done regardless of
+        // whether individual sources returned a match. For M4+ events a null
+        // PHIVOLCS/USGS result after the minimum age window is the definitive
+        // answer, not a transient failure.
         await EQEvents.updateOne(
           { _id: event._id },
-          { $set: { additionalInformation } }
+          {
+            $set: { additionalInformation, upForEnrichment: false },
+            $inc: { enrichmentAttempts: 1 },
+          },
         );
-
+ 
         const savedCount = Number(Boolean(phivolcsMatch)) + Number(Boolean(usgsMatch));
-        process.stdout.write(`saved ${savedCount} match(es)\n`);
+        process.stdout.write(`saved ${savedCount}/2 match(es)\n`);
         modifiedCount += 1;
       } catch (err) {
-        await EQEvents.updateOne(
-          { _id: event._id },
-          { $set: { additionalInformation: { phivolcs: null, usgs: null } } }
-        );
-        process.stdout.write(`error -> saved null matches (${err.message})\n`);
-        skippedCount  += 1;
+        // Transient/unexpected error: keep upForEnrichment true so the next
+        // run will retry, unless this attempt exhausts the budget.
+        const updateFields = {
+          $set: { additionalInformation: { phivolcs: null, usgs: null } },
+          $inc: { enrichmentAttempts: 1 },
+        };
+ 
+        if (willExhaust) {
+          // Final attempt also failed — give up permanently.
+          updateFields.$set.upForEnrichment = false;
+          exhaustedCount += 1;
+          process.stdout.write(`error (attempt limit reached, giving up) -> ${err.message}\n`);
+        } else {
+          // Leave upForEnrichment: true — no $set needed since it's already true.
+          process.stdout.write(`error (will retry) -> ${err.message}\n`);
+        }
+ 
+        await EQEvents.updateOne({ _id: event._id }, updateFields);
         modifiedCount += 1;
       }
     }
-
-    console.log(`\naddAdditionalInformation done. modified=${modifiedCount} skipped=${skippedCount}`);
-    return { modifiedCount, skippedCount, totalProcessed: events.length };
+ 
+    console.log(
+      `\naddAdditionalInformation done. ` +
+      `modified=${modifiedCount} skipped=${skippedCount} exhausted=${exhaustedCount}`
+    );
+    return { modifiedCount, skippedCount, exhaustedCount, totalProcessed: events.length };
   } finally {
     await browser.close();
   }
 }
-
+ 
 module.exports = {
   getEventsList,
   addPlacesAttribute,

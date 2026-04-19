@@ -12,6 +12,8 @@ const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
 const logger = require('./middlewares/logger.middleware');
 
+
+
 const app = express();
 
 app.set('trust proxy', true);

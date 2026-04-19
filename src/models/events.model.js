@@ -40,6 +40,17 @@
  *             type: string
  *             format: date-time
  *             description: Used for deterministic conflict resolution
+ *           upForEnrichment:
+ *             type: boolean
+ *             description: >
+ *               True while the event has not yet been enriched with
+ *               additionalInformation. Set to false once enrichment succeeds
+ *               or enrichmentAttempts reaches MAX_ENRICHMENT_ATTEMPTS.
+ *           enrichmentAttempts:
+ *             type: integer
+ *             description: >
+ *               Number of times the enrichment job has attempted to process
+ *               this event. Prevents indefinite retries on persistent failures.
  *           additionalInformation:
  *             type: object
  *             properties:
@@ -130,6 +141,7 @@
  */
 
 const mongoose = require('mongoose');
+
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
 //   uniqueness so a single earthquake cannot be duplicated as multiple
@@ -137,58 +149,68 @@ const mongoose = require('mongoose');
 // - `type` stores the latest upstream eventType ("NEW" | "UPDATE").
 // - `last_modification` is stored to allow deterministic conflict resolution
 //   if multiple updates arrive out of order.
+// - `upForEnrichment` is set to true on insert and cleared to false once the
+//   enrichment job successfully writes additionalInformation (or the event
+//   exhausts MAX_ENRICHMENT_ATTEMPTS).
+// - `enrichmentAttempts` is incremented on every enrichment job pass so the
+//   job can give up after a configurable number of persistent failures.
 const eventSchema = new mongoose.Schema(
   {
-    publicID: { type: String, required: true, index: true, unique: true },
-    OT: Date,
-    latitude_value: Number,
-    longitude_value: Number,
-    depth_value: Number,
-    magnitude_value: Number,
-    type: String, // upstream eventType
-    text: String,
-    place: String,
-    onlineStations: [String],
+    publicID:         { type: String, required: true, index: true, unique: true },
+    OT:               Date,
+    latitude_value:   Number,
+    longitude_value:  Number,
+    depth_value:      Number,
+    magnitude_value:  Number,
+    type:             String,   // upstream eventType
+    text:             String,
+    place:            String,
+    onlineStations:   [String],
     last_modification: Date,
-    
+
+    // ── Enrichment tracking ──────────────────────────────────────────────
+    upForEnrichment:    { type: Boolean, default: true, index: true },
+    enrichmentAttempts: { type: Number,  default: 0 },
+    // ────────────────────────────────────────────────────────────────────
+
     additionalInformation: {
-      phivolcs: { 
-        source: String,
-        dateTime: String,
-        detailUrl: String,
-        hasFeltIntensity: Boolean,
-        time: Date,
-        latitude: Number,
-        longitude: Number,
-        depthKm: Number,
-        magnitude: Number,
-        location: String,
-        distanceKm: Number,
-        timeDifferenceMinutes: Number,
-        magnitudeDifference: Number,
-        score: Number
+      phivolcs: {
+        source:                 String,
+        dateTime:               String,
+        detailUrl:              String,
+        hasFeltIntensity:       Boolean,
+        time:                   Date,
+        latitude:               Number,
+        longitude:              Number,
+        depthKm:                Number,
+        magnitude:              Number,
+        location:               String,
+        distanceKm:             Number,
+        timeDifferenceMinutes:  Number,
+        magnitudeDifference:    Number,
+        score:                  Number,
       },
       usgs: {
-        source: String,
-        id: String,
-        title: String,
-        place: String,
-        url: String,
-        detail: String,
-        queryUrl: String,
-        time: Date,
-        latitude: Number,
-        longitude: Number,
-        depth: Number,
-        magnitude: Number,
-        distanceKm: Number,
-        timeDifferenceMinutes: Number,
-        magnitudeDifference: Number,
-        latitudeFloorMatch: Boolean,
-        longitudeFloorMatch: Boolean,
-        score: Number
-      }
-    }
+        source:                 String,
+        id:                     String,
+        title:                  String,
+        place:                  String,
+        url:                    String,
+        detail:                 String,
+        queryUrl:               String,
+        time:                   Date,
+        latitude:               Number,
+        longitude:              Number,
+        depth:                  Number,
+        magnitude:              Number,
+        distanceKm:             Number,
+        timeDifferenceMinutes:  Number,
+        magnitudeDifference:    Number,
+        latitudeFloorMatch:     Boolean,
+        longitudeFloorMatch:    Boolean,
+        score:                  Number,
+      },
+    },
   },
   {
     timestamps: true, // createdAt/updatedAt for troubleshooting

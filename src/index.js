@@ -6,6 +6,9 @@ const MessagingService = require('./services/messaging.service');
 const SubscriptionCleanupService = require('./services/subscriptionCleanup.service');
 const logger = require('./middlewares/logger.middleware');
 
+// cron setup
+const { startEnrichmentScheduler } = require('./job/enrichment.job');
+
 const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
@@ -13,6 +16,10 @@ const port = process.env.NODE_ENV === 'production'
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
 const mongodb = require('./services/mongodb.service');
 mongodb.connect(); // Required by notifs router
+
+// start cron enrichment
+startEnrichmentScheduler();
+
 SubscriptionCleanupService.startSubscriptionCleanupScheduler();
 console.log('mongodb-host: ' + process.env.MONGO_HOST);
 
