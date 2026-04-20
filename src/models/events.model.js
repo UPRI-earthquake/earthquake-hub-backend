@@ -51,7 +51,6 @@
   */
 
 const mongoose = require('mongoose');
-
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
 //   uniqueness so a single earthquake cannot be duplicated as multiple
@@ -70,6 +69,7 @@ const eventSchema = new mongoose.Schema(
     type: String, // upstream eventType
     text: String,
     place: String,
+    onlineStations: [String],
     last_modification: Date,
   },
   {

@@ -126,4 +126,55 @@ const { cacheSeconds } = require('../middlewares/cache.middleware');
 // Cache recent EQ events briefly to reduce load on repeat queries
 router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
 
+/**
+  * @swagger
+  * /eq-events/update-online-stations:
+  *   post:
+  *     summary: Update onlineStations for all events based on closest devices
+  *     tags: [EQ Events]
+  *     responses:
+  *       200:
+  *         description: Online stations updated successfully.
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   description: The status code for the response.
+  *                   example: 0
+  *                 message:
+  *                   type: string
+  *                   description: The message associated with the response.
+  *                   example: "Updated onlineStations: 10 events modified, 10 events matched, using 5 devices."
+  *                 payload:
+  *                   type: object
+  *                   properties:
+  *                     matchedCount:
+  *                       type: number
+  *                       example: 10
+  *                     modifiedCount:
+  *                       type: number
+  *                       example: 10
+  *                     usableDevicesCount:
+  *                       type: number
+  *                       example: 5
+  *       '500':
+  *         description: Internal server error
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.GENERIC_ERROR
+  *                 message:
+  *                   type: string
+  *                   example: "Server error occurred"
+  */
+router.post('/update-online-stations', EQEventsController.updateOnlineStations);
+router.post('/update-online-stations', EQEventsController.updateOnlineStations);
+
 module.exports = router;

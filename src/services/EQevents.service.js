@@ -1,6 +1,13 @@
 const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
+const Device = require('../models/device.model');
+
+const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.science.upd.edu.ph/fdsnws/dataselect/1/query';
+const FDSN_NETWORK = process.env.FDSNWS_NETWORK || 'AM';
+const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
+const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
+const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
 
 /***************************************************************************
   * getEventsList:
@@ -55,6 +62,21 @@ function distKM(lat1, lon1, lat2, lon2){
 
   return (earth_rad*c).toFixed(0)
 }
+
+/***************************************************************************
+  * distKMFloat:
+  *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
+  * 
+  * Inputs:
+  *     lat1: number       // Latitude of the first point in degrees.
+  *     lon1: number       // Longitude of the first point in degrees.
+  *     lat2: number       // Latitude of the second point in degrees.
+  *     lon2: number       // Longitude of the second point in degrees.
+  * 
+  * Returns:
+  *     The calculated great-circle distance in kilometers between the two points as a float rounded to one decimal place.
+  * 
+ ***************************************************************************/
 
 /***************************************************************************
   * direction:
@@ -231,8 +253,154 @@ async function addEQEvent(
   return 'success';
 }
 
+function formatFdsnTime(date) {
+  const iso = date.toISOString();
+  return iso.slice(0, 19);
+}
+
+function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
+  const epicenter = turf.point([epicenterLng, epicenterLat]);
+
+  return devices
+    .map((device) => {
+      const stationPoint = turf.point([device.longitude, device.latitude]);
+      const distanceKm = turf.distance(epicenter, stationPoint, { units: 'kilometers' });
+
+      return {
+        ...device,
+        distanceKm: Math.round(distanceKm * 10) / 10,
+      };
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 3);
+}
+
+async function checkStationRecording(stationCode, startTime, endTime) {
+  const params = new URLSearchParams({
+    starttime: startTime,
+    endtime: endTime,
+    network: FDSN_NETWORK,
+    station: stationCode,
+    location: FDSN_LOCATION,
+    channel: FDSN_CHANNEL,
+    nodata: '404',
+  });
+
+  const url = `${FDSNWS_BASE}?${params.toString()}`;
+
+  try {
+    const response = await axios.get(url, {
+      timeout: 10000,
+      validateStatus: () => true,
+    });
+    return response.status !== 404;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function getEventOnlineStations(event, stationDevices, turf) {
+  const eventTime = new Date(event.OT);
+  if (Number.isNaN(eventTime.getTime())) {
+    return [];
+  }
+
+  const startTime = formatFdsnTime(eventTime);
+  const endTime = formatFdsnTime(new Date(eventTime.getTime() + (FDSN_WINDOW_SECONDS * 1000)));
+
+  const checks = await Promise.all(
+    stationDevices.map(async (device) => ({
+      device,
+      hasRecording: await checkStationRecording(device.station, startTime, endTime),
+    })),
+  );
+
+  const recordedDevices = checks
+    .filter((entry) => entry.hasRecording)
+    .map((entry) => entry.device);
+
+  const nearestStations = getNearestStations(
+    recordedDevices,
+    event.longitude_value,
+    event.latitude_value,
+    turf,
+  );
+
+  return nearestStations
+    .map((station) => station.station)
+    .filter(Boolean)
+    .map((station) => String(station));
+}
+
+/***************************************************************************
+  * updateOnlineStations:
+  *     Updates all events with their closest online stations based on geographic distance.
+  * 
+  * Outputs:
+  *     An object with matchedCount, modifiedCount, and usableDevicesCount.
+  * 
+ ***************************************************************************/
+async function updateOnlineStations() {
+  const turf = await import('@turf/turf');
+
+  const [events, devices] = await Promise.all([
+    EQEvents.find({}).lean(),
+    Device.find({}).lean()
+  ]);
+
+  const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+
+  if (eventsWithCoords.length === 0) {
+    return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
+  }
+
+  const usableDevices = devices.filter(
+    (device) => device.station && device.longitude != null && device.latitude != null,
+  );
+
+  const eventStationPairs = [];
+  for (let index = 0; index < eventsWithCoords.length; index += 1) {
+    const event = eventsWithCoords[index];
+    const onlineStations = await getEventOnlineStations(event, usableDevices, turf);
+
+    eventStationPairs.push({ eventId: event._id, onlineStations });
+  }
+
+  const operations = eventStationPairs.map(({ eventId, onlineStations }) => ({
+    updateOne: {
+      filter: { _id: eventId },
+      update: {
+        $set: {
+          onlineStations,
+        },
+      },
+    },
+  }));
+
+  if (operations.length === 0) {
+    return {
+      matchedCount: 0,
+      modifiedCount: 0,
+      usableDevicesCount: usableDevices.length,
+      sampleOnlineStations: null,
+    };
+  }
+
+  const result = await EQEvents.bulkWrite(operations);
+
+  const sampleEvent = await EQEvents.findOne({}).lean();
+
+  return {
+    matchedCount: result.matchedCount,
+    modifiedCount: result.modifiedCount,
+    usableDevicesCount: usableDevices.length,
+    sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
+  };
+}
+
 module.exports = {
   getEventsList,
   addPlacesAttribute,
   addEQEvent,
-}
+  updateOnlineStations,
+};
