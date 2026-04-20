@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { addAdditionalInformation } = require('../services/events.service');
+const { addAdditionalInformation } = require('../services/EQevents.service');
 
 // Runs every day at 02:00 server time. At that hour external catalogs
 // (PHIVOLCS, USGS) are unlikely to be under heavy load and any event
