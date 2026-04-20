@@ -703,32 +703,33 @@ async function addAdditionalInformation() {
       '--headless',
     ],
   });
- 
+
+  const safeResult = (promise) =>
+    promise
+      .then((value) => ({ ok: true, value }))
+      .catch((error) => ({ ok: false, error }));
+
   try {
     const page          = await browser.newPage();
     const phivolcsCache = new Map();
- 
-    // Only fetch events that:
-    //   1. Still need enrichment
-    //   2. Are old enough for external catalogs to have published them
-    //   3. Have not yet exhausted their retry budget
+
     const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
- 
+
     const events = await EQEvents.find({
       upForEnrichment:    true,
       OT:                 { $lte: cutoff },
       enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
     }).lean();
- 
+
     console.log(
       `addAdditionalInformation: processing ${events.length} event(s) ` +
       `(minAge=${ENRICHMENT_MIN_AGE_HOURS}h, maxAttempts=${MAX_ENRICHMENT_ATTEMPTS})`
     );
- 
+
     let modifiedCount  = 0;
     let skippedCount   = 0;
     let exhaustedCount = 0;
- 
+
     for (let i = 0; i < events.length; i += 1) {
       const event         = events[i];
       const ref           = _buildReferenceEvent(event);
@@ -736,11 +737,11 @@ async function addAdditionalInformation() {
       const label         = event.publicID ?? String(event._id);
       const nextAttempts  = (event.enrichmentAttempts ?? 0) + 1;
       const willExhaust   = nextAttempts >= MAX_ENRICHMENT_ATTEMPTS;
- 
+
       process.stdout.write(
         `[${i + 1}/${events.length}] ${label} (attempt ${nextAttempts}/${MAX_ENRICHMENT_ATTEMPTS}) ... `
       );
- 
+
       // ── Missing core fields: no point retrying, close it out ──────────
       if (missingFields.length > 0) {
         await EQEvents.updateOne(
@@ -755,60 +756,63 @@ async function addAdditionalInformation() {
         modifiedCount += 1;
         continue;
       }
- 
+
       // ── Normal enrichment attempt ──────────────────────────────────────
       try {
-        const [phivolcsMatch, usgsMatch] = await Promise.all([
-          _fetchPhivolcsMatch(ref, page, phivolcsCache).catch((err) => {
-            console.error(`  PHIVOLCS lookup failed: ${err.message}`);
-            return null;
-          }),
-          _fetchUsgsMatch(ref).catch((err) => {
-            console.error(`  USGS lookup failed: ${err.message}`);
-            return null;
-          }),
+        const [phivolcsResult, usgsResult] = await Promise.all([
+          safeResult(_fetchPhivolcsMatch(ref, page, phivolcsCache)),
+          safeResult(_fetchUsgsMatch(ref)),
         ]);
- 
-        const additionalInformation = { phivolcs: phivolcsMatch, usgs: usgsMatch };
- 
-        // Success: write results and mark enrichment done regardless of
-        // whether individual sources returned a match. For M4+ events a null
-        // PHIVOLCS/USGS result after the minimum age window is the definitive
-        // answer, not a transient failure.
+
+        if (!phivolcsResult.ok) console.error(`  PHIVOLCS lookup failed: ${phivolcsResult.error.message}`);
+        if (!usgsResult.ok)     console.error(`  USGS lookup failed: ${usgsResult.error.message}`);
+
+        const bothCompleted     = phivolcsResult.ok && usgsResult.ok;
+        const additionalInformation = {
+          phivolcs: phivolcsResult.ok ? phivolcsResult.value : null,
+          usgs:     usgsResult.ok     ? usgsResult.value     : null,
+        };
+
         await EQEvents.updateOne(
           { _id: event._id },
           {
-            $set: { additionalInformation, upForEnrichment: false },
+            $set: {
+              additionalInformation,
+              // Only mark done if both sources responded without error.
+              // A legitimate no-match returns null (ok: true, value: null),
+              // so this only stays true when a source actually threw.
+              ...(bothCompleted ? { upForEnrichment: false } : {}),
+            },
             $inc: { enrichmentAttempts: 1 },
           },
         );
- 
-        const savedCount = Number(Boolean(phivolcsMatch)) + Number(Boolean(usgsMatch));
-        process.stdout.write(`saved ${savedCount}/2 match(es)\n`);
+
+        const savedCount = Number(Boolean(additionalInformation.phivolcs))
+                         + Number(Boolean(additionalInformation.usgs));
+        const statusNote = bothCompleted ? '' : ' (partial — will retry failed source)';
+        process.stdout.write(`saved ${savedCount}/2 match(es)${statusNote}\n`);
         modifiedCount += 1;
       } catch (err) {
-        // Transient/unexpected error: keep upForEnrichment true so the next
-        // run will retry, unless this attempt exhausts the budget.
+        // Outer catch handles unexpected errors (e.g. DB write failure).
+        // Per-source errors are now handled above via safeResult.
         const updateFields = {
           $set: { additionalInformation: { phivolcs: null, usgs: null } },
           $inc: { enrichmentAttempts: 1 },
         };
- 
+
         if (willExhaust) {
-          // Final attempt also failed — give up permanently.
           updateFields.$set.upForEnrichment = false;
           exhaustedCount += 1;
           process.stdout.write(`error (attempt limit reached, giving up) -> ${err.message}\n`);
         } else {
-          // Leave upForEnrichment: true — no $set needed since it's already true.
           process.stdout.write(`error (will retry) -> ${err.message}\n`);
         }
- 
+
         await EQEvents.updateOne({ _id: event._id }, updateFields);
         modifiedCount += 1;
       }
     }
- 
+
     console.log(
       `\naddAdditionalInformation done. ` +
       `modified=${modifiedCount} skipped=${skippedCount} exhausted=${exhaustedCount}`
