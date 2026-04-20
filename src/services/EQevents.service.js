@@ -28,6 +28,9 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const MAX_ENRICHMENT_ATTEMPTS  = Number(process.env.MAX_ENRICHMENT_ATTEMPTS  || 3);
+const ENRICHMENT_MIN_AGE_HOURS = Number(process.env.ENRICHMENT_MIN_AGE_HOURS || 12);
+
 /***************************************************************************
   * getEventsList:
   *     Retrieves a list of earthquake events from the database that occurred within the specified time range.
