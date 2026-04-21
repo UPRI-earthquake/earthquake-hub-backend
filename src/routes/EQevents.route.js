@@ -175,6 +175,9 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
   *                   example: "Server error occurred"
   */
 router.post('/update-online-stations', EQEventsController.updateOnlineStations);
-router.post('/update-online-stations', EQEventsController.updateOnlineStations);
+
+router.post('/scrape-additional-information', EQEventsController.addAdditionalInformation);
+
+
 
 module.exports = router;
