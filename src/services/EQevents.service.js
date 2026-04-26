@@ -28,6 +28,9 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const MAX_ENRICHMENT_ATTEMPTS  = Number(process.env.MAX_ENRICHMENT_ATTEMPTS  || 3);
+const ENRICHMENT_MIN_AGE_HOURS = Number(process.env.ENRICHMENT_MIN_AGE_HOURS || 12);
+
 /***************************************************************************
   * getEventsList:
   *     Retrieves a list of earthquake events from the database that occurred within the specified time range.
@@ -234,6 +237,16 @@ async function addEQEvent(
   text,
   last_modification,
 ){
+  // Resolve nearest currently active stations inline during ingest. This
+  // reflects device activity at processing time, not guaranteed waveform
+  // availability for the event time window.
+  let onlineStations = [];
+  try {
+    onlineStations = await getNearestActiveStations(latitude_value, longitude_value);
+  } catch (err) {
+    console.error(`addEQEvent [${publicID}]: onlineStations lookup failed - ${err.message}`);
+  }
+
   // Idempotent upsert by publicID. This prevents duplicates when a previous
   // bug or out-of-order messages would otherwise create separate NEW/UPDATE
   // documents for the same quake. The unique index on publicID enforces this
@@ -248,6 +261,7 @@ async function addEQEvent(
       magnitude_value,
       type: eventType,
       text,
+      onlineStations,
       ...(last_modification ? { last_modification: last_modification } : {}),
     },
     $setOnInsert: { publicID },
@@ -277,6 +291,46 @@ function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
     })
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, 3);
+}
+
+/***************************************************************************
+  * getNearestActiveStations:
+  *     Finds the 3 nearest stations to an epicenter from the list of
+  *     currently active devices. No FDSN waveform check is performed.
+  *
+  * Inputs:
+  *     latitude_value: number
+  *     longitude_value: number
+  *
+  * Outputs:
+  *     An array of up to 3 station code strings.
+  *
+ ***************************************************************************/
+async function getNearestActiveStations(latitude_value, longitude_value) {
+  if (latitude_value == null || longitude_value == null) {
+    return [];
+  }
+
+  const activeDevices = await Device.find({ activity: 'active' }).lean();
+  if (activeDevices.length === 0) {
+    return [];
+  }
+
+  const usableDevices = activeDevices.filter(
+    (device) => device.station && device.longitude != null && device.latitude != null,
+  );
+
+  const nearestStations = getNearestStations(
+    usableDevices,
+    longitude_value,
+    latitude_value,
+    {
+      point: turfHelpers.point,
+      distance: turfDistance.default,
+    },
+  );
+
+  return nearestStations.map((station) => String(station.station));
 }
 
 async function checkStationRecording(stationCode, startTime, endTime) {
@@ -613,16 +667,29 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
 
 /***************************************************************************
   * addAdditionalInformation:
-  *     Enriches all earthquake events that do not yet have an
-  *     `additionalInformation` field by fetching the best-matching entry
-  *     from PHIVOLCS (via headless browser) and USGS (via REST API) and
-  *     saving the results back to the database.
+  *     Batch-enriches earthquake events with matching entries from PHIVOLCS
+  *     (via headless browser) and USGS (via REST API).
+  *
+  *     Only events satisfying ALL of the following are processed:
+  *       - upForEnrichment is true
+  *       - OT is older than ENRICHMENT_MIN_AGE_HOURS (gives external catalogs
+  *         time to publish their entries before we query them)
+  *       - enrichmentAttempts < MAX_ENRICHMENT_ATTEMPTS (prevents indefinite
+  *         retries on persistent infrastructure failures)
+  *
+  *     After each event is processed:
+  *       - On success:           upForEnrichment = false, attempts incremented
+  *       - On missing core data: upForEnrichment = false, attempts incremented
+  *       - On transient error:   upForEnrichment stays true, attempts incremented
+  *         (will be retried next run until MAX_ENRICHMENT_ATTEMPTS is reached)
+  *
+  *     Once enrichmentAttempts reaches MAX_ENRICHMENT_ATTEMPTS the event is
+  *     excluded from the query entirely, so it is never processed again.
   *
   * Outputs:
-  *     An object with modifiedCount, skippedCount, and totalProcessed.
+  *     An object with modifiedCount, skippedCount, exhaustedCount, and totalProcessed.
   *
  ***************************************************************************/
-// Could be a one time thing, might implement a dedicated function integrated into eq event pipeline
 async function addAdditionalInformation() {
   const browser = await puppeteer.launch({
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
@@ -632,42 +699,57 @@ async function addAdditionalInformation() {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',
-      '--in-process-gpu',     // GPU runs in browser process, no separate GPU subprocess
+      '--in-process-gpu',
       '--headless',
-    ]
+    ],
   });
 
+  const safeResult = (promise) =>
+    promise
+      .then((value) => ({ ok: true, value }))
+      .catch((error) => ({ ok: false, error }));
 
   try {
-    const page         = await browser.newPage();
+    const page          = await browser.newPage();
     const phivolcsCache = new Map();
 
+    const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
+
     const events = await EQEvents.find({
-      $or: [
-        { additionalInformation: { $exists: false } },
-        { 'additionalInformation.phivolcs': { $exists: false } },
-        { 'additionalInformation.usgs': { $exists: false } },
-      ],
+      upForEnrichment:    true,
+      OT:                 { $lte: cutoff },
+      enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
     }).lean();
 
-    console.log(`addAdditionalInformation: processing ${events.length} event(s) without additionalInformation`);
+    console.log(
+      `addAdditionalInformation: processing ${events.length} event(s) ` +
+      `(minAge=${ENRICHMENT_MIN_AGE_HOURS}h, maxAttempts=${MAX_ENRICHMENT_ATTEMPTS})`
+    );
 
-    let modifiedCount = 0;
-    let skippedCount  = 0;
+    let modifiedCount  = 0;
+    let skippedCount   = 0;
+    let exhaustedCount = 0;
 
     for (let i = 0; i < events.length; i += 1) {
-      const event        = events[i];
-      const ref          = _buildReferenceEvent(event);
+      const event         = events[i];
+      const ref           = _buildReferenceEvent(event);
       const missingFields = _validateReferenceEvent(ref);
-      const label        = event.publicID ?? String(event._id);
+      const label         = event.publicID ?? String(event._id);
+      const nextAttempts  = (event.enrichmentAttempts ?? 0) + 1;
+      const willExhaust   = nextAttempts >= MAX_ENRICHMENT_ATTEMPTS;
 
-      process.stdout.write(`[${i + 1}/${events.length}] ${label} ... `);
+      process.stdout.write(
+        `[${i + 1}/${events.length}] ${label} (attempt ${nextAttempts}/${MAX_ENRICHMENT_ATTEMPTS}) ... `
+      );
 
-      // If the event is missing core fields, store nulls and move on
+      // ── Missing core fields: no point retrying, close it out ──────────
       if (missingFields.length > 0) {
         await EQEvents.updateOne(
           { _id: event._id },
-          { $set: { additionalInformation: { phivolcs: null, usgs: null } } }
+          {
+            $set: { additionalInformation: { phivolcs: null, usgs: null }, upForEnrichment: false },
+            $inc: { enrichmentAttempts: 1 },
+          },
         );
         process.stdout.write(`skipped (missing: ${missingFields.join(', ')})\n`);
         skippedCount  += 1;
@@ -675,46 +757,72 @@ async function addAdditionalInformation() {
         continue;
       }
 
+      // ── Normal enrichment attempt ──────────────────────────────────────
       try {
-        const [phivolcsMatch, usgsMatch] = await Promise.all([
-          _fetchPhivolcsMatch(ref, page, phivolcsCache).catch((err) => {
-            console.error(`  PHIVOLCS lookup failed: ${err.message}`);
-            return null;
-          }),
-          _fetchUsgsMatch(ref).catch((err) => {
-            console.error(`  USGS lookup failed: ${err.message}`);
-            return null;
-          }),
+        const [phivolcsResult, usgsResult] = await Promise.all([
+          safeResult(_fetchPhivolcsMatch(ref, page, phivolcsCache)),
+          safeResult(_fetchUsgsMatch(ref)),
         ]);
 
-        const additionalInformation = { phivolcs: phivolcsMatch, usgs: usgsMatch };
+        if (!phivolcsResult.ok) console.error(`  PHIVOLCS lookup failed: ${phivolcsResult.error.message}`);
+        if (!usgsResult.ok)     console.error(`  USGS lookup failed: ${usgsResult.error.message}`);
+
+        const bothCompleted     = phivolcsResult.ok && usgsResult.ok;
+        const additionalInformation = {
+          phivolcs: phivolcsResult.ok ? phivolcsResult.value : null,
+          usgs:     usgsResult.ok     ? usgsResult.value     : null,
+        };
 
         await EQEvents.updateOne(
           { _id: event._id },
-          { $set: { additionalInformation } }
+          {
+            $set: {
+              additionalInformation,
+              // Only mark done if both sources responded without error.
+              // A legitimate no-match returns null (ok: true, value: null),
+              // so this only stays true when a source actually threw.
+              ...(bothCompleted ? { upForEnrichment: false } : {}),
+            },
+            $inc: { enrichmentAttempts: 1 },
+          },
         );
 
-        const savedCount = Number(Boolean(phivolcsMatch)) + Number(Boolean(usgsMatch));
-        process.stdout.write(`saved ${savedCount} match(es)\n`);
+        const savedCount = Number(Boolean(additionalInformation.phivolcs))
+                         + Number(Boolean(additionalInformation.usgs));
+        const statusNote = bothCompleted ? '' : ' (partial — will retry failed source)';
+        process.stdout.write(`saved ${savedCount}/2 match(es)${statusNote}\n`);
         modifiedCount += 1;
       } catch (err) {
-        await EQEvents.updateOne(
-          { _id: event._id },
-          { $set: { additionalInformation: { phivolcs: null, usgs: null } } }
-        );
-        process.stdout.write(`error -> saved null matches (${err.message})\n`);
-        skippedCount  += 1;
+        // Outer catch handles unexpected errors (e.g. DB write failure).
+        // Per-source errors are now handled above via safeResult.
+        const updateFields = {
+          $set: { additionalInformation: { phivolcs: null, usgs: null } },
+          $inc: { enrichmentAttempts: 1 },
+        };
+
+        if (willExhaust) {
+          updateFields.$set.upForEnrichment = false;
+          exhaustedCount += 1;
+          process.stdout.write(`error (attempt limit reached, giving up) -> ${err.message}\n`);
+        } else {
+          process.stdout.write(`error (will retry) -> ${err.message}\n`);
+        }
+
+        await EQEvents.updateOne({ _id: event._id }, updateFields);
         modifiedCount += 1;
       }
     }
 
-    console.log(`\naddAdditionalInformation done. modified=${modifiedCount} skipped=${skippedCount}`);
-    return { modifiedCount, skippedCount, totalProcessed: events.length };
+    console.log(
+      `\naddAdditionalInformation done. ` +
+      `modified=${modifiedCount} skipped=${skippedCount} exhausted=${exhaustedCount}`
+    );
+    return { modifiedCount, skippedCount, exhaustedCount, totalProcessed: events.length };
   } finally {
     await browser.close();
   }
 }
-
+ 
 module.exports = {
   getEventsList,
   addPlacesAttribute,

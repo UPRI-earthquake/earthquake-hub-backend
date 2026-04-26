@@ -181,6 +181,14 @@
             "format": "date-time",
             "description": "Used for deterministic conflict resolution"
           },
+          "upForEnrichment": {
+            "type": "boolean",
+            "description": "True while the event has not yet been enriched with additionalInformation. Set to false once enrichment succeeds or enrichmentAttempts reaches MAX_ENRICHMENT_ATTEMPTS.\n"
+          },
+          "enrichmentAttempts": {
+            "type": "integer",
+            "description": "Number of times the enrichment job has attempted to process this event. Prevents indefinite retries on persistent failures.\n"
+          },
           "additionalInformation": {
             "type": "object",
             "properties": {
