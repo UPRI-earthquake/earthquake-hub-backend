@@ -23,6 +23,16 @@ const turfDistance = require('@turf/distance');
 const PHIVOLCS_HOME_URL = 'https://earthquake.phivolcs.dost.gov.ph/';
 const PHIVOLCS_TZ_OFFSET = 'GMT+0800';
 const DEFAULT_USGS_WINDOW_HOURS = 12;
+const SOURCE_DISPLAY_METADATA = {
+  phivolcs: {
+    sourceLabel: 'PHIVOLCS',
+    sourceIconUrl: `${PHIVOLCS_HOME_URL}favicon.ico`,
+  },
+  usgs: {
+    sourceLabel: 'USGS',
+    sourceIconUrl: 'https://earthquake.usgs.gov/favicon.ico',
+  },
+};
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -494,6 +504,10 @@ function _computeScore(timeDiffMinutes, distanceKm, magDiff, floorBoost = 0) {
   return timeDiffMinutes * 4 + distanceKm * 1.8 + magDiff * 25 + floorBoost;
 }
 
+function _getSourceDisplayMetadata(source) {
+  return SOURCE_DISPLAY_METADATA[source] ?? {};
+}
+
 function _buildReferenceEvent(event) {
   return {
     OT:        _parseDate(event.OT),
@@ -539,6 +553,7 @@ function _normalizePhivolcsMatch(rawEvent, ref) {
 
   return {
     source:                 'phivolcs',
+    ..._getSourceDisplayMetadata('phivolcs'),
     dateTime:               rawEvent.dateTime,
     detailUrl:              rawEvent.detailUrl,
     hasFeltIntensity:       rawEvent.hasFeltIntensity,
@@ -640,6 +655,7 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
 
       return {
         source:                'usgs',
+        ..._getSourceDisplayMetadata('usgs'),
         id:                    feature.id,
         title:                 feature.properties.title,
         place:                 feature.properties.place,
