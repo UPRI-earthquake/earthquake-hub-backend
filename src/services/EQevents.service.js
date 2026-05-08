@@ -61,6 +61,10 @@ async function getEventsList(startTime, endTime){
   return response;
 }
 
+async function getEventByPublicID(publicID) {
+  return EQEvents.findOne({ publicID });
+}
+
 /***************************************************************************
   * distKM:
   *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
@@ -841,6 +845,7 @@ async function addAdditionalInformation() {
  
 module.exports = {
   getEventsList,
+  getEventByPublicID,
   addPlacesAttribute,
   addEQEvent,
   updateOnlineStations,

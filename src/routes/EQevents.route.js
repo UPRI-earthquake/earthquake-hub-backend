@@ -128,6 +128,59 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
 
 /**
   * @swagger
+  * /eq-events/{publicID}:
+  *   get:
+  *     summary: Get one recorded seismic event by public ID
+  *     tags: [EQ Events]
+  *     parameters:
+  *       - in: path
+  *         name: publicID
+  *         schema:
+  *           type: string
+  *         description: The SeisComP public ID of the earthquake event
+  *         required: true
+  *         example: "upri-event-001"
+  *     responses:
+  *       200:
+  *         description: EQ event acquired successfully.
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 0
+  *                 message:
+  *                   type: string
+  *                   example: "EQ event acquired successfully"
+  *                 payload:
+  *                   $ref: '#/components/schemas/Event'
+  *       400:
+  *         description: Invalid public ID
+  *       404:
+  *         description: Earthquake event was not found
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 1
+  *                 message:
+  *                   type: string
+  *                   example: "Earthquake with publicID \"upri-event-001\" was not found."
+  *                 payload:
+  *                   nullable: true
+  *                   example: null
+  *       500:
+  *         description: Internal server error
+  */
+router.get('/:publicID', cacheSeconds(60), EQEventsController.getEQEventByPublicID);
+
+/**
+  * @swagger
   * /eq-events/update-online-stations:
   *   post:
   *     summary: Update onlineStations for all events based on closest devices
@@ -177,7 +230,6 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
 router.post('/update-online-stations', EQEventsController.updateOnlineStations);
 
 router.post('/scrape-additional-information', EQEventsController.addAdditionalInformation);
-
 
 
 module.exports = router;

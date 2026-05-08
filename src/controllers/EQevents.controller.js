@@ -47,6 +47,46 @@ exports.getEQEvents = async (req, res, next) => {
   }
 }
 
+exports.getEQEventByPublicID = async (req, res, next) => {
+  const schema = Joi.object({
+    publicID: Joi.string().trim().min(1).max(256).required()
+      .messages({
+        "any.required": "Public ID is required.",
+        "string.empty": "Public ID is required.",
+        "string.max": "Public ID must be 256 characters or fewer.",
+      }),
+  });
+
+  try {
+    const { error, value } = schema.validate(req.params);
+    if (error) { throw error }
+
+    const event = await EQEventsService.getEventByPublicID(value.publicID);
+    if (!event) {
+      const message = `Earthquake with publicID "${value.publicID}" was not found.`;
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message,
+        payload: null
+      });
+      res.message = message;
+      return;
+    }
+
+    const [eventWithPlace] = await EQEventsService.addPlacesAttribute([event]);
+    const message = "EQ event acquired successfully";
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message,
+      payload: eventWithPlace || event
+    });
+    res.message = message;
+  } catch (err) {
+    console.trace(`Getting EQevent by publicID unsuccessful \n ${err}`);
+    next(err);
+  }
+}
+
 // update onlineStations for all events
 exports.updateOnlineStations = async (req, res, next) => {
   try {
