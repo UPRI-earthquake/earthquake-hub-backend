@@ -216,6 +216,12 @@
           "source": {
             "type": "string"
           },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "sourceIconUrl": {
+            "type": "string"
+          },
           "dateTime": {
             "type": "string"
           },
@@ -262,6 +268,12 @@
         "type": "object",
         "properties": {
           "source": {
+            "type": "string"
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "sourceIconUrl": {
             "type": "string"
           },
           "id": {

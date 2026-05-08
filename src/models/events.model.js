@@ -70,6 +70,10 @@
  *         properties:
  *           source:
  *             type: string
+ *           sourceLabel:
+ *             type: string
+ *           sourceIconUrl:
+ *             type: string
  *           dateTime:
  *             type: string
  *           detailUrl:
@@ -102,6 +106,10 @@
  *         type: object
  *         properties:
  *           source:
+ *             type: string
+ *           sourceLabel:
+ *             type: string
+ *           sourceIconUrl:
  *             type: string
  *           id:
  *             type: string
@@ -176,6 +184,8 @@ const eventSchema = new mongoose.Schema(
     additionalInformation: {
       phivolcs: {
         source:                 String,
+        sourceLabel:            String,
+        sourceIconUrl:          String,
         dateTime:               String,
         detailUrl:              String,
         hasFeltIntensity:       Boolean,
@@ -192,6 +202,8 @@ const eventSchema = new mongoose.Schema(
       },
       usgs: {
         source:                 String,
+        sourceLabel:            String,
+        sourceIconUrl:          String,
         id:                     String,
         title:                  String,
         place:                  String,
