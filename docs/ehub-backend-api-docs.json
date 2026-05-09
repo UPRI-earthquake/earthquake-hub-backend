@@ -2354,11 +2354,16 @@
         }
       }
     },
-    "/eq-events/update-online-stations": {
+    "/eq-events/restricted/update-online-stations": {
       "post": {
-        "summary": "Update onlineStations for all events based on closest devices",
+        "summary": "Admin maintenance endpoint to update onlineStations for all events",
         "tags": [
           "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
         ],
         "responses": {
           "200": {

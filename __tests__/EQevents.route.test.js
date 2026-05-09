@@ -6,6 +6,7 @@ jest.mock('../src/services/EQevents.service', () => ({
   addPlacesAttribute: jest.fn(),
   getEventByPublicID: jest.fn(),
   getEventsList: jest.fn(),
+  updateOnlineStations: jest.fn(),
 }));
 
 describe('GET /eq-events/:publicID', () => {
@@ -59,5 +60,25 @@ describe('GET /eq-events/:publicID', () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/Public ID must be 256 characters or fewer/i);
     expect(EQEventsService.getEventByPublicID).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /eq-events/restricted/update-online-stations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('does not expose the old public maintenance route', async () => {
+    const res = await request(app).post('/eq-events/update-online-stations');
+
+    expect(res.status).toBe(404);
+    expect(EQEventsService.updateOnlineStations).not.toHaveBeenCalled();
+  });
+
+  test('requires an admin session cookie', async () => {
+    const res = await request(app).post('/eq-events/restricted/update-online-stations');
+
+    expect(res.status).toBe(403);
+    expect(EQEventsService.updateOnlineStations).not.toHaveBeenCalled();
   });
 });

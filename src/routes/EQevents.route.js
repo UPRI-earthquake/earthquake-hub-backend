@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const EQEventsController = require('../controllers/EQevents.controller');
 const { cacheSeconds } = require('../middlewares/cache.middleware');
+const {
+  getTokenFromCookie,
+  verifyTokenWithRole,
+} = require('../middlewares/token.middleware');
 
 /**
   * @swagger
@@ -181,10 +185,12 @@ router.get('/:publicID', cacheSeconds(60), EQEventsController.getEQEventByPublic
 
 /**
   * @swagger
-  * /eq-events/update-online-stations:
+  * /eq-events/restricted/update-online-stations:
   *   post:
-  *     summary: Update onlineStations for all events based on closest devices
+  *     summary: Admin maintenance endpoint to update onlineStations for all events
   *     tags: [EQ Events]
+  *     security:
+  *       - cookieAuth: []
   *     responses:
   *       200:
   *         description: Online stations updated successfully.
@@ -227,7 +233,12 @@ router.get('/:publicID', cacheSeconds(60), EQEventsController.getEQEventByPublic
   *                   type: string
   *                   example: "Server error occurred"
   */
-router.post('/update-online-stations', EQEventsController.updateOnlineStations);
+router.post(
+  '/restricted/update-online-stations',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  EQEventsController.updateOnlineStations,
+);
 
 router.post('/scrape-additional-information', EQEventsController.addAdditionalInformation);
 
