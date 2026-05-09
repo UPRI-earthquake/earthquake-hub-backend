@@ -240,7 +240,30 @@ router.post(
   EQEventsController.updateOnlineStations,
 );
 
-router.post('/scrape-additional-information', EQEventsController.addAdditionalInformation);
+/**
+  * @swagger
+  * /eq-events/restricted/scrape-additional-information:
+  *   post:
+  *     summary: Admin maintenance endpoint to run additional catalog enrichment
+  *     tags: [EQ Events]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Additional catalog information enrichment completed.
+  *       403:
+  *         description: Admin session cookie is required.
+  *       409:
+  *         description: Enrichment is already running.
+  *       '500':
+  *         description: Internal server error
+  */
+router.post(
+  '/restricted/scrape-additional-information',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  EQEventsController.addAdditionalInformation,
+);
 
 
 module.exports = router;

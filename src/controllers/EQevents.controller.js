@@ -1,7 +1,16 @@
 const Joi = require('joi')
 const EQEventsService = require('../services/EQevents.service')
+const { acquireJobLock } = require('../services/jobLock.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
+
+function positiveNumberEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const ENRICHMENT_JOB_LOCK_NAME = 'additional-information-enrichment';
+const ENRICHMENT_LOCK_TTL_MS = positiveNumberEnv('ENRICHMENT_LOCK_TTL_MS', 60 * 60 * 1000);
 
 // query database
 exports.getEQEvents = async (req, res, next) => {
@@ -107,10 +116,24 @@ exports.updateOnlineStations = async (req, res, next) => {
 };
 
 exports.addAdditionalInformation = async (req, res, next) => {
+  let lock = null;
   try {
-    console.log('inside add additional information')
+    lock = await acquireJobLock(ENRICHMENT_JOB_LOCK_NAME, ENRICHMENT_LOCK_TTL_MS);
+    if (!lock.acquired) {
+      return res.status(409).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: 'Additional information enrichment is already running.',
+        payload: null,
+      });
+    }
+
     const result = await EQEventsService.addAdditionalInformation();
-    const message = `Added additional information to events: ${result.modifiedCount} events modified, ${result.skippedCount} events skipped, out of ${result.totalProcessed} total processed.`;
+    const message =
+      `Added additional information to events: ${result.modifiedCount} events modified, ` +
+      `${result.completedCount || 0} completed, ${result.partialCount || 0} partial, ` +
+      `${result.noMatchCount || 0} no-match, ${result.skippedCount || 0} skipped, ` +
+      `${result.exhaustedCount || 0} exhausted, ${result.failedSourceCount || 0} source failures, ` +
+      `out of ${result.totalProcessed} total processed.`;
     console.log(message);
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
@@ -120,5 +143,13 @@ exports.addAdditionalInformation = async (req, res, next) => {
   } catch (err) {
     console.trace(`Adding additional information unsuccessful \n ${err}`);
     next(err);
+  } finally {
+    if (lock?.acquired) {
+      try {
+        await lock.release();
+      } catch (err) {
+        console.trace(`Releasing additional information lock unsuccessful \n ${err}`);
+      }
+    }
   }
 }

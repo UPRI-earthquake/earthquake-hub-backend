@@ -14,6 +14,11 @@ const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REF
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
 
+function _positiveNumberEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 /************************ 
  * 
  * constants for scraping additional information in the web
@@ -46,6 +51,8 @@ const MONTH_NAMES = [
 
 const MAX_ENRICHMENT_ATTEMPTS  = Number(process.env.MAX_ENRICHMENT_ATTEMPTS  || 3);
 const ENRICHMENT_MIN_AGE_HOURS = Number(process.env.ENRICHMENT_MIN_AGE_HOURS || 12);
+const ENRICHMENT_BATCH_SIZE = _positiveNumberEnv('ENRICHMENT_BATCH_SIZE', 25);
+const USGS_REQUEST_TIMEOUT_MS = _positiveNumberEnv('USGS_REQUEST_TIMEOUT_MS', 15_000);
 
 /***************************************************************************
   * getEventsList:
@@ -648,6 +655,19 @@ function _validateReferenceEvent(ref) {
   return missing;
 }
 
+function _getEnrichmentEligibilityFilter() {
+  const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
+  return {
+    upForEnrichment:    true,
+    OT:                 { $lte: cutoff },
+    enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
+  };
+}
+
+async function countEligibleEnrichmentEvents() {
+  return EQEvents.countDocuments(_getEnrichmentEligibilityFilter());
+}
+
 function _buildPhivolcsUrl(year, month) {
   const now = new Date();
   const isCurrentMonth = year === now.getUTCFullYear() && month === now.getUTCMonth() + 1;
@@ -756,7 +776,20 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
   url.searchParams.set('maxmagnitude', String(_toRounded(maxMag, 2)));
   url.searchParams.set('orderby',      'time');
 
-  const response = await fetch(url.toString());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), USGS_REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(url.toString(), { signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`USGS request timed out after ${USGS_REQUEST_TIMEOUT_MS} ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+
   if (!response.ok) throw new Error(`USGS request failed: HTTP ${response.status}`);
 
   const result     = await response.json();
@@ -849,22 +882,24 @@ async function addAdditionalInformation() {
     const page          = await browser.newPage();
     const phivolcsCache = new Map();
 
-    const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
-
-    const events = await EQEvents.find({
-      upForEnrichment:    true,
-      OT:                 { $lte: cutoff },
-      enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
-    }).lean();
+    const events = await EQEvents.find(_getEnrichmentEligibilityFilter())
+      .sort({ OT: 1 })
+      .limit(ENRICHMENT_BATCH_SIZE)
+      .lean();
 
     console.log(
       `addAdditionalInformation: processing ${events.length} event(s) ` +
-      `(minAge=${ENRICHMENT_MIN_AGE_HOURS}h, maxAttempts=${MAX_ENRICHMENT_ATTEMPTS})`
+      `(minAge=${ENRICHMENT_MIN_AGE_HOURS}h, maxAttempts=${MAX_ENRICHMENT_ATTEMPTS}, ` +
+      `batchSize=${ENRICHMENT_BATCH_SIZE})`
     );
 
     let modifiedCount  = 0;
     let skippedCount   = 0;
     let exhaustedCount = 0;
+    let completedCount = 0;
+    let partialCount = 0;
+    let noMatchCount = 0;
+    let failedSourceCount = 0;
 
     for (let i = 0; i < events.length; i += 1) {
       const event         = events[i];
@@ -902,6 +937,7 @@ async function addAdditionalInformation() {
 
         if (!phivolcsResult.ok) console.error(`  PHIVOLCS lookup failed: ${phivolcsResult.error.message}`);
         if (!usgsResult.ok)     console.error(`  USGS lookup failed: ${usgsResult.error.message}`);
+        failedSourceCount += Number(!phivolcsResult.ok) + Number(!usgsResult.ok);
 
         const bothCompleted     = phivolcsResult.ok && usgsResult.ok;
         const additionalInformation = {
@@ -926,6 +962,13 @@ async function addAdditionalInformation() {
         const savedCount = Number(Boolean(additionalInformation.phivolcs))
                          + Number(Boolean(additionalInformation.usgs));
         const statusNote = bothCompleted ? '' : ' (partial — will retry failed source)';
+        if (!bothCompleted) {
+          partialCount += 1;
+        } else if (savedCount === 0) {
+          noMatchCount += 1;
+        } else {
+          completedCount += 1;
+        }
         process.stdout.write(`saved ${savedCount}/2 match(es)${statusNote}\n`);
         modifiedCount += 1;
       } catch (err) {
@@ -951,9 +994,21 @@ async function addAdditionalInformation() {
 
     console.log(
       `\naddAdditionalInformation done. ` +
-      `modified=${modifiedCount} skipped=${skippedCount} exhausted=${exhaustedCount}`
+      `modified=${modifiedCount} completed=${completedCount} partial=${partialCount} ` +
+      `noMatch=${noMatchCount} skipped=${skippedCount} exhausted=${exhaustedCount} ` +
+      `failedSources=${failedSourceCount}`
     );
-    return { modifiedCount, skippedCount, exhaustedCount, totalProcessed: events.length };
+    return {
+      modifiedCount,
+      completedCount,
+      partialCount,
+      noMatchCount,
+      skippedCount,
+      exhaustedCount,
+      failedSourceCount,
+      totalProcessed: events.length,
+      batchSize: ENRICHMENT_BATCH_SIZE,
+    };
   } finally {
     await browser.close();
   }
@@ -967,6 +1022,7 @@ module.exports = {
   updateOnlineStationsForEvent,
   updateOnlineStations,
   addAdditionalInformation,
+  countEligibleEnrichmentEvents,
   _test: {
     getCatalogMatchQuality: _getCatalogMatchQuality,
     selectCatalogMatch: _selectCatalogMatch,

@@ -6,6 +6,7 @@ jest.mock('../src/services/EQevents.service', () => ({
   addPlacesAttribute: jest.fn(),
   getEventByPublicID: jest.fn(),
   getEventsList: jest.fn(),
+  addAdditionalInformation: jest.fn(),
   updateOnlineStations: jest.fn(),
 }));
 
@@ -80,5 +81,25 @@ describe('POST /eq-events/restricted/update-online-stations', () => {
 
     expect(res.status).toBe(403);
     expect(EQEventsService.updateOnlineStations).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /eq-events/restricted/scrape-additional-information', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('does not expose the old public enrichment route', async () => {
+    const res = await request(app).post('/eq-events/scrape-additional-information');
+
+    expect(res.status).toBe(404);
+    expect(EQEventsService.addAdditionalInformation).not.toHaveBeenCalled();
+  });
+
+  test('requires an admin session cookie', async () => {
+    const res = await request(app).post('/eq-events/restricted/scrape-additional-information');
+
+    expect(res.status).toBe(403);
+    expect(EQEventsService.addAdditionalInformation).not.toHaveBeenCalled();
   });
 });
