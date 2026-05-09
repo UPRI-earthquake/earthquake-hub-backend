@@ -92,7 +92,7 @@ exports.updateOnlineStations = async (req, res, next) => {
   try {
     const result = await EQEventsService.updateOnlineStations();
 
-    const message = `Updated onlineStations: ${result.modifiedCount} events modified, ${result.matchedCount} events matched, using ${result.usableDevicesCount} devices.`;
+    const message = `Updated onlineStations: ${result.modifiedCount} events modified, ${result.matchedCount} events matched, ${result.skippedCount || 0} events skipped, using ${result.usableDevicesCount} devices.`;
     console.log(message);
 
     res.status(200).json({

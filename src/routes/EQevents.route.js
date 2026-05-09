@@ -200,7 +200,7 @@ router.get('/:publicID', cacheSeconds(60), EQEventsController.getEQEventByPublic
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
-  *                   example: "Updated onlineStations: 10 events modified, 10 events matched, using 5 devices."
+  *                   example: "Updated onlineStations: 10 events modified, 10 events matched, 0 events skipped, using 5 devices."
   *                 payload:
   *                   type: object
   *                   properties:

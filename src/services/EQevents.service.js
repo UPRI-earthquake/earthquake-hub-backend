@@ -9,6 +9,7 @@ const FDSN_NETWORK = process.env.FDSNWS_NETWORK || 'AM';
 const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
 const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
 const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
+const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REFINEMENT_DELAY_MS || 0);
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
@@ -282,7 +283,19 @@ async function addEQEvent(
   };
 
   await EQEvents.updateOne(filter, update, { upsert: true });
+  scheduleOnlineStationsRefinement(publicID);
   return 'success';
+}
+
+function scheduleOnlineStationsRefinement(publicID) {
+  if (!publicID) return;
+
+  const timer = setTimeout(() => {
+    updateOnlineStationsForEvent(publicID).catch((err) => {
+      console.error(`addEQEvent [${publicID}]: onlineStations refinement failed - ${err.message}`);
+    });
+  }, ONLINE_STATION_REFINEMENT_DELAY_MS);
+  if (typeof timer.unref === 'function') timer.unref();
 }
 
 function formatFdsnTime(date) {
@@ -303,21 +316,20 @@ function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
         distanceKm: Math.round(distanceKm * 10) / 10,
       };
     })
-    .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, 3);
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 }
 
 /***************************************************************************
   * getNearestActiveStations:
-  *     Finds the 3 nearest stations to an epicenter from the list of
-  *     currently active devices. No FDSN waveform check is performed.
+  *     Sorts currently active stations by distance to an epicenter. No FDSN
+  *     waveform check is performed.
   *
   * Inputs:
   *     latitude_value: number
   *     longitude_value: number
   *
   * Outputs:
-  *     An array of up to 3 station code strings.
+  *     An array of station code strings sorted nearest-first.
   *
  ***************************************************************************/
 async function getNearestActiveStations(latitude_value, longitude_value) {
@@ -367,14 +379,14 @@ async function checkStationRecording(stationCode, startTime, endTime) {
     });
     return response.status >= 200 && response.status < 300;
   } catch (_error) {
-    return false;
+    return null;
   }
 }
 
-async function getEventOnlineStations(event, stationDevices, turf) {
+async function getEventOnlineStationsResult(event, stationDevices, turf) {
   const eventTime = new Date(event.OT);
   if (Number.isNaN(eventTime.getTime())) {
-    return [];
+    return { onlineStations: [], checkedCount: 0, failedCheckCount: 0 };
   }
 
   const startTime = formatFdsnTime(eventTime);
@@ -387,8 +399,9 @@ async function getEventOnlineStations(event, stationDevices, turf) {
     })),
   );
 
+  const failedCheckCount = checks.filter((entry) => entry.hasRecording === null).length;
   const recordedDevices = checks
-    .filter((entry) => entry.hasRecording)
+    .filter((entry) => entry.hasRecording === true)
     .map((entry) => entry.device);
 
   const nearestStations = getNearestStations(
@@ -398,10 +411,56 @@ async function getEventOnlineStations(event, stationDevices, turf) {
     turf,
   );
 
-  return nearestStations
+  const onlineStations = nearestStations
     .map((station) => station.station)
     .filter(Boolean)
     .map((station) => String(station));
+
+  return {
+    onlineStations,
+    checkedCount: checks.length,
+    failedCheckCount,
+  };
+}
+
+async function getEventOnlineStations(event, stationDevices, turf) {
+  const result = await getEventOnlineStationsResult(event, stationDevices, turf);
+  return result.onlineStations;
+}
+
+async function updateOnlineStationsForEvent(publicID) {
+  const turf = await import('@turf/turf');
+
+  const event = await EQEvents.findOne({ publicID }).lean();
+  if (!event || event.longitude_value == null || event.latitude_value == null) {
+    return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0, onlineStations: [] };
+  }
+
+  const devices = await Device.find({}).lean();
+  const usableDevices = devices.filter(
+    (device) => device.station && device.longitude != null && device.latitude != null,
+  );
+  const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
+  if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
+    return {
+      matchedCount: 0,
+      modifiedCount: 0,
+      usableDevicesCount: usableDevices.length,
+      onlineStations: event.onlineStations || [],
+      skipped: true,
+      reason: 'all_station_recording_checks_failed',
+    };
+  }
+
+  const onlineStations = refinement.onlineStations;
+  const result = await EQEvents.updateOne({ publicID }, { $set: { onlineStations } });
+
+  return {
+    matchedCount: result.matchedCount,
+    modifiedCount: result.modifiedCount,
+    usableDevicesCount: usableDevices.length,
+    onlineStations,
+  };
 }
 
 /***************************************************************************
@@ -431,11 +490,16 @@ async function updateOnlineStations() {
   );
 
   const eventStationPairs = [];
+  let skippedCount = 0;
   for (let index = 0; index < eventsWithCoords.length; index += 1) {
     const event = eventsWithCoords[index];
-    const onlineStations = await getEventOnlineStations(event, usableDevices, turf);
+    const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
+    if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
+      skippedCount += 1;
+      continue;
+    }
 
-    eventStationPairs.push({ eventId: event._id, onlineStations });
+    eventStationPairs.push({ eventId: event._id, onlineStations: refinement.onlineStations });
   }
 
   const operations = eventStationPairs.map(({ eventId, onlineStations }) => ({
@@ -454,6 +518,7 @@ async function updateOnlineStations() {
       matchedCount: 0,
       modifiedCount: 0,
       usableDevicesCount: usableDevices.length,
+      skippedCount,
       sampleOnlineStations: null,
     };
   }
@@ -466,6 +531,7 @@ async function updateOnlineStations() {
     matchedCount: result.matchedCount,
     modifiedCount: result.modifiedCount,
     usableDevicesCount: usableDevices.length,
+    skippedCount,
     sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
   };
 }
@@ -848,6 +914,7 @@ module.exports = {
   getEventByPublicID,
   addPlacesAttribute,
   addEQEvent,
+  updateOnlineStationsForEvent,
   updateOnlineStations,
   addAdditionalInformation
 };
