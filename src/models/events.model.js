@@ -101,6 +101,9 @@
  *             type: number
  *           score:
  *             type: number
+ *           matchQuality:
+ *             type: string
+ *             enum: [high, medium, low]
  *
  *       UsgsInfo:
  *         type: object
@@ -146,6 +149,9 @@
  *             type: boolean
  *           score:
  *             type: number
+ *           matchQuality:
+ *             type: string
+ *             enum: [high, medium, low]
  */
 
 const mongoose = require('mongoose');
@@ -199,6 +205,7 @@ const eventSchema = new mongoose.Schema(
         timeDifferenceMinutes:  Number,
         magnitudeDifference:    Number,
         score:                  Number,
+        matchQuality:           String,
       },
       usgs: {
         source:                 String,
@@ -221,6 +228,7 @@ const eventSchema = new mongoose.Schema(
         latitudeFloorMatch:     Boolean,
         longitudeFloorMatch:    Boolean,
         score:                  Number,
+        matchQuality:           String,
       },
     },
   },

@@ -261,6 +261,14 @@
           },
           "score": {
             "type": "number"
+          },
+          "matchQuality": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
           }
         }
       },
@@ -327,6 +335,14 @@
           },
           "score": {
             "type": "number"
+          },
+          "matchQuality": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
           }
         }
       }

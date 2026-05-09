@@ -24,6 +24,11 @@ const turfDistance = require('@turf/distance');
 const PHIVOLCS_HOME_URL = 'https://earthquake.phivolcs.dost.gov.ph/';
 const PHIVOLCS_TZ_OFFSET = 'GMT+0800';
 const DEFAULT_USGS_WINDOW_HOURS = 12;
+const CATALOG_MATCH_THRESHOLDS = {
+  high:   { timeMinutes: 2,  distanceKm: 100, magnitude: 0.5 },
+  medium: { timeMinutes: 5,  distanceKm: 250, magnitude: 1.0 },
+  low:    { timeMinutes: 10, distanceKm: 500, magnitude: 1.5 },
+};
 const SOURCE_DISPLAY_METADATA = {
   phivolcs: {
     sourceLabel: 'PHIVOLCS',
@@ -574,6 +579,53 @@ function _computeScore(timeDiffMinutes, distanceKm, magDiff, floorBoost = 0) {
   return timeDiffMinutes * 4 + distanceKm * 1.8 + magDiff * 25 + floorBoost;
 }
 
+function _getCatalogMatchQuality(candidate) {
+  const timeDiffMinutes = _parseNumber(candidate.timeDifferenceMinutes);
+  const distanceKm      = _parseNumber(candidate.distanceKm);
+  const magDiff         = _parseNumber(candidate.magnitudeDifference);
+
+  if (timeDiffMinutes === null) return null;
+
+  const low = CATALOG_MATCH_THRESHOLDS.low;
+  if (timeDiffMinutes > low.timeMinutes) return null;
+
+  const distanceExceedsLow = distanceKm === null || distanceKm > low.distanceKm;
+  const magnitudeExceedsLow = magDiff === null || magDiff > low.magnitude;
+  if (distanceExceedsLow && magnitudeExceedsLow) return null;
+
+  if (
+    timeDiffMinutes <= CATALOG_MATCH_THRESHOLDS.high.timeMinutes &&
+    distanceKm !== null &&
+    distanceKm <= CATALOG_MATCH_THRESHOLDS.high.distanceKm &&
+    magDiff !== null &&
+    magDiff <= CATALOG_MATCH_THRESHOLDS.high.magnitude
+  ) {
+    return 'high';
+  }
+
+  if (
+    timeDiffMinutes <= CATALOG_MATCH_THRESHOLDS.medium.timeMinutes &&
+    distanceKm !== null &&
+    distanceKm <= CATALOG_MATCH_THRESHOLDS.medium.distanceKm &&
+    magDiff !== null &&
+    magDiff <= CATALOG_MATCH_THRESHOLDS.medium.magnitude
+  ) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function _selectCatalogMatch(candidates) {
+  return candidates
+    .map((candidate) => {
+      const matchQuality = _getCatalogMatchQuality(candidate);
+      return matchQuality ? { ...candidate, matchQuality } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score)[0] ?? null;
+}
+
 function _getSourceDisplayMetadata(source) {
   return SOURCE_DISPLAY_METADATA[source] ?? {};
 }
@@ -684,10 +736,9 @@ async function _fetchPhivolcsMatch(ref, page, cache) {
   const rows  = await _getPhivolcsMonthlyRows(page, cache, year, month);
 
   const candidates = rows
-    .map((row) => _normalizePhivolcsMatch(row, ref))
-    .sort((a, b) => a.score - b.score);
+    .map((row) => _normalizePhivolcsMatch(row, ref));
 
-  return candidates[0] ?? null;
+  return _selectCatalogMatch(candidates);
 }
 
 async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
@@ -745,10 +796,9 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
         score:                 _toRounded(score, 2),
       };
     })
-    .filter(Boolean)
-    .sort((a, b) => a.score - b.score);
+    .filter(Boolean);
 
-  return candidates[0] ?? null;
+  return _selectCatalogMatch(candidates);
 }
 
 /***************************************************************************
@@ -916,5 +966,9 @@ module.exports = {
   addEQEvent,
   updateOnlineStationsForEvent,
   updateOnlineStations,
-  addAdditionalInformation
+  addAdditionalInformation,
+  _test: {
+    getCatalogMatchQuality: _getCatalogMatchQuality,
+    selectCatalogMatch: _selectCatalogMatch,
+  },
 };
