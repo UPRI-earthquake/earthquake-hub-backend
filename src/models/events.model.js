@@ -52,12 +52,21 @@
  *               Number of times the enrichment job has attempted to process
  *               this event. Prevents indefinite retries on persistent failures.
  *           additionalInformation:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/CatalogSourceInfo'
+ *           pendingCatalogSources:
+ *             type: array
+ *             items:
+ *               type: string
+ *           catalogEnrichmentAttempts:
  *             type: object
- *             properties:
- *               phivolcs:
- *                 $ref: '#/components/schemas/PhivolcsInfo'
- *               usgs:
- *                 $ref: '#/components/schemas/UsgsInfo'
+ *             additionalProperties:
+ *               type: number
+ *           catalogEnrichmentStatus:
+ *             type: object
+ *             additionalProperties:
+ *               type: string
  *           createdAt:
  *             type: string
  *             format: date-time
@@ -65,7 +74,7 @@
  *             type: string
  *             format: date-time
  *
- *       PhivolcsInfo:
+ *       CatalogSourceInfo:
  *         type: object
  *         properties:
  *           source:
@@ -80,40 +89,6 @@
  *             type: string
  *           hasFeltIntensity:
  *             type: boolean
- *           time:
- *             type: string
- *             format: date-time
- *           latitude:
- *             type: number
- *           longitude:
- *             type: number
- *           depthKm:
- *             type: number
- *           magnitude:
- *             type: number
- *           location:
- *             type: string
- *           distanceKm:
- *             type: number
- *           timeDifferenceMinutes:
- *             type: number
- *           magnitudeDifference:
- *             type: number
- *           score:
- *             type: number
- *           matchQuality:
- *             type: string
- *             enum: [high, medium, low]
- *
- *       UsgsInfo:
- *         type: object
- *         properties:
- *           source:
- *             type: string
- *           sourceLabel:
- *             type: string
- *           sourceIconUrl:
- *             type: string
  *           id:
  *             type: string
  *           title:
@@ -133,28 +108,65 @@
  *             type: number
  *           longitude:
  *             type: number
+ *           depthKm:
+ *             type: number
  *           depth:
  *             type: number
  *           magnitude:
  *             type: number
+ *           location:
+ *             type: string
  *           distanceKm:
  *             type: number
  *           timeDifferenceMinutes:
  *             type: number
  *           magnitudeDifference:
  *             type: number
- *           latitudeFloorMatch:
- *             type: boolean
- *           longitudeFloorMatch:
- *             type: boolean
  *           score:
  *             type: number
  *           matchQuality:
  *             type: string
  *             enum: [high, medium, low]
+ *           latitudeFloorMatch:
+ *             type: boolean
+ *           longitudeFloorMatch:
+ *             type: boolean
  */
 
 const mongoose = require('mongoose');
+
+const catalogSourceSchema = new mongoose.Schema(
+  {
+    source:                 { type: String, required: true },
+    sourceLabel:            String,
+    sourceIconUrl:          String,
+    dateTime:               String,
+    detailUrl:              String,
+    hasFeltIntensity:       Boolean,
+    id:                     String,
+    title:                  String,
+    place:                  String,
+    url:                    String,
+    detail:                 String,
+    queryUrl:               String,
+    time:                   Date,
+    latitude:               Number,
+    longitude:              Number,
+    depth:                  Number,
+    depthKm:                Number,
+    magnitude:              Number,
+    location:               String,
+    distanceKm:             Number,
+    timeDifferenceMinutes:  Number,
+    magnitudeDifference:    Number,
+    latitudeFloorMatch:     Boolean,
+    longitudeFloorMatch:    Boolean,
+    score:                  Number,
+    matchQuality:           String,
+    raw:                    mongoose.Schema.Types.Mixed,
+  },
+  { _id: false, strict: false },
+);
 
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
@@ -182,55 +194,15 @@ const eventSchema = new mongoose.Schema(
     onlineStations:   [String],
     last_modification: Date,
 
-    // ── Enrichment tracking ──────────────────────────────────────────────
+    // Legacy global enrichment tracking. Kept for existing records and old
+    // operational scripts; new scraper logic uses source-level tracking below.
     upForEnrichment:    { type: Boolean, default: true, index: true },
     enrichmentAttempts: { type: Number,  default: 0 },
-    // ────────────────────────────────────────────────────────────────────
 
-    additionalInformation: {
-      phivolcs: {
-        source:                 String,
-        sourceLabel:            String,
-        sourceIconUrl:          String,
-        dateTime:               String,
-        detailUrl:              String,
-        hasFeltIntensity:       Boolean,
-        time:                   Date,
-        latitude:               Number,
-        longitude:              Number,
-        depthKm:                Number,
-        magnitude:              Number,
-        location:               String,
-        distanceKm:             Number,
-        timeDifferenceMinutes:  Number,
-        magnitudeDifference:    Number,
-        score:                  Number,
-        matchQuality:           String,
-      },
-      usgs: {
-        source:                 String,
-        sourceLabel:            String,
-        sourceIconUrl:          String,
-        id:                     String,
-        title:                  String,
-        place:                  String,
-        url:                    String,
-        detail:                 String,
-        queryUrl:               String,
-        time:                   Date,
-        latitude:               Number,
-        longitude:              Number,
-        depth:                  Number,
-        magnitude:              Number,
-        distanceKm:             Number,
-        timeDifferenceMinutes:  Number,
-        magnitudeDifference:    Number,
-        latitudeFloorMatch:     Boolean,
-        longitudeFloorMatch:    Boolean,
-        score:                  Number,
-        matchQuality:           String,
-      },
-    },
+    additionalInformation:      { type: [catalogSourceSchema], default: [] },
+    pendingCatalogSources:      { type: [String], default: ['phivolcs', 'usgs'], index: true },
+    catalogEnrichmentAttempts:  { type: Map, of: Number, default: {} },
+    catalogEnrichmentStatus:    { type: Map, of: String, default: {} },
   },
   {
     timestamps: true, // createdAt/updatedAt for troubleshooting

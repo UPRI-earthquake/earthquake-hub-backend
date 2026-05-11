@@ -44,6 +44,7 @@ const SOURCE_DISPLAY_METADATA = {
     sourceIconUrl: 'https://earthquake.usgs.gov/favicon.ico',
   },
 };
+const CATALOG_SOURCE_NAMES = Object.freeze(Object.keys(SOURCE_DISPLAY_METADATA));
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -291,7 +292,12 @@ async function addEQEvent(
       onlineStations,
       ...(last_modification ? { last_modification: last_modification } : {}),
     },
-    $setOnInsert: { publicID },
+    $setOnInsert: {
+      publicID,
+      pendingCatalogSources: CATALOG_SOURCE_NAMES,
+      catalogEnrichmentAttempts: {},
+      catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
+    },
   };
 
   await EQEvents.updateOne(filter, update, { upsert: true });
@@ -637,6 +643,65 @@ function _getSourceDisplayMetadata(source) {
   return SOURCE_DISPLAY_METADATA[source] ?? {};
 }
 
+function _mapToObject(value) {
+  if (!value) return {};
+  if (value instanceof Map) return Object.fromEntries(value.entries());
+  if (typeof value === 'object') return value;
+  return {};
+}
+
+function _normalizeCatalogSources(additionalInformation) {
+  if (Array.isArray(additionalInformation)) {
+    return additionalInformation
+      .filter((entry) => entry && typeof entry === 'object' && entry.source)
+      .map((entry) => ({ ...entry, source: String(entry.source).toLowerCase() }));
+  }
+
+  if (additionalInformation && typeof additionalInformation === 'object') {
+    return Object.entries(additionalInformation)
+      .filter(([, value]) => value && typeof value === 'object')
+      .map(([source, value]) => ({
+        source: String(value.source || source).toLowerCase(),
+        ...value,
+      }));
+  }
+
+  return [];
+}
+
+function _mergeCatalogSource(existingSources, source, match) {
+  const normalizedSource = String(source).toLowerCase();
+  const remaining = _normalizeCatalogSources(existingSources)
+    .filter((entry) => entry.source !== normalizedSource);
+
+  if (!match) return remaining;
+  return [...remaining, { ...match, source: normalizedSource }];
+}
+
+function _getSourceAttempt(event, source) {
+  const attempts = _mapToObject(event.catalogEnrichmentAttempts);
+  return Number(attempts[source] || 0);
+}
+
+function _getPendingCatalogSources(event) {
+  const pending = Array.isArray(event.pendingCatalogSources)
+    ? event.pendingCatalogSources.map((source) => String(source).toLowerCase())
+    : [];
+
+  const eligiblePending = pending.filter(
+    (source) => CATALOG_SOURCE_NAMES.includes(source) && _getSourceAttempt(event, source) < MAX_ENRICHMENT_ATTEMPTS,
+  );
+
+  if (eligiblePending.length > 0) return [...new Set(eligiblePending)];
+
+  // Backward compatibility for old documents that have not been migrated yet.
+  if (event.upForEnrichment === true && (event.enrichmentAttempts ?? 0) < MAX_ENRICHMENT_ATTEMPTS) {
+    return CATALOG_SOURCE_NAMES.filter((source) => _getSourceAttempt(event, source) < MAX_ENRICHMENT_ATTEMPTS);
+  }
+
+  return [];
+}
+
 function _buildReferenceEvent(event) {
   return {
     OT:        _parseDate(event.OT),
@@ -658,9 +723,14 @@ function _validateReferenceEvent(ref) {
 function _getEnrichmentEligibilityFilter() {
   const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
   return {
-    upForEnrichment:    true,
-    OT:                 { $lte: cutoff },
-    enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
+    OT: { $lte: cutoff },
+    $or: [
+      { pendingCatalogSources: { $exists: true, $ne: [] } },
+      {
+        upForEnrichment: true,
+        enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
+      },
+    ],
   };
 }
 
@@ -834,6 +904,15 @@ async function _fetchUsgsMatch(ref, windowHours = DEFAULT_USGS_WINDOW_HOURS) {
   return _selectCatalogMatch(candidates);
 }
 
+const CATALOG_SOURCE_ADAPTERS = {
+  phivolcs: {
+    fetchMatch: (ref, context) => _fetchPhivolcsMatch(ref, context.page, context.phivolcsCache),
+  },
+  usgs: {
+    fetchMatch: (ref) => _fetchUsgsMatch(ref),
+  },
+};
+
 /***************************************************************************
   * addAdditionalInformation:
   *     Batch-enriches earthquake events with matching entries from PHIVOLCS
@@ -906,19 +985,36 @@ async function addAdditionalInformation() {
       const ref           = _buildReferenceEvent(event);
       const missingFields = _validateReferenceEvent(ref);
       const label         = event.publicID ?? String(event._id);
-      const nextAttempts  = (event.enrichmentAttempts ?? 0) + 1;
-      const willExhaust   = nextAttempts >= MAX_ENRICHMENT_ATTEMPTS;
+      const pendingSources = _getPendingCatalogSources(event);
+      const sourceAttempts = _mapToObject(event.catalogEnrichmentAttempts);
+      const sourceStatus = _mapToObject(event.catalogEnrichmentStatus);
 
       process.stdout.write(
-        `[${i + 1}/${events.length}] ${label} (attempt ${nextAttempts}/${MAX_ENRICHMENT_ATTEMPTS}) ... `
+        `[${i + 1}/${events.length}] ${label} (sources: ${pendingSources.join(', ') || 'none'}) ... `
       );
+
+      if (pendingSources.length === 0) {
+        process.stdout.write('skipped (no eligible pending source)\n');
+        skippedCount += 1;
+        continue;
+      }
 
       // ── Missing core fields: no point retrying, close it out ──────────
       if (missingFields.length > 0) {
+        pendingSources.forEach((source) => {
+          sourceStatus[source] = 'no_match';
+          sourceAttempts[source] = (sourceAttempts[source] || 0) + 1;
+        });
         await EQEvents.updateOne(
           { _id: event._id },
           {
-            $set: { additionalInformation: { phivolcs: null, usgs: null }, upForEnrichment: false },
+            $set: {
+              additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+              pendingCatalogSources: [],
+              catalogEnrichmentAttempts: sourceAttempts,
+              catalogEnrichmentStatus: sourceStatus,
+              upForEnrichment: false,
+            },
             $inc: { enrichmentAttempts: 1 },
           },
         );
@@ -930,39 +1026,77 @@ async function addAdditionalInformation() {
 
       // ── Normal enrichment attempt ──────────────────────────────────────
       try {
-        const [phivolcsResult, usgsResult] = await Promise.all([
-          safeResult(_fetchPhivolcsMatch(ref, page, phivolcsCache)),
-          safeResult(_fetchUsgsMatch(ref)),
-        ]);
+        const sourceResults = await Promise.all(
+          pendingSources.map(async (source) => {
+            const adapter = CATALOG_SOURCE_ADAPTERS[source];
+            const result = await safeResult(adapter.fetchMatch(ref, { page, phivolcsCache }));
+            return { source, ...result };
+          }),
+        );
 
-        if (!phivolcsResult.ok) console.error(`  PHIVOLCS lookup failed: ${phivolcsResult.error.message}`);
-        if (!usgsResult.ok)     console.error(`  USGS lookup failed: ${usgsResult.error.message}`);
-        failedSourceCount += Number(!phivolcsResult.ok) + Number(!usgsResult.ok);
+        let additionalInformation = _normalizeCatalogSources(event.additionalInformation);
+        const remainingPendingSources = new Set(
+          Array.isArray(event.pendingCatalogSources)
+            ? event.pendingCatalogSources.map((source) => String(source).toLowerCase())
+            : pendingSources,
+        );
+        let savedCount = 0;
+        let sourceFailureCount = 0;
 
-        const bothCompleted     = phivolcsResult.ok && usgsResult.ok;
-        const additionalInformation = {
-          phivolcs: phivolcsResult.ok ? phivolcsResult.value : null,
-          usgs:     usgsResult.ok     ? usgsResult.value     : null,
-        };
+        sourceResults.forEach((result) => {
+          const source = result.source;
+          sourceAttempts[source] = (sourceAttempts[source] || 0) + 1;
+
+          if (!result.ok) {
+            sourceFailureCount += 1;
+            console.error(`  ${source.toUpperCase()} lookup failed: ${result.error.message}`);
+            if (sourceAttempts[source] >= MAX_ENRICHMENT_ATTEMPTS) {
+              sourceStatus[source] = 'failed';
+              remainingPendingSources.delete(source);
+              exhaustedCount += 1;
+            } else {
+              sourceStatus[source] = 'pending';
+            }
+            return;
+          }
+
+          remainingPendingSources.delete(source);
+          if (result.value) {
+            additionalInformation = _mergeCatalogSource(additionalInformation, source, result.value);
+            sourceStatus[source] = 'done';
+            savedCount += 1;
+          } else {
+            additionalInformation = _mergeCatalogSource(additionalInformation, source, null);
+            sourceStatus[source] = 'no_match';
+          }
+        });
+
+        failedSourceCount += sourceFailureCount;
+
+        const pendingCatalogSources = [...remainingPendingSources].filter(
+          (source) => CATALOG_SOURCE_NAMES.includes(source) && _getSourceAttempt(
+            { catalogEnrichmentAttempts: sourceAttempts },
+            source,
+          ) < MAX_ENRICHMENT_ATTEMPTS,
+        );
+        const allCompleted = sourceFailureCount === 0;
 
         await EQEvents.updateOne(
           { _id: event._id },
           {
             $set: {
               additionalInformation,
-              // Only mark done if both sources responded without error.
-              // A legitimate no-match returns null (ok: true, value: null),
-              // so this only stays true when a source actually threw.
-              ...(bothCompleted ? { upForEnrichment: false } : {}),
+              pendingCatalogSources,
+              catalogEnrichmentAttempts: sourceAttempts,
+              catalogEnrichmentStatus: sourceStatus,
+              upForEnrichment: pendingCatalogSources.length > 0,
             },
             $inc: { enrichmentAttempts: 1 },
           },
         );
 
-        const savedCount = Number(Boolean(additionalInformation.phivolcs))
-                         + Number(Boolean(additionalInformation.usgs));
-        const statusNote = bothCompleted ? '' : ' (partial — will retry failed source)';
-        if (!bothCompleted) {
+        const statusNote = allCompleted ? '' : ' (partial — will retry failed source)';
+        if (!allCompleted) {
           partialCount += 1;
         } else if (savedCount === 0) {
           noMatchCount += 1;
@@ -974,13 +1108,27 @@ async function addAdditionalInformation() {
       } catch (err) {
         // Outer catch handles unexpected errors (e.g. DB write failure).
         // Per-source errors are now handled above via safeResult.
+        pendingSources.forEach((source) => {
+          sourceAttempts[source] = (sourceAttempts[source] || 0) + 1;
+          if (sourceAttempts[source] >= MAX_ENRICHMENT_ATTEMPTS) {
+            sourceStatus[source] = 'failed';
+          }
+        });
+        const remainingPendingSources = pendingSources.filter(
+          (source) => sourceAttempts[source] < MAX_ENRICHMENT_ATTEMPTS,
+        );
         const updateFields = {
-          $set: { additionalInformation: { phivolcs: null, usgs: null } },
+          $set: {
+            additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+            pendingCatalogSources: remainingPendingSources,
+            catalogEnrichmentAttempts: sourceAttempts,
+            catalogEnrichmentStatus: sourceStatus,
+            upForEnrichment: remainingPendingSources.length > 0,
+          },
           $inc: { enrichmentAttempts: 1 },
         };
 
-        if (willExhaust) {
-          updateFields.$set.upForEnrichment = false;
+        if (remainingPendingSources.length === 0) {
           exhaustedCount += 1;
           process.stdout.write(`error (attempt limit reached, giving up) -> ${err.message}\n`);
         } else {
@@ -1026,5 +1174,8 @@ module.exports = {
   _test: {
     getCatalogMatchQuality: _getCatalogMatchQuality,
     selectCatalogMatch: _selectCatalogMatch,
+    normalizeCatalogSources: _normalizeCatalogSources,
+    mergeCatalogSource: _mergeCatalogSource,
+    getPendingCatalogSources: _getPendingCatalogSources,
   },
 };

@@ -93,3 +93,51 @@ describe('catalog event match selection', () => {
     expect(match).toMatchObject({ id: 'better', matchQuality: 'medium' });
   });
 });
+
+describe('catalog source list helpers', () => {
+  test('normalizes legacy object-shaped catalog data into a source list', () => {
+    const sources = _test.normalizeCatalogSources({
+      phivolcs: candidate({ source: 'phivolcs', id: 'ph' }),
+      usgs: candidate({ source: 'usgs', id: 'us' }),
+      empty: null,
+    });
+
+    expect(sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'phivolcs', id: 'ph' }),
+        expect.objectContaining({ source: 'usgs', id: 'us' }),
+      ]),
+    );
+    expect(sources).toHaveLength(2);
+  });
+
+  test('replaces a source match without touching other source matches', () => {
+    const merged = _test.mergeCatalogSource(
+      [
+        candidate({ source: 'phivolcs', id: 'old-ph' }),
+        candidate({ source: 'usgs', id: 'us' }),
+      ],
+      'phivolcs',
+      candidate({ source: 'phivolcs', id: 'new-ph' }),
+    );
+
+    expect(merged).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'phivolcs', id: 'new-ph' }),
+        expect.objectContaining({ source: 'usgs', id: 'us' }),
+      ]),
+    );
+    expect(merged).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'old-ph' })]));
+  });
+
+  test('derives pending sources from source-level tracking before legacy global flags', () => {
+    const pending = _test.getPendingCatalogSources({
+      pendingCatalogSources: ['phivolcs'],
+      catalogEnrichmentAttempts: { phivolcs: 0 },
+      upForEnrichment: true,
+      enrichmentAttempts: 0,
+    });
+
+    expect(pending).toEqual(['phivolcs']);
+  });
+});

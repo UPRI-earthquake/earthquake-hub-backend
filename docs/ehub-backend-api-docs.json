@@ -190,14 +190,27 @@
             "description": "Number of times the enrichment job has attempted to process this event. Prevents indefinite retries on persistent failures.\n"
           },
           "additionalInformation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogSourceInfo"
+            }
+          },
+          "pendingCatalogSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "catalogEnrichmentAttempts": {
             "type": "object",
-            "properties": {
-              "phivolcs": {
-                "$ref": "#/components/schemas/PhivolcsInfo"
-              },
-              "usgs": {
-                "$ref": "#/components/schemas/UsgsInfo"
-              }
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "catalogEnrichmentStatus": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
             }
           },
           "createdAt": {
@@ -210,7 +223,7 @@
           }
         }
       },
-      "PhivolcsInfo": {
+      "CatalogSourceInfo": {
         "type": "object",
         "properties": {
           "source": {
@@ -230,59 +243,6 @@
           },
           "hasFeltIntensity": {
             "type": "boolean"
-          },
-          "time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "latitude": {
-            "type": "number"
-          },
-          "longitude": {
-            "type": "number"
-          },
-          "depthKm": {
-            "type": "number"
-          },
-          "magnitude": {
-            "type": "number"
-          },
-          "location": {
-            "type": "string"
-          },
-          "distanceKm": {
-            "type": "number"
-          },
-          "timeDifferenceMinutes": {
-            "type": "number"
-          },
-          "magnitudeDifference": {
-            "type": "number"
-          },
-          "score": {
-            "type": "number"
-          },
-          "matchQuality": {
-            "type": "string",
-            "enum": [
-              "high",
-              "medium",
-              "low"
-            ]
-          }
-        }
-      },
-      "UsgsInfo": {
-        "type": "object",
-        "properties": {
-          "source": {
-            "type": "string"
-          },
-          "sourceLabel": {
-            "type": "string"
-          },
-          "sourceIconUrl": {
-            "type": "string"
           },
           "id": {
             "type": "string"
@@ -312,11 +272,17 @@
           "longitude": {
             "type": "number"
           },
+          "depthKm": {
+            "type": "number"
+          },
           "depth": {
             "type": "number"
           },
           "magnitude": {
             "type": "number"
+          },
+          "location": {
+            "type": "string"
           },
           "distanceKm": {
             "type": "number"
@@ -326,12 +292,6 @@
           },
           "magnitudeDifference": {
             "type": "number"
-          },
-          "latitudeFloorMatch": {
-            "type": "boolean"
-          },
-          "longitudeFloorMatch": {
-            "type": "boolean"
           },
           "score": {
             "type": "number"
@@ -343,6 +303,12 @@
               "medium",
               "low"
             ]
+          },
+          "latitudeFloorMatch": {
+            "type": "boolean"
+          },
+          "longitudeFloorMatch": {
+            "type": "boolean"
           }
         }
       }
