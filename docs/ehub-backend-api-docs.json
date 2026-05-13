@@ -1433,6 +1433,46 @@
         }
       }
     },
+    "/cloudinary/sign": {
+      "post": {
+        "summary": "Create a short-lived signed upload payload for comment images",
+        "tags": [
+          "Cloudinary"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "publicId": {
+                    "type": "string",
+                    "description": "Optional Cloudinary public id, without slashes."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signature generated"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "403": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
     "/comments": {
       "post": {
         "summary": "Create a new comment on an event",
@@ -3124,6 +3164,10 @@
     }
   },
   "tags": [
+    {
+      "name": "Cloudinary",
+      "description": "Signed upload helpers for Cloudinary direct uploads"
+    },
     {
       "name": "Comments",
       "description": "API for managing comments on events"
