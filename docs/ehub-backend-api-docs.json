@@ -1513,6 +1513,27 @@
             },
             "description": "The ID of the event to retrieve comments for",
             "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Maximum number of comments to return"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Number of comments to skip before returning results"
           }
         ],
         "responses": {
@@ -1544,6 +1565,44 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Event not found"
+          }
+        }
+      }
+    },
+    "/comments/{commentId}": {
+      "delete": {
+        "summary": "Delete a comment (admin only)",
+        "tags": [
+          "Comments"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The UUID identifier of the comment to delete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comment deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden - admin authentication required"
+          },
+          "404": {
+            "description": "Comment not found"
           }
         }
       }
