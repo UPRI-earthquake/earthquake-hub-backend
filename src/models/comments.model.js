@@ -14,9 +14,12 @@
  *           eventId:
  *             type: string
  *             description: Reference to the Event ObjectId
- *           userId:
+ *           username:
  *             type: string
- *             description: Reference to the Account ObjectId
+ *             description: Account identifier or Anonymous when not provided
+ *           accountId:
+ *             type: string
+ *             description: Authenticated Account ObjectId when the comment is posted by a signed-in citizen
  *           content:
  *             type: string
  *             description: The text content of the comment
@@ -50,10 +53,23 @@ const commentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    userId: {
+    username: {
+      type: String,
+      default: 'Anonymous',
+      trim: true,
+      set: (value) => {
+        if (value === undefined || value === null) {
+          return 'Anonymous';
+        }
+        const normalizedValue = String(value).trim();
+        return normalizedValue || 'Anonymous';
+      },
+    },
+    accountId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Account',  // Assuming 'Account' from account.model.js; adjust if needed
-      required: true,
+      ref: 'Account',
+      default: null,
+      index: true,
     },
     content: {
       type: String,
@@ -71,17 +87,9 @@ const commentSchema = new mongoose.Schema(
   },
 );
 
-// Pre-save hook to generate commentId if not provided
-commentSchema.pre('save', function (next) {
-  if (!this.commentId) {
-    this.commentId = randomUUID();
-  }
-  next();
-});
-
 // Indexes for performance (e.g., querying comments by event or user)
 commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
-commentSchema.index({ userId: 1 });
-commentSchema.index({ commentId: 1 }, { unique: true });
+commentSchema.index({ username: 1 });
+commentSchema.index({ accountId: 1 });
 
 module.exports = mongoose.model('Comment', commentSchema);

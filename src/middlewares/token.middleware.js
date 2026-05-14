@@ -121,6 +121,7 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
         return;
       }
 
+      req.accountId = decodedToken.accountId;
       req.username = decodedToken.username;
       req.role = decodedToken.role;
       req.tokenExpiry = decodedToken.exp;
@@ -165,6 +166,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
         }
 
         // Valid token and role
+        req.accountId = decodedToken.accountId;
         req.username = decodedToken.username;
         req.role = decodedToken.role;
         req.tokenExpiry = decodedToken.exp;
