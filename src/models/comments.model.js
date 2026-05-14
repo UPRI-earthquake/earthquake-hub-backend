@@ -78,14 +78,6 @@ const commentSchema = new mongoose.Schema(
   },
 );
 
-// Pre-save hook to generate commentId if not provided
-commentSchema.pre('save', function (next) {
-  if (!this.commentId) {
-    this.commentId = randomUUID();
-  }
-  next();
-});
-
 // Indexes for performance (e.g., querying comments by event or user)
 commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
 commentSchema.index({ userId: 1 });
