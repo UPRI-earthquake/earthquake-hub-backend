@@ -104,6 +104,27 @@ const {
  *                     $ref: '#/components/schemas/Comment'
  *       404:
  *         description: Event not found
+ *
+ * /comments/{commentId}:
+ *   delete:
+ *     summary: Delete a comment (admin only)
+ *     tags: [Comments]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The UUID identifier of the comment to delete
+ *     responses:
+ *       200:
+ *         description: Comment deleted successfully
+ *       403:
+ *         description: Forbidden - admin authentication required
+ *       404:
+ *         description: Comment not found
  */
 
 router.post('/', CommentsController.createComment);
