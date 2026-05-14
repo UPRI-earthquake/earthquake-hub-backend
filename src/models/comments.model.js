@@ -81,6 +81,5 @@ const commentSchema = new mongoose.Schema(
 // Indexes for performance (e.g., querying comments by event or user)
 commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
 commentSchema.index({ userId: 1 });
-commentSchema.index({ commentId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Comment', commentSchema);
