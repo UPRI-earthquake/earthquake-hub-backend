@@ -6,7 +6,6 @@ const { formatErrorMessage } = require("./helpers");
 // Create a new comment for an event
 exports.createComment = async (req, res, next) => {
   // Define validation schema
-  console.log(req.body)
   const schema = Joi.object({
     eventId: Joi.string().required().messages({
       "any.required": "Event ID is required.",
