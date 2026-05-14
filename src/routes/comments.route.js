@@ -66,6 +66,21 @@ const {
  *           type: string
  *         description: The ID of the event to retrieve comments for
  *         required: true
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Maximum number of comments to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of comments to skip before returning results
  *     responses:
  *       200:
  *         description: Comments retrieved successfully
@@ -87,6 +102,8 @@ const {
  *                   description: An array of comments for the specified event.
  *                   items:
  *                     $ref: '#/components/schemas/Comment'
+ *       404:
+ *         description: Event not found
  */
 
 router.post('/', CommentsController.createComment);

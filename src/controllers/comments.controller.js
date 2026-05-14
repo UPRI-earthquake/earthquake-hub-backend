@@ -51,9 +51,21 @@ exports.createComment = async (req, res, next) => {
 exports.getCommentsByEventId = async (req, res, next) => {
   // Define validation schema
   const schema = Joi.object({
-    eventId: Joi.string().required().messages({
+    eventId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required().messages({
       "any.required": "Event ID is required.",
       "string.base": "Event ID must be a string.",
+      "string.pattern.base": "Event ID must be a valid ObjectId.",
+    }),
+    limit: Joi.number().integer().min(1).max(100).default(20).messages({
+      "number.base": "Limit must be a number.",
+      "number.integer": "Limit must be an integer.",
+      "number.min": "Limit must be at least 1.",
+      "number.max": "Limit must not exceed 100.",
+    }),
+    offset: Joi.number().integer().min(0).default(0).messages({
+      "number.base": "Offset must be a number.",
+      "number.integer": "Offset must be an integer.",
+      "number.min": "Offset must be at least 0.",
     }),
   });
 
@@ -65,12 +77,27 @@ exports.getCommentsByEventId = async (req, res, next) => {
     }
 
     // Get comments using the service
-    const comments = await CommentsService.getCommentsByEventId(value.eventId);
+    const commentsResult = await CommentsService.getCommentsByEventId(value.eventId, {
+      limit: value.limit,
+      offset: value.offset,
+    });
+    if (!commentsResult) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Event not found",
+      });
+      return;
+    }
     
     res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
         message: "Comments retrieved successfully",
-        payload: comments
+        payload: commentsResult.comments,
+        pagination: {
+          total: commentsResult.total,
+          limit: commentsResult.limit,
+          offset: commentsResult.offset,
+        },
     });
   } catch (err) {
     console.trace(`Getting comments unsuccessful \n ${err}`);
