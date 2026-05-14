@@ -2,9 +2,19 @@ const Comment = require('../models/comments.model');
 const Event = require('../models/events.model');
 
 // Create a new comment
-async function createComment(commentData) {
+async function createComment({
+  eventId,
+  accountId,
+  username = 'Anonymous',
+  content,
+  imageURL,
+}) {
   const comment = new Comment({
-    ...commentData,
+    eventId,
+    accountId: accountId || null,
+    username: username || 'Anonymous',
+    content,
+    imageURL,
   });
   return await comment.save();
 }

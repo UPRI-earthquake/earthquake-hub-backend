@@ -76,3 +76,74 @@ describe('comments.controller getCommentsByEventId', () => {
     expect(next).not.toHaveBeenCalled();
   });
 });
+
+describe('comments.controller createComment', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('uses decoded citizen identity when request is authenticated', async () => {
+    const req = {
+      isAuthenticated: true,
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        userId: 'spoofed-user',
+        content: 'Felt light shaking.',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue({
+      eventId: req.body.eventId,
+      accountId: req.accountId,
+      userId: req.username,
+      content: req.body.content,
+    });
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      userId: 'citizen-user',
+      content: 'Felt light shaking.',
+      imageURL: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('allows guest comments without account identity', async () => {
+    const req = {
+      isAuthenticated: false,
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: 'Guest comment.',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue({
+      eventId: req.body.eventId,
+      accountId: null,
+      userId: 'Anonymous',
+      content: req.body.content,
+    });
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: undefined,
+      userId: 'Anonymous',
+      content: 'Guest comment.',
+      imageURL: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+});

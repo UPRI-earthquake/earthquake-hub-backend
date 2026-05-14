@@ -3,7 +3,10 @@ const router = express.Router();
 const CommentsController = require('../controllers/comments.controller');
 const {
   getTokenFromCookie,
+  getTokenFromBearerIfPresent,
   verifyTokenWithRole,
+  verifyTokenWithRoleOptional,
+  getTokenFromCookieIfPresent
 } = require('../middlewares/token.middleware')
 
 /**
@@ -127,7 +130,7 @@ const {
  *         description: Comment not found
  */
 
-router.post('/', CommentsController.createComment);
+router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.createComment);
 router.get('/', CommentsController.getCommentsByEventId);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
 module.exports = router;

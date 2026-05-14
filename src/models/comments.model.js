@@ -14,9 +14,12 @@
  *           eventId:
  *             type: string
  *             description: Reference to the Event ObjectId
- *           userId:
+ *           username:
  *             type: string
  *             description: Account identifier or Anonymous when not provided
+ *           accountId:
+ *             type: string
+ *             description: Authenticated Account ObjectId when the comment is posted by a signed-in citizen
  *           content:
  *             type: string
  *             description: The text content of the comment
@@ -50,7 +53,7 @@ const commentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    userId: {
+    username: {
       type: String,
       default: 'Anonymous',
       trim: true,
@@ -61,6 +64,12 @@ const commentSchema = new mongoose.Schema(
         const normalizedValue = String(value).trim();
         return normalizedValue || 'Anonymous';
       },
+    },
+    accountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Account',
+      default: null,
+      index: true,
     },
     content: {
       type: String,
@@ -80,6 +89,7 @@ const commentSchema = new mongoose.Schema(
 
 // Indexes for performance (e.g., querying comments by event or user)
 commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
-commentSchema.index({ userId: 1 });
+commentSchema.index({ username: 1 });
+commentSchema.index({ accountId: 1 });
 
 module.exports = mongoose.model('Comment', commentSchema);

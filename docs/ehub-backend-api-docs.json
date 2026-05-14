@@ -93,9 +93,13 @@
             "type": "string",
             "description": "Reference to the Event ObjectId"
           },
-          "userId": {
+          "username": {
             "type": "string",
             "description": "Account identifier or Anonymous when not provided"
+          },
+          "accountId": {
+            "type": "string",
+            "description": "Authenticated Account ObjectId when the comment is posted by a signed-in citizen"
           },
           "content": {
             "type": "string",

@@ -11,8 +11,8 @@ exports.createComment = async (req, res, next) => {
       "any.required": "Event ID is required.",
       "string.base": "Event ID must be a string.",
     }),
-    userId: Joi.string().trim().empty('').default('Anonymous').messages({
-      "string.base": "User ID must be a string.",
+    username: Joi.string().trim().empty('').default('Anonymous').messages({
+      "string.base": "Username must be a string.",
     }),
     content: Joi.string().required().messages({
       "any.required": "Content is required.",
@@ -30,10 +30,15 @@ exports.createComment = async (req, res, next) => {
       throw error;
     }
 
-    // Create comment using the service
+    const isAuthenticated = Boolean(req.isAuthenticated && req.username);
+
+    // Create comment using the authenticated account identity when present.
     const newComment = await CommentsService.createComment({
-      ...value,
-      userId: value.userId || 'Anonymous',
+      eventId: value.eventId,
+      accountId: isAuthenticated ? req.accountId : undefined,
+      username: isAuthenticated ? req.username : 'Anonymous',
+      content: value.content,
+      imageURL: value.imageURL || null
     });
     
     res.status(201).json({
