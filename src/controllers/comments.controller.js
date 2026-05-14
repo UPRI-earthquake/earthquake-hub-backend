@@ -79,7 +79,6 @@ exports.getCommentsByEventId = async (req, res, next) => {
 
 // Delete a comment (admin only)
 exports.deleteComment = async (req, res, next) => {
-  // Define validation schema
   const schema = Joi.object({
     commentId: Joi.string().required().messages({
       "any.required": "Comment ID is required.",
@@ -88,14 +87,19 @@ exports.deleteComment = async (req, res, next) => {
   });
 
   try {
-    // Validate query parameters
-    const { error, value } = schema.validate(req.query);
+    const { error, value } = schema.validate(req.params);
     if (error) {
       throw error;
     }
 
-    // Delete comment using the service
-    await CommentsService.deleteComment(value.commentId);
+    const deletedComment = await CommentsService.deleteComment(value.commentId);
+    if (!deletedComment) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Comment not found",
+      });
+      return;
+    }
     
     res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,

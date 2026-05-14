@@ -15,7 +15,7 @@ async function getCommentsByEventId(eventId) {
 
 // Delete comment (reserved for admin only)
 async function deleteComment(commentId) {
-  return await Comment.findByIdAndDelete(commentId);
+  return await Comment.findOneAndDelete({ commentId });
 }
 
 
