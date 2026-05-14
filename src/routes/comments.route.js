@@ -24,7 +24,6 @@ const {
  *             type: object
  *             required:
  *               - eventId
- *               - userId
  *               - content
  *             properties:
  *               eventId:
@@ -32,7 +31,7 @@ const {
  *                 description: The ID of the event being commented on
  *               userId:
  *                 type: string
- *                 description: The ID of the user making the comment
+ *                 description: The ID of the user making the comment, or Anonymous when omitted
  *               content:
  *                 type: string
  *                 description: The text content of the comment

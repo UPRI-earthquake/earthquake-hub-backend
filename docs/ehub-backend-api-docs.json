@@ -95,7 +95,7 @@
           },
           "userId": {
             "type": "string",
-            "description": "Reference to the Account ObjectId"
+            "description": "Account identifier or Anonymous when not provided"
           },
           "content": {
             "type": "string",
@@ -1447,7 +1447,6 @@
                 "type": "object",
                 "required": [
                   "eventId",
-                  "userId",
                   "content"
                 ],
                 "properties": {
@@ -1457,7 +1456,7 @@
                   },
                   "userId": {
                     "type": "string",
-                    "description": "The ID of the user making the comment"
+                    "description": "The ID of the user making the comment, or Anonymous when omitted"
                   },
                   "content": {
                     "type": "string",

@@ -16,7 +16,7 @@
  *             description: Reference to the Event ObjectId
  *           userId:
  *             type: string
- *             description: Reference to the Account ObjectId
+ *             description: Account identifier or Anonymous when not provided
  *           content:
  *             type: string
  *             description: The text content of the comment
@@ -51,9 +51,16 @@ const commentSchema = new mongoose.Schema(
       index: true,
     },
     userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Account',  // Assuming 'Account' from account.model.js; adjust if needed
-      required: true,
+      type: String,
+      default: 'Anonymous',
+      trim: true,
+      set: (value) => {
+        if (value === undefined || value === null) {
+          return 'Anonymous';
+        }
+        const normalizedValue = String(value).trim();
+        return normalizedValue || 'Anonymous';
+      },
     },
     content: {
       type: String,

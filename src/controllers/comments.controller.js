@@ -12,8 +12,7 @@ exports.createComment = async (req, res, next) => {
       "any.required": "Event ID is required.",
       "string.base": "Event ID must be a string.",
     }),
-    userId: Joi.string().required().messages({
-      "any.required": "User ID is required.",
+    userId: Joi.string().trim().empty('').default('Anonymous').messages({
       "string.base": "User ID must be a string.",
     }),
     content: Joi.string().required().messages({
@@ -33,7 +32,10 @@ exports.createComment = async (req, res, next) => {
     }
 
     // Create comment using the service
-    const newComment = await CommentsService.createComment(value);
+    const newComment = await CommentsService.createComment({
+      ...value,
+      userId: value.userId || 'Anonymous',
+    });
     
     res.status(201).json({
         status: responseCodes.GENERIC_SUCCESS,
