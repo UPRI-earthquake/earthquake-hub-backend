@@ -275,6 +275,19 @@ async function addEQEvent(
     console.error(`addEQEvent [${publicID}]: onlineStations lookup failed - ${err.message}`);
   }
 
+  const existingEvent = await EQEvents.findOne({ publicID }, { depth_value: 1, last_modification: 1 }).lean();
+
+  // Ignore stale updates: only newer last_modification may overwrite existing
+  // event details. This prevents out-of-order proxy messages from regressing
+  // event values.
+  if (existingEvent && last_modification && existingEvent.last_modification) {
+    const incomingMs = new Date(last_modification).getTime();
+    const existingMs = new Date(existingEvent.last_modification).getTime();
+    if (Number.isFinite(incomingMs) && Number.isFinite(existingMs) && incomingMs < existingMs) {
+      return 'success';
+    }
+  }
+
   // Idempotent upsert by publicID. This prevents duplicates when a previous
   // bug or out-of-order messages would otherwise create separate NEW/UPDATE
   // documents for the same quake. The unique index on publicID enforces this
