@@ -161,6 +161,8 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   }
 
   const username = user.username;
+  const accountId = user._id.toString();
+
 
   // get user with its devices array populated by device object (instead of device id)
   // compare received password with user's password in db
@@ -223,6 +225,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
     case 'citizen':
       return {
         str: 'successCitizen',
+        accountId,
         username,
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,

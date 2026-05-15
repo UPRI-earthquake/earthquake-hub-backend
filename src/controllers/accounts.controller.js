@@ -212,7 +212,7 @@ exports.authenticateAccount = async (req, res, next) => {
         break;
       case "successCitizen":
         message = "Authentication successful";
-        setSessionCookies(res, { username: authenticatedUsername, role: 'citizen' });
+        setSessionCookies(res, { accountId: loginResult?.accountId, username: authenticatedUsername, role: 'citizen' });
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
           message: message,
