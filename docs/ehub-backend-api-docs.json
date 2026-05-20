@@ -230,6 +230,25 @@
             "type": "integer",
             "description": "Number of times the enrichment job has attempted to process this event. Prevents indefinite retries on persistent failures.\n"
           },
+          "summaryOverride": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The user-edited summary text, overrides the auto-generated boilerplate."
+              },
+              "editedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp of when the summary was last edited."
+              },
+              "editedBy": {
+                "type": "string",
+                "description": "The userId or username of the person who edited the summary."
+              }
+            }
+          },
           "additionalInformation": {
             "type": "array",
             "items": {
@@ -2648,6 +2667,243 @@
           },
           "500": {
             "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/eq-events/{publicID}/summary": {
+      "patch": {
+        "summary": "Set or update a custom event summary override",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publicID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The SeisComP public ID of the earthquake event",
+            "example": "upri-event-001"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "The custom summary text to save for this event",
+                    "example": "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event summary updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event summary updated successfully."
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "example": "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+                        },
+                        "editedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2024-01-15T08:30:00.000Z"
+                        },
+                        "editedBy": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "admin_user"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or empty summary text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Summary text is required and cannot be empty."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin session cookie is required."
+          },
+          "404": {
+            "description": "Earthquake event was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event not found: upri-event-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Failed to update event summary."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revert event summary to auto-generated, removing the override",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publicID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The SeisComP public ID of the earthquake event",
+            "example": "upri-event-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event summary reverted to auto-generated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event summary reverted to auto-generated."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin session cookie is required."
+          },
+          "404": {
+            "description": "Earthquake event was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event not found: upri-event-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Failed to revert event summary."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

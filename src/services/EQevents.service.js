@@ -1161,6 +1161,46 @@ async function addAdditionalInformation() {
     await browser.close();
   }
 }
+
+async function setEventSummary(publicID, text, editedBy) {
+  const event = await EQEvents.findOneAndUpdate(
+    { publicID },
+    {
+      $set: {
+        summaryOverride: {
+          text,
+          editedAt: new Date(),
+          ...(editedBy ? { editedBy } : {})
+        }
+      }
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!event) {
+    const error = new Error('Event not found: ${publicID}');
+    error.status = 404;
+    throw error;
+  }
+
+  return event
+}
+
+async function clearEventSummary(publicID) {
+  const event = await EQEvents.findOneAndUpdate(
+    { publicID },
+    { $unset: { summaryOverride: "" } },
+    { new: true }
+  );
+
+  if (!event) {
+    const error = new Error('Event not found: ${publicID}');
+    error.status = 404;
+    throw error;
+  }
+
+  return event;
+}
  
 module.exports = {
   getEventsList,
@@ -1171,6 +1211,8 @@ module.exports = {
   updateOnlineStations,
   addAdditionalInformation,
   countEligibleEnrichmentEvents,
+  setEventSummary,
+  clearEventSummary,
   _test: {
     getCatalogMatchQuality: _getCatalogMatchQuality,
     selectCatalogMatch: _selectCatalogMatch,

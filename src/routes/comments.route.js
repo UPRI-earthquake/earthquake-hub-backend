@@ -11,6 +11,8 @@ const {
   getTokenFromCookieIfPresent
 } = require('../middlewares/token.middleware')
 
+
+// Multer setup for image storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, 'public/uploads_dev');

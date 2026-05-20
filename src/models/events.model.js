@@ -51,6 +51,20 @@
  *             description: >
  *               Number of times the enrichment job has attempted to process
  *               this event. Prevents indefinite retries on persistent failures.
+*           summaryOverride:
+ *             type: object
+ *             nullable: true
+ *             properties:
+ *               text:
+ *                 type: string
+ *                 description: The user-edited summary text, overrides the auto-generated boilerplate.
+ *               editedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Timestamp of when the summary was last edited.
+ *               editedBy:
+ *                 type: string
+ *                 description: The userId or username of the person who edited the summary.
  *           additionalInformation:
  *             type: array
  *             items:
@@ -168,6 +182,15 @@ const catalogSourceSchema = new mongoose.Schema(
   { _id: false, strict: false },
 );
 
+const summaryOverrideSchema = new mongoose.Schema(
+  {
+    text:     { type: String, required: true }, // the edited content
+    editedAt: { type: Date,   default: Date.now },
+    editedBy: { type: String },                 // userId/username if you have auth
+  },
+  { _id: false },
+);
+
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
 //   uniqueness so a single earthquake cannot be duplicated as multiple
@@ -194,6 +217,8 @@ const eventSchema = new mongoose.Schema(
     onlineStations:   [String],
     last_modification: Date,
 
+    summaryOverride: { type: summaryOverrideSchema, default: null },
+
     // Legacy global enrichment tracking. Kept for existing records and old
     // operational scripts; new scraper logic uses source-level tracking below.
     upForEnrichment:    { type: Boolean, default: true, index: true },
@@ -203,6 +228,7 @@ const eventSchema = new mongoose.Schema(
     pendingCatalogSources:      { type: [String], default: ['phivolcs', 'usgs'], index: true },
     catalogEnrichmentAttempts:  { type: Map, of: Number, default: {} },
     catalogEnrichmentStatus:    { type: Map, of: String, default: {} },
+
   },
   {
     timestamps: true, // createdAt/updatedAt for troubleshooting
