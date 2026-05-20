@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const CommentsController = require('../controllers/comments.controller');
+const multer = require('multer');
+
 const {
   getTokenFromCookie,
   getTokenFromBearerIfPresent,
@@ -8,6 +10,22 @@ const {
   verifyTokenWithRoleOptional,
   getTokenFromCookieIfPresent
 } = require('../middlewares/token.middleware')
+
+
+// Multer setup for image storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'public/uploads_dev');
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const filename = uniqueSuffix + '-' + file.originalname;
+    req.imageURL = `/uploads_dev/${filename}`;
+    cb(null, filename);
+  }
+})
+
+const upload = multer({ storage: storage }); 
 
 /**
  * @swagger
@@ -130,7 +148,7 @@ const {
  *         description: Comment not found
  */
 
-router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.createComment);
+router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), upload.single('image'), CommentsController.createComment);
 router.get('/', CommentsController.getCommentsByEventId);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
 module.exports = router;

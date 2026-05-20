@@ -7,16 +7,17 @@ const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const fs = require('fs');
 const gaMiddleware = require('./middlewares/ga.middleware');
-
 const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
 const logger = require('./middlewares/logger.middleware');
 
 
-
 const app = express();
 
 app.set('trust proxy', true);
+
+// Serve files from a directory named 'public'
+app.use(express.static('public'));
 
 // Compression: skip for SSE
 app.use(
@@ -111,11 +112,23 @@ app.use('/significant-eqs', require('./routes/significantEQs.route'));
 app.use('/overlays', require('./routes/overlays.route'));
 app.use('/comments', require('./routes/comments.route'));
 
+function getValidationErrorMessages(err) {
+  if (Array.isArray(err.details)) {
+    return err.details.map((detail) => formatErrorMessage(detail.message));
+  }
+
+  if (err.errors && typeof err.errors === 'object') {
+    return Object.values(err.errors).map((error) => formatErrorMessage(error.message));
+  }
+
+  return [formatErrorMessage(err.message || 'Validation error')];
+}
+
 /* Error handler middleware */
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.name === 'ValidationError') {
-    const errorMessages = err.details.map((detail) => formatErrorMessage(detail.message));
+    const errorMessages = getValidationErrorMessages(err);
     res.status(400).json({ status: responseCodes.VALIDATION_ERROR, message: errorMessages[0] });
     res.message = errorMessages; // used by res.on('finish') logger middleware
   } else {

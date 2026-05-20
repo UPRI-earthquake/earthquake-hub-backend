@@ -89,7 +89,6 @@ describe('comments.controller createComment', () => {
       username: 'citizen-user',
       body: {
         eventId: '69c217dc9728d1ee7fcb8ea6',
-        userId: 'spoofed-user',
         content: 'Felt light shaking.',
       },
     };
@@ -99,7 +98,7 @@ describe('comments.controller createComment', () => {
     CommentsService.createComment.mockResolvedValue({
       eventId: req.body.eventId,
       accountId: req.accountId,
-      userId: req.username,
+      username: req.username,
       content: req.body.content,
     });
 
@@ -108,9 +107,9 @@ describe('comments.controller createComment', () => {
     expect(CommentsService.createComment).toHaveBeenCalledWith({
       eventId: '69c217dc9728d1ee7fcb8ea6',
       accountId: '69c217dc9728d1ee7fcb8ea5',
-      userId: 'citizen-user',
+      username: 'citizen-user',
       content: 'Felt light shaking.',
-      imageURL: undefined,
+      imageURL: null,
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(next).not.toHaveBeenCalled();
@@ -130,7 +129,7 @@ describe('comments.controller createComment', () => {
     CommentsService.createComment.mockResolvedValue({
       eventId: req.body.eventId,
       accountId: null,
-      userId: 'Anonymous',
+      username: 'Anonymous',
       content: req.body.content,
     });
 
@@ -139,11 +138,32 @@ describe('comments.controller createComment', () => {
     expect(CommentsService.createComment).toHaveBeenCalledWith({
       eventId: '69c217dc9728d1ee7fcb8ea6',
       accountId: undefined,
-      userId: 'Anonymous',
+      username: 'Anonymous',
       content: 'Guest comment.',
-      imageURL: undefined,
+      imageURL: null,
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid event ids before creating a comment', async () => {
+    const req = {
+      isAuthenticated: false,
+      body: {
+        eventId: 'gfz2026irfc',
+        content: 'Invalid event id.',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ValidationError',
+      }),
+    );
   });
 });

@@ -153,3 +153,51 @@ exports.addAdditionalInformation = async (req, res, next) => {
     }
   }
 }
+
+exports.patchEventSummary = async (req, res) => {
+  const { publicID } = req.params;
+  const { text } = req.body;
+
+  if (!text || !text.trim()) {
+    return res.status(400).json({
+      status: 1,
+      message: 'Summary text is required and cannot be empty.',
+    });
+  }
+
+  try {
+    const editedBy = req.user?.id ?? req.user?.username ?? undefined;
+    const updated = await EQEventsService.setEventSummary(publicID, text.trim(), editedBy);
+
+    return res.status(200).json({
+      status: 0,
+      message: 'Event summary updated successfully.',
+      data: updated.summaryOverride,
+    });
+  } catch (error) {
+    const statusCode = error.status ?? 500;
+    return res.status(statusCode).json({
+      status: 1,
+      message: error.message || 'Failed to update event summary.',
+    });
+  }
+}
+
+exports.deleteEventSummary = async (req, res) => {
+  const { publicID } = req.params;
+
+  try {
+    await EQEventsService.clearEventSummary(publicID);
+
+    return res.status(200).json({
+      status: 0,
+      message: 'Event summary reverted to auto-generated.',
+    });
+  } catch (error) {
+    const statusCode = error.status ?? 500;
+    return res.status(statusCode).json({
+      status: 1,
+      message: error.message || 'Failed to revert event summary.',
+    });
+  }
+}

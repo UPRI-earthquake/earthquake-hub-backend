@@ -7,9 +7,10 @@ const { formatErrorMessage } = require("./helpers");
 exports.createComment = async (req, res, next) => {
   // Define validation schema
   const schema = Joi.object({
-    eventId: Joi.string().required().messages({
+    eventId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required().messages({
       "any.required": "Event ID is required.",
       "string.base": "Event ID must be a string.",
+      "string.pattern.base": "Event ID must be a valid ObjectId.",
     }),
     username: Joi.string().trim().empty('').default('Anonymous').messages({
       "string.base": "Username must be a string.",
@@ -18,18 +19,24 @@ exports.createComment = async (req, res, next) => {
       "any.required": "Content is required.",
       "string.base": "Content must be a string.",
     }),
-    imageURL: Joi.string().uri().optional().messages({
-      "string.uri": "Image URL must be a valid URI.",
+    imageURL: Joi.string().optional().allow(null, '').messages({
+      "string.base": "Image URL must be a string.",
     }),
   });
 
+  const bodyToValidate = {
+    ...req.body,
+    imageURL: req.imageURL || req.body.imageURL
+  };
+
   try {
     // Validate request body
-    const { error, value } = schema.validate(req.body);
+    const { error, value } = schema.validate(bodyToValidate);
     if (error) {
       throw error;
     }
-
+    console.log(req.body)
+    console.log(value)
     const isAuthenticated = Boolean(req.isAuthenticated && req.username);
 
     // Create comment using the authenticated account identity when present.
