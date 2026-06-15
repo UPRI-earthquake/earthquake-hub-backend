@@ -82,13 +82,48 @@ describe('comments.controller createComment', () => {
     jest.clearAllMocks();
   });
 
-  test('uses decoded citizen identity when request is authenticated', async () => {
+  test('posts anonymously by default even when request is authenticated', async () => {
     const req = {
       isAuthenticated: true,
       accountId: '69c217dc9728d1ee7fcb8ea5',
       username: 'citizen-user',
       body: {
         eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: 'Felt light shaking.',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue({
+      eventId: req.body.eventId,
+      accountId: req.accountId,
+      username: 'Anonymous',
+      content: req.body.content,
+    });
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'Anonymous',
+      content: 'Felt light shaking.',
+      imageURL: null,
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('uses decoded citizen identity when authenticated user opts out of anonymity', async () => {
+    const req = {
+      isAuthenticated: true,
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        anonymous: 'false',
+        username: 'spoofed-user',
         content: 'Felt light shaking.',
       },
     };
@@ -144,6 +179,59 @@ describe('comments.controller createComment', () => {
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  test('allows image-only reports without sending empty content to the service', async () => {
+    const req = {
+      isAuthenticated: false,
+      imageURL: '/uploads_dev/report.jpg',
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: '',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue({
+      eventId: req.body.eventId,
+      accountId: null,
+      username: 'Anonymous',
+      imageURL: req.imageURL,
+    });
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: undefined,
+      username: 'Anonymous',
+      content: undefined,
+      imageURL: '/uploads_dev/report.jpg',
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('rejects reports with neither text nor image', async () => {
+    const req = {
+      isAuthenticated: false,
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: '',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ValidationError',
+      }),
+    );
   });
 
   test('rejects invalid event ids before creating a comment', async () => {

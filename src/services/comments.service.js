@@ -9,12 +9,13 @@ async function createComment({
   content,
   imageURL,
 }) {
+  const normalizedContent = typeof content === 'string' ? content.trim() : '';
   const comment = new Comment({
     eventId,
     accountId: accountId || null,
     username: username || 'Anonymous',
-    content,
-    imageURL,
+    ...(normalizedContent ? { content: normalizedContent } : {}),
+    ...(imageURL ? { imageURL } : {}),
   });
   return await comment.save();
 }

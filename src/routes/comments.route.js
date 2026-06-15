@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const CommentsController = require('../controllers/comments.controller');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const { randomUUID } = require('crypto');
 
 const {
   getTokenFromCookie,
@@ -12,20 +15,63 @@ const {
 } = require('../middlewares/token.middleware')
 
 
-// Multer setup for image storage
+const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads_dev');
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_EXTENSIONS = {
+  'image/gif': '.gif',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Multer setup for report image storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'public/uploads_dev');
+    cb(null, UPLOAD_DIR);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = uniqueSuffix + '-' + file.originalname;
+    const extension = ALLOWED_IMAGE_EXTENSIONS[file.mimetype];
+    const filename = `${Date.now()}-${randomUUID()}${extension}`;
     req.imageURL = `/uploads_dev/${filename}`;
     cb(null, filename);
   }
 })
 
-const upload = multer({ storage: storage }); 
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
+  fileFilter: function (req, file, cb) {
+    if (!ALLOWED_IMAGE_EXTENSIONS[file.mimetype]) {
+      cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'image'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+function uploadReportImage(req, res, next) {
+  upload.single('image')(req, res, (err) => {
+    if (!err) {
+      next();
+      return;
+    }
+
+    if (err instanceof multer.MulterError) {
+      const isSizeError = err.code === 'LIMIT_FILE_SIZE';
+      res.status(400).json({
+        status: 1,
+        message: isSizeError
+          ? 'Report image must be 5 MB or smaller.'
+          : 'Report image must be a JPG, PNG, GIF, or WebP file.',
+      });
+      return;
+    }
+
+    next(err);
+  });
+}
 
 /**
  * @swagger
@@ -148,7 +194,7 @@ const upload = multer({ storage: storage });
  *         description: Comment not found
  */
 
-router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), upload.single('image'), CommentsController.createComment);
+router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), uploadReportImage, CommentsController.createComment);
 router.get('/', CommentsController.getCommentsByEventId);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
 module.exports = router;

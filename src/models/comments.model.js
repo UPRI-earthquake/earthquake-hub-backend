@@ -73,9 +73,8 @@ const commentSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
       trim: true,
-      maxlength: 1000,  // Optional: Limit length to prevent abuse
+      maxlength: 1000,
     },
     imageURL: {
       type: String,
@@ -91,5 +90,20 @@ const commentSchema = new mongoose.Schema(
 commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
 commentSchema.index({ username: 1 });
 commentSchema.index({ accountId: 1 });
+
+commentSchema.pre('validate', function requireTextOrImage(next) {
+  const hasContent = typeof this.content === 'string' && this.content.trim().length > 0;
+  const hasImage = typeof this.imageURL === 'string' && this.imageURL.trim().length > 0;
+
+  if (!hasContent && !hasImage) {
+    return next(new Error('A report must include text or an image.'));
+  }
+
+  if (!hasContent) {
+    this.content = undefined;
+  }
+
+  return next();
+});
 
 module.exports = mongoose.model('Comment', commentSchema);

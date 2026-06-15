@@ -12,16 +12,22 @@ exports.createComment = async (req, res, next) => {
       "string.base": "Event ID must be a string.",
       "string.pattern.base": "Event ID must be a valid ObjectId.",
     }),
-    username: Joi.string().trim().empty('').default('Anonymous').messages({
-      "string.base": "Username must be a string.",
+    anonymous: Joi.boolean().truthy('true').falsy('false').default(true).messages({
+      "boolean.base": "Anonymous must be a boolean.",
     }),
-    content: Joi.string().required().messages({
-      "any.required": "Content is required.",
+    content: Joi.string().trim().allow('').default('').messages({
       "string.base": "Content must be a string.",
     }),
     imageURL: Joi.string().optional().allow(null, '').messages({
       "string.base": "Image URL must be a string.",
     }),
+  }).custom((value, helpers) => {
+    if (!value.content && !value.imageURL) {
+      return helpers.error('any.custom', { message: 'Add a report or image before posting.' });
+    }
+    return value;
+  }).messages({
+    'any.custom': '{{#message}}',
   });
 
   const bodyToValidate = {
@@ -31,20 +37,18 @@ exports.createComment = async (req, res, next) => {
 
   try {
     // Validate request body
-    const { error, value } = schema.validate(bodyToValidate);
+    const { error, value } = schema.validate(bodyToValidate, { stripUnknown: true });
     if (error) {
       throw error;
     }
-    console.log(req.body)
-    console.log(value)
     const isAuthenticated = Boolean(req.isAuthenticated && req.username);
+    const shouldPostAnonymously = value.anonymous !== false;
 
-    // Create comment using the authenticated account identity when present.
     const newComment = await CommentsService.createComment({
       eventId: value.eventId,
       accountId: isAuthenticated ? req.accountId : undefined,
-      username: isAuthenticated ? req.username : 'Anonymous',
-      content: value.content,
+      username: isAuthenticated && !shouldPostAnonymously ? req.username : 'Anonymous',
+      content: value.content || undefined,
       imageURL: value.imageURL || null
     });
     

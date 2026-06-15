@@ -1191,7 +1191,7 @@ async function setEventSummary(publicID, text, editedBy) {
   );
 
   if (!event) {
-    const error = new Error('Event not found: ${publicID}');
+    const error = new Error(`Event not found: ${publicID}`);
     error.status = 404;
     throw error;
   }
@@ -1207,7 +1207,7 @@ async function clearEventSummary(publicID) {
   );
 
   if (!event) {
-    const error = new Error('Event not found: ${publicID}');
+    const error = new Error(`Event not found: ${publicID}`);
     error.status = 404;
     throw error;
   }
