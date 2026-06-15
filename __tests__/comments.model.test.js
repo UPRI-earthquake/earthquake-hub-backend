@@ -26,12 +26,12 @@ describe('Comment model', () => {
     const comment = new Comment({
       eventId: '64a7c2f3b8e4f9a1c2d3e4f5',
       content: '   ',
-      imageURL: '/uploads_dev/report.jpg',
+      imageURL: '/uploads/report.jpg',
     });
 
     await expect(comment.validate()).resolves.toBeUndefined();
     expect(comment.content).toBeUndefined();
-    expect(comment.imageURL).toBe('/uploads_dev/report.jpg');
+    expect(comment.imageURL).toBe('/uploads/report.jpg');
   });
 
   it('rejects reports with neither text nor image', async () => {

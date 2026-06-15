@@ -6,6 +6,7 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const fs = require('fs');
+const { getUploadConfig } = require('./config/upload.config');
 const gaMiddleware = require('./middlewares/ga.middleware');
 const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
@@ -13,11 +14,21 @@ const logger = require('./middlewares/logger.middleware');
 
 
 const app = express();
+const {
+  uploadDir,
+  publicUploadPath,
+  legacyPublicUploadPath,
+} = getUploadConfig();
 
 app.set('trust proxy', true);
 
 // Serve files from a directory named 'public'
 app.use(express.static('public'));
+app.use(publicUploadPath, express.static(uploadDir));
+
+if (legacyPublicUploadPath !== publicUploadPath) {
+  app.use(legacyPublicUploadPath, express.static(uploadDir));
+}
 
 // Compression: skip for SSE
 app.use(

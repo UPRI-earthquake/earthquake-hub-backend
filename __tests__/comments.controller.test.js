@@ -184,7 +184,7 @@ describe('comments.controller createComment', () => {
   test('allows image-only reports without sending empty content to the service', async () => {
     const req = {
       isAuthenticated: false,
-      imageURL: '/uploads_dev/report.jpg',
+      imageURL: '/uploads/report.jpg',
       body: {
         eventId: '69c217dc9728d1ee7fcb8ea6',
         content: '',
@@ -207,7 +207,7 @@ describe('comments.controller createComment', () => {
       accountId: undefined,
       username: 'Anonymous',
       content: undefined,
-      imageURL: '/uploads_dev/report.jpg',
+      imageURL: '/uploads/report.jpg',
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(next).not.toHaveBeenCalled();

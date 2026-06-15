@@ -3,8 +3,8 @@ const router = express.Router();
 const CommentsController = require('../controllers/comments.controller');
 const multer = require('multer');
 const fs = require('fs');
-const path = require('path');
 const { randomUUID } = require('crypto');
+const { getUploadConfig } = require('../config/upload.config');
 
 const {
   getTokenFromCookie,
@@ -14,8 +14,7 @@ const {
   getTokenFromCookieIfPresent
 } = require('../middlewares/token.middleware')
 
-
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads_dev');
+const { uploadDir: UPLOAD_DIR, publicUploadPath: PUBLIC_UPLOAD_PATH } = getUploadConfig();
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_EXTENSIONS = {
   'image/gif': '.gif',
@@ -34,7 +33,7 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     const extension = ALLOWED_IMAGE_EXTENSIONS[file.mimetype];
     const filename = `${Date.now()}-${randomUUID()}${extension}`;
-    req.imageURL = `/uploads_dev/${filename}`;
+    req.imageURL = `${PUBLIC_UPLOAD_PATH}/${filename}`;
     cb(null, filename);
   }
 })
