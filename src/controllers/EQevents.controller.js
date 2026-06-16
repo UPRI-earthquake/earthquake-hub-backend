@@ -82,12 +82,11 @@ exports.getEQEventByPublicID = async (req, res, next) => {
       return;
     }
 
-    const [eventWithPlace] = await EQEventsService.addPlacesAttribute([event]);
     const message = "EQ event acquired successfully";
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message,
-      payload: eventWithPlace || event
+      payload: event
     });
     res.message = message;
   } catch (err) {

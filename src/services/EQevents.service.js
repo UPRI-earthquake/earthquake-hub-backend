@@ -10,6 +10,7 @@ const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
 const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
 const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
 const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REFINEMENT_DELAY_MS || 0);
+const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
@@ -184,13 +185,21 @@ async function addPlacesAttribute(eventsList){
       eventData = event;
     }
 
+    if (eventData.place && typeof eventData.place === 'string' && eventData.place.trim()) {
+      updatedData.push(eventData);
+      return;
+    }
+
     try{
       const result = await axios.get(
         // `https://earthquake.usgs.gov`
         `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
         //`http://localhost:8080`
          +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
-         +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`
+         +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`,
+        {
+          timeout: GEOSERVE_REQUEST_TIMEOUT_MS,
+        }
       );
       var address = '';
       if (result.data.error){ address = result.data.error }

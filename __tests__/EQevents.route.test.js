@@ -22,14 +22,10 @@ describe('GET /eq-events/:publicID', () => {
       latitude_value: 0.85,
       longitude_value: 126.71,
       magnitude_value: 7.3,
-    };
-    const enrichedEvent = {
-      ...event,
       place: '524 km S 16° E of Balut Island',
     };
 
     EQEventsService.getEventByPublicID.mockResolvedValue(event);
-    EQEventsService.addPlacesAttribute.mockResolvedValue([enrichedEvent]);
 
     const res = await request(app).get('/eq-events/upri-event-001');
 
@@ -39,7 +35,7 @@ describe('GET /eq-events/:publicID', () => {
       place: '524 km S 16° E of Balut Island',
     });
     expect(EQEventsService.getEventByPublicID).toHaveBeenCalledWith('upri-event-001');
-    expect(EQEventsService.addPlacesAttribute).toHaveBeenCalledWith([event]);
+    expect(EQEventsService.addPlacesAttribute).not.toHaveBeenCalled();
   });
 
   test('returns 404 when publicID is not found', async () => {
