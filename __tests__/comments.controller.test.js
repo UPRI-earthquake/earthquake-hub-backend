@@ -3,6 +3,12 @@ const CommentsService = require('../src/services/comments.service');
 
 jest.mock('../src/services/comments.service');
 
+CommentsService.COMMENT_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+};
+
 function createMockResponse() {
   const res = {};
   res.status = jest.fn().mockReturnValue(res);
@@ -46,6 +52,8 @@ describe('comments.controller getCommentsByEventId', () => {
           total: 1,
           limit: 20,
           offset: 0,
+          nextCursor: null,
+          hasMore: false,
         },
       }),
     );
@@ -74,6 +82,63 @@ describe('comments.controller getCommentsByEventId', () => {
       }),
     );
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('comments.controller updateCommentStatus', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('updates moderation status for an existing comment', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      body: { status: 'rejected' },
+      username: 'admin-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.updateCommentStatus.mockResolvedValue({
+      commentId: 'report-1',
+      username: 'Anonymous',
+      status: 'rejected',
+    });
+
+    await CommentsController.updateCommentStatus(req, res, next);
+
+    expect(CommentsService.updateCommentStatus).toHaveBeenCalledWith(
+      'report-1',
+      'rejected',
+      'admin-user',
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Comment status updated successfully',
+        payload: expect.objectContaining({ status: 'rejected' }),
+      }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid moderation statuses', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      body: { status: 'hidden' },
+      username: 'admin-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    await CommentsController.updateCommentStatus(req, res, next);
+
+    expect(CommentsService.updateCommentStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ValidationError',
+      }),
+    );
   });
 });
 

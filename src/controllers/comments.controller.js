@@ -91,6 +91,9 @@ exports.getCommentsByEventId = async (req, res, next) => {
       "number.integer": "Offset must be an integer.",
       "number.min": "Offset must be at least 0.",
     }),
+    cursor: Joi.string().trim().allow('').optional().messages({
+      "string.base": "Cursor must be a string.",
+    }),
   });
 
   try {
@@ -104,6 +107,7 @@ exports.getCommentsByEventId = async (req, res, next) => {
     const commentsResult = await CommentsService.getCommentsByEventId(value.eventId, {
       limit: value.limit,
       offset: value.offset,
+      cursor: value.cursor,
     });
     if (!commentsResult) {
       res.status(404).json({
@@ -121,6 +125,8 @@ exports.getCommentsByEventId = async (req, res, next) => {
           total: commentsResult.total,
           limit: commentsResult.limit,
           offset: commentsResult.offset,
+          nextCursor: commentsResult.nextCursor || null,
+          hasMore: Boolean(commentsResult.hasMore),
         },
     });
   } catch (err) {
@@ -159,6 +165,61 @@ exports.deleteComment = async (req, res, next) => {
     });
   } catch (err) {
     console.trace(`Deleting comment unsuccessful \n ${err}`);
+    next(err);
+  }
+}
+
+exports.updateCommentStatus = async (req, res, next) => {
+  const schema = Joi.object({
+    commentId: Joi.string().required().messages({
+      "any.required": "Comment ID is required.",
+      "string.base": "Comment ID must be a string.",
+    }),
+    status: Joi.string().valid(...Object.values(CommentsService.COMMENT_STATUS)).required().messages({
+      "any.only": "Comment status must be pending, approved, or rejected.",
+      "any.required": "Comment status is required.",
+      "string.base": "Comment status must be a string.",
+    }),
+  });
+
+  try {
+    const { error, value } = schema.validate({
+      ...req.params,
+      ...req.body,
+    }, { stripUnknown: true });
+    if (error) {
+      throw error;
+    }
+
+    const updatedComment = await CommentsService.updateCommentStatus(
+      value.commentId,
+      value.status,
+      req.username || req.accountId || 'admin',
+    );
+
+    if (!updatedComment) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Comment not found",
+      });
+      return;
+    }
+
+    if (updatedComment.invalidStatus) {
+      res.status(400).json({
+        status: responseCodes.VALIDATION_ERROR,
+        message: "Comment status must be pending, approved, or rejected.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: "Comment status updated successfully",
+      payload: updatedComment,
+    });
+  } catch (err) {
+    console.trace(`Updating comment status unsuccessful \n ${err}`);
     next(err);
   }
 }

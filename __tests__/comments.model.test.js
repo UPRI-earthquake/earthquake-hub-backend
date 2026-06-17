@@ -34,6 +34,16 @@ describe('Comment model', () => {
     expect(comment.imageURL).toBe('/uploads/report.jpg');
   });
 
+  it('defaults moderation status to approved', async () => {
+    const comment = new Comment({
+      eventId: '64a7c2f3b8e4f9a1c2d3e4f5',
+      content: 'Felt light shaking.',
+    });
+
+    await expect(comment.validate()).resolves.toBeUndefined();
+    expect(comment.status).toBe('approved');
+  });
+
   it('rejects reports with neither text nor image', async () => {
     const comment = new Comment({
       eventId: '64a7c2f3b8e4f9a1c2d3e4f5',

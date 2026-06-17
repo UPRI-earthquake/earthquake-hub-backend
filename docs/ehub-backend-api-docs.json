@@ -109,6 +109,15 @@
             "type": "string",
             "description": "Optional URL to an image attached to the comment"
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "description": "Moderation status for public display"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -1465,29 +1474,29 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "required": [
-                  "eventId",
-                  "content"
+                  "eventId"
                 ],
                 "properties": {
                   "eventId": {
                     "type": "string",
                     "description": "The ID of the event being commented on"
                   },
-                  "userId": {
-                    "type": "string",
-                    "description": "The ID of the user making the comment, or Anonymous when omitted"
+                  "anonymous": {
+                    "type": "boolean",
+                    "description": "Whether to hide the authenticated citizen username. Defaults to true."
                   },
                   "content": {
                     "type": "string",
-                    "description": "The text content of the comment"
+                    "description": "Optional text content. A report must include text or an uploaded image."
                   },
-                  "imageURL": {
+                  "image": {
                     "type": "string",
-                    "description": "Optional URL to an image attached to the comment"
+                    "format": "binary",
+                    "description": "Optional uploaded report image."
                   }
                 }
               }
@@ -1557,6 +1566,14 @@
               "default": 0
             },
             "description": "Number of comments to skip before returning results"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor returned by the previous page. When supplied, cursor pagination is used instead of offset."
           }
         ],
         "responses": {
@@ -1591,6 +1608,64 @@
           },
           "404": {
             "description": "Event not found"
+          }
+        }
+      }
+    },
+    "/comments/{commentId}/status": {
+      "patch": {
+        "summary": "Update comment moderation status (admin only)",
+        "tags": [
+          "Comments"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The UUID identifier of the comment to moderate"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "rejected"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Comment status updated successfully"
+          },
+          "403": {
+            "description": "Forbidden - admin authentication required"
+          },
+          "404": {
+            "description": "Comment not found"
           }
         }
       }

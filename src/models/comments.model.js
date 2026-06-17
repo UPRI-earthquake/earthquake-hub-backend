@@ -26,6 +26,10 @@
  *           imageURL:
  *             type: string
  *             description: Optional URL to an image attached to the comment
+ *           status:
+ *             type: string
+ *             enum: [pending, approved, rejected]
+ *             description: Moderation status for public display
  *           createdAt:
  *             type: string
  *             format: date-time
@@ -36,6 +40,8 @@
 
 const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
+
+const COMMENT_STATUSES = ['pending', 'approved', 'rejected'];
 
 // Comments model: Simple display-only comments on events.
 // No replies or likes yet.
@@ -80,6 +86,19 @@ const commentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    status: {
+      type: String,
+      enum: COMMENT_STATUSES,
+      default: 'approved',
+      index: true,
+    },
+    moderatedBy: {
+      type: String,
+      trim: true,
+    },
+    moderatedAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,  // Adds createdAt and updatedAt automatically
@@ -87,7 +106,7 @@ const commentSchema = new mongoose.Schema(
 );
 
 // Indexes for performance (e.g., querying comments by event or user)
-commentSchema.index({ eventId: 1, createdAt: -1 });  // Sort comments by event and recency
+commentSchema.index({ eventId: 1, status: 1, createdAt: -1, commentId: -1 });  // Sort visible comments by event and recency
 commentSchema.index({ username: 1 });
 commentSchema.index({ accountId: 1 });
 

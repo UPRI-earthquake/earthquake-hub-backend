@@ -5,6 +5,7 @@ const multer = require('multer');
 const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getUploadConfig } = require('../config/upload.config');
+const { createInMemoryRateLimiter, positiveIntegerEnv } = require('../middlewares/rateLimit.middleware');
 
 const {
   getTokenFromCookie,
@@ -16,6 +17,8 @@ const {
 
 const { uploadDir: UPLOAD_DIR, publicUploadPath: PUBLIC_UPLOAD_PATH } = getUploadConfig();
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const REPORT_POST_RATE_LIMIT_WINDOW_MS = positiveIntegerEnv('REPORT_POST_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000);
+const REPORT_POST_RATE_LIMIT_MAX = positiveIntegerEnv('REPORT_POST_RATE_LIMIT_MAX', 10);
 const ALLOWED_IMAGE_EXTENSIONS = {
   'image/gif': '.gif',
   'image/jpeg': '.jpg',
@@ -48,6 +51,13 @@ const upload = multer({
     }
     cb(null, true);
   },
+});
+
+const limitReportPosts = createInMemoryRateLimiter({
+  windowMs: REPORT_POST_RATE_LIMIT_WINDOW_MS,
+  max: REPORT_POST_RATE_LIMIT_MAX,
+  keyGenerator: (req) => req.accountId || req.username || req.ip || 'anonymous',
+  message: 'Too many report submissions. Please try again later.',
 });
 
 function uploadReportImage(req, res, next) {
@@ -147,6 +157,11 @@ function uploadReportImage(req, res, next) {
  *           minimum: 0
  *           default: 0
  *         description: Number of comments to skip before returning results
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Cursor returned by the previous page. When supplied, cursor pagination is used instead of offset.
  *     responses:
  *       200:
  *         description: Comments retrieved successfully
@@ -171,6 +186,39 @@ function uploadReportImage(req, res, next) {
  *       404:
  *         description: Event not found
  *
+ * /comments/{commentId}/status:
+ *   patch:
+ *     summary: Update comment moderation status (admin only)
+ *     tags: [Comments]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The UUID identifier of the comment to moderate
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, approved, rejected]
+ *     responses:
+ *       200:
+ *         description: Comment status updated successfully
+ *       403:
+ *         description: Forbidden - admin authentication required
+ *       404:
+ *         description: Comment not found
+ *
  * /comments/{commentId}:
  *   delete:
  *     summary: Delete a comment (admin only)
@@ -193,7 +241,8 @@ function uploadReportImage(req, res, next) {
  *         description: Comment not found
  */
 
-router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), uploadReportImage, CommentsController.createComment);
+router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), limitReportPosts, uploadReportImage, CommentsController.createComment);
 router.get('/', CommentsController.getCommentsByEventId);
+router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.updateCommentStatus);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
 module.exports = router;

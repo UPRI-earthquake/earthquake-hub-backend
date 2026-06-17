@@ -17,6 +17,7 @@ jest.mock('../src/models/comments.model', () => {
   MockComment.find = jest.fn();
   MockComment.countDocuments = jest.fn();
   MockComment.findOneAndDelete = jest.fn();
+  MockComment.findOneAndUpdate = jest.fn();
 
   return MockComment;
 });
@@ -60,13 +61,14 @@ describe('comments.service', () => {
     mockSaveResult = {
       commentId: 'report-1',
       eventId: '69c217dc9728d1ee7fcb8ea6',
-      accountId: '69c217dc9728d1ee7fcb8ea5',
-      username: 'citizen-user',
-      content: 'Felt light shaking.',
-      imageURL: '/uploads/report.jpg',
-      createdAt,
-      updatedAt,
-      toObject() {
+        accountId: '69c217dc9728d1ee7fcb8ea5',
+        username: 'citizen-user',
+        content: 'Felt light shaking.',
+        imageURL: '/uploads/report.jpg',
+        status: 'approved',
+        createdAt,
+        updatedAt,
+        toObject() {
         return this;
       },
     };
@@ -84,6 +86,7 @@ describe('comments.service', () => {
       username: 'citizen-user',
       content: 'Felt light shaking.',
       imageURL: '/uploads/report.jpg',
+      status: 'approved',
       createdAt,
       updatedAt,
     });
@@ -104,6 +107,7 @@ describe('comments.service', () => {
         accountId: '69c217dc9728d1ee7fcb8ea5',
         username: 'Anonymous',
         content: 'Felt shaking.',
+        status: 'approved',
         createdAt,
         updatedAt,
       },
@@ -127,5 +131,76 @@ describe('comments.service', () => {
     expect(result.comments[0]).not.toHaveProperty('accountId');
     expect(result.comments[0]).not.toHaveProperty('eventId');
     expect(result.comments[0]).not.toHaveProperty('_id');
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  test('getCommentsByEventId returns a next cursor when more reports exist', async () => {
+    mockEventExists.mockResolvedValue({ _id: '69c217dc9728d1ee7fcb8ea6' });
+    Comment.find.mockReturnValue(createFindChain([
+      {
+        commentId: 'report-2',
+        username: 'Anonymous',
+        content: 'Second report.',
+        createdAt: new Date('2026-06-17T03:00:00.000Z'),
+        updatedAt: new Date('2026-06-17T03:00:00.000Z'),
+      },
+      {
+        commentId: 'report-1',
+        username: 'Anonymous',
+        content: 'First report.',
+        createdAt: new Date('2026-06-17T02:00:00.000Z'),
+        updatedAt: new Date('2026-06-17T02:00:00.000Z'),
+      },
+    ]));
+    Comment.countDocuments.mockResolvedValue(2);
+
+    const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', {
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0].commentId).toBe('report-2');
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toEqual(expect.any(String));
+  });
+
+  test('updateCommentStatus stores moderation metadata', async () => {
+    const moderatedAtBefore = Date.now();
+    Comment.findOneAndUpdate.mockResolvedValue({
+      commentId: 'report-1',
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'Anonymous',
+      content: 'Felt shaking.',
+      status: 'rejected',
+      moderatedBy: 'admin-user',
+      moderatedAt: new Date('2026-06-17T04:00:00.000Z'),
+    });
+
+    const result = await CommentsService.updateCommentStatus('report-1', 'rejected', 'admin-user');
+
+    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
+      { commentId: 'report-1' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'rejected',
+          moderatedBy: 'admin-user',
+          moderatedAt: expect.any(Date),
+        }),
+      }),
+      { new: true },
+    );
+    const moderatedAt = Comment.findOneAndUpdate.mock.calls[0][1].$set.moderatedAt.getTime();
+    expect(moderatedAt).toBeGreaterThanOrEqual(moderatedAtBefore);
+    expect(result).toEqual(
+      expect.objectContaining({
+        commentId: 'report-1',
+        accountId: '69c217dc9728d1ee7fcb8ea5',
+        status: 'rejected',
+        moderatedBy: 'admin-user',
+      }),
+    );
   });
 });
