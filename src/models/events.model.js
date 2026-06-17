@@ -11,6 +11,24 @@
  *           publicID:
  *             type: string
  *             description: Unique SeisComP public ID (unique index enforced)
+ *           sourceCatalog:
+ *             type: string
+ *             description: Canonical catalog that supplied the primary event record
+ *           sourceServer:
+ *             type: string
+ *             description: Server/domain that supplied the primary event record
+ *           sourceSeiscompVersion:
+ *             type: string
+ *             description: SeisComP version used by the source server, when known
+ *           isLegacyRecord:
+ *             type: boolean
+ *             description: True when this primary event only exists in the migrated legacy catalog
+ *           legacyImportedAt:
+ *             type: string
+ *             format: date-time
+ *           legacySourcePublicID:
+ *             type: string
+ *             description: Original publicID from the legacy catalog when it differs from the canonical record
  *           OT:
  *             type: string
  *             format: date-time
@@ -225,15 +243,21 @@ const summaryOverrideSchema = new mongoose.Schema(
 //   job can give up after a configurable number of persistent failures.
 const eventSchema = new mongoose.Schema(
   {
-    publicID:         { type: String, required: true, index: true, unique: true },
-    OT:               Date,
-    latitude_value:   Number,
-    longitude_value:  Number,
-    depth_value:      Number,
-    magnitude_value:  Number,
-    type:             String,   // upstream eventType
-    text:             String,
-    place:            String,
+    publicID:              { type: String, required: true, index: true, unique: true },
+    sourceCatalog:         { type: String, default: 'upri-current', index: true },
+    sourceServer:          String,
+    sourceSeiscompVersion: String,
+    isLegacyRecord:        { type: Boolean, default: false, index: true },
+    legacyImportedAt:      Date,
+    legacySourcePublicID:  String,
+    OT:                    Date,
+    latitude_value:        Number,
+    longitude_value:       Number,
+    depth_value:           Number,
+    magnitude_value:       Number,
+    type:                  String,   // upstream eventType
+    text:                  String,
+    place:                 String,
     onlineStations:   { type: [String], default: [] },
     candidateStations: { type: [String], default: [] },
     recordingStations: { type: [String], default: [] },

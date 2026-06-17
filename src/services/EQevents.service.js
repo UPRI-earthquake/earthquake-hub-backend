@@ -14,6 +14,9 @@ const RECORDING_AVAILABILITY_GRACE_PERIOD_MS = _positiveNumberEnv('RECORDING_AVA
 const RECORDING_AVAILABILITY_RETRY_DELAY_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_RETRY_DELAY_MS', 5 * 60 * 1000);
 const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILABILITY_MAX_ATTEMPTS', 4);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
+const EVENT_SOURCE_CATALOG = process.env.EVENT_SOURCE_CATALOG || 'upri-current';
+const EVENT_SOURCE_SERVER = process.env.EVENT_SOURCE_SERVER || 'earthquake.up.edu.ph';
+const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION || '';
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
@@ -329,12 +332,18 @@ async function addEQEvent(
       magnitude_value,
       type: eventType,
       text,
+      sourceCatalog: EVENT_SOURCE_CATALOG,
+      sourceServer: EVENT_SOURCE_SERVER,
+      isLegacyRecord: false,
+      legacyImportedAt: null,
+      legacySourcePublicID: null,
       onlineStations: displayStations,
       candidateStations: onlineStations,
       recordingAvailabilityStatus: existingRecordingStations.length > 0
         ? existingEvent.recordingAvailabilityStatus || 'partial'
         : 'pending',
       ...(last_modification ? { last_modification: last_modification } : {}),
+      ...(EVENT_SOURCE_SEISCOMP_VERSION ? { sourceSeiscompVersion: EVENT_SOURCE_SEISCOMP_VERSION } : {}),
     },
     $setOnInsert: {
       publicID,
