@@ -10,10 +10,14 @@ const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
 const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';
 const FDSN_WINDOW_SECONDS = Number(process.env.FDSNWS_WINDOW_SECONDS || 30);
 const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REFINEMENT_DELAY_MS || 0);
+const RECORDING_AVAILABILITY_GRACE_PERIOD_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_GRACE_PERIOD_MS', 30 * 60 * 1000);
+const RECORDING_AVAILABILITY_RETRY_DELAY_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_RETRY_DELAY_MS', 5 * 60 * 1000);
+const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILABILITY_MAX_ATTEMPTS', 4);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
+const scheduledOnlineStationRefinements = new Set();
 
 function _positiveNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -283,8 +287,17 @@ async function addEQEvent(
   } catch (err) {
     console.error(`addEQEvent [${publicID}]: onlineStations lookup failed - ${err.message}`);
   }
+  onlineStations = normalizeStationList(onlineStations);
 
-  const existingEvent = await EQEvents.findOne({ publicID }, { depth_value: 1, last_modification: 1 }).lean();
+  const existingEvent = await EQEvents.findOne(
+    { publicID },
+    {
+      depth_value: 1,
+      last_modification: 1,
+      recordingStations: 1,
+      recordingAvailabilityStatus: 1,
+    },
+  ).lean();
 
   // Ignore stale updates: only newer last_modification may overwrite existing
   // event details. This prevents out-of-order proxy messages from regressing
@@ -302,6 +315,11 @@ async function addEQEvent(
   // documents for the same quake. The unique index on publicID enforces this
   // at the database level as well.
   const filter = { publicID };
+  const existingRecordingStations = normalizeStationList(existingEvent?.recordingStations);
+  const displayStations = existingRecordingStations.length > 0
+    ? mergeStationLists(existingRecordingStations, onlineStations)
+    : onlineStations;
+
   const update = {
     $set: {
       OT,
@@ -311,11 +329,17 @@ async function addEQEvent(
       magnitude_value,
       type: eventType,
       text,
-      onlineStations,
+      onlineStations: displayStations,
+      candidateStations: onlineStations,
+      recordingAvailabilityStatus: existingRecordingStations.length > 0
+        ? existingEvent.recordingAvailabilityStatus || 'partial'
+        : 'pending',
       ...(last_modification ? { last_modification: last_modification } : {}),
     },
     $setOnInsert: {
       publicID,
+      recordingStations: [],
+      recordingAvailabilityAttempts: 0,
       pendingCatalogSources: CATALOG_SOURCE_NAMES,
       catalogEnrichmentAttempts: {},
       catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
@@ -327,14 +351,17 @@ async function addEQEvent(
   return 'success';
 }
 
-function scheduleOnlineStationsRefinement(publicID) {
+function scheduleOnlineStationsRefinement(publicID, delayMs = ONLINE_STATION_REFINEMENT_DELAY_MS) {
   if (!publicID) return;
+  if (scheduledOnlineStationRefinements.has(publicID)) return;
 
+  scheduledOnlineStationRefinements.add(publicID);
   const timer = setTimeout(() => {
+    scheduledOnlineStationRefinements.delete(publicID);
     updateOnlineStationsForEvent(publicID).catch((err) => {
       console.error(`addEQEvent [${publicID}]: onlineStations refinement failed - ${err.message}`);
     });
-  }, ONLINE_STATION_REFINEMENT_DELAY_MS);
+  }, delayMs);
   if (typeof timer.unref === 'function') timer.unref();
 }
 
@@ -357,6 +384,84 @@ function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
       };
     })
     .sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
+function normalizeStationList(stations) {
+  if (!Array.isArray(stations)) return [];
+  const seen = new Set();
+
+  return stations
+    .map((station) => String(station || '').trim().toUpperCase())
+    .filter((station) => {
+      if (!station || seen.has(station)) return false;
+      seen.add(station);
+      return true;
+    });
+}
+
+function mergeStationLists(...stationLists) {
+  return normalizeStationList(stationLists.flat());
+}
+
+function isWithinRecordingGracePeriod(eventTime, now = Date.now()) {
+  const eventMs = new Date(eventTime).getTime();
+  if (!Number.isFinite(eventMs)) return false;
+  return now - eventMs < RECORDING_AVAILABILITY_GRACE_PERIOD_MS;
+}
+
+function resolveRecordingAvailabilityStatus(candidateStations, recordingStations, withinGracePeriod) {
+  if (recordingStations.length === 0) {
+    return withinGracePeriod ? 'pending' : 'unavailable';
+  }
+
+  if (candidateStations.length > 0 && recordingStations.length < candidateStations.length) {
+    return 'partial';
+  }
+
+  return 'verified';
+}
+
+function resolveRecordingDisplayStations(candidateStations, recordingStations, status, withinGracePeriod) {
+  if (status === 'pending') {
+    return candidateStations;
+  }
+
+  if (status === 'partial' && withinGracePeriod) {
+    return mergeStationLists(recordingStations, candidateStations);
+  }
+
+  if (status === 'partial' || status === 'verified') {
+    return recordingStations;
+  }
+
+  return [];
+}
+
+function buildRecordingAvailabilityUpdate(event, refinement, now = Date.now()) {
+  const candidateStations = normalizeStationList(
+    event.candidateStations?.length ? event.candidateStations : event.onlineStations,
+  );
+  const recordingStations = normalizeStationList(refinement.onlineStations);
+  const withinGracePeriod = isWithinRecordingGracePeriod(event.OT, now);
+  const status = resolveRecordingAvailabilityStatus(candidateStations, recordingStations, withinGracePeriod);
+  const attempts = Number(event.recordingAvailabilityAttempts || 0) + 1;
+  const onlineStations = resolveRecordingDisplayStations(
+    candidateStations,
+    recordingStations,
+    status,
+    withinGracePeriod,
+  );
+
+  return {
+    candidateStations,
+    recordingStations,
+    recordingAvailabilityStatus: status,
+    recordingAvailabilityCheckedAt: new Date(now),
+    recordingAvailabilityAttempts: attempts,
+    onlineStations,
+    shouldRetry: ['pending', 'partial'].includes(status) && attempts < RECORDING_AVAILABILITY_MAX_ATTEMPTS,
+    withinGracePeriod,
+  };
 }
 
 /***************************************************************************
@@ -482,6 +587,20 @@ async function updateOnlineStationsForEvent(publicID) {
   );
   const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
   if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
+    const attempts = Number(event.recordingAvailabilityAttempts || 0) + 1;
+    await EQEvents.updateOne(
+      { publicID },
+      {
+        $set: {
+          recordingAvailabilityCheckedAt: new Date(),
+          recordingAvailabilityAttempts: attempts,
+          recordingAvailabilityStatus: event.recordingAvailabilityStatus || 'pending',
+        },
+      },
+    );
+    if (attempts < RECORDING_AVAILABILITY_MAX_ATTEMPTS) {
+      scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
+    }
     return {
       matchedCount: 0,
       modifiedCount: 0,
@@ -492,14 +611,35 @@ async function updateOnlineStationsForEvent(publicID) {
     };
   }
 
-  const onlineStations = refinement.onlineStations;
-  const result = await EQEvents.updateOne({ publicID }, { $set: { onlineStations } });
+  const availability = buildRecordingAvailabilityUpdate(event, refinement);
+  const result = await EQEvents.updateOne(
+    { publicID },
+    {
+      $set: {
+        candidateStations: availability.candidateStations,
+        recordingStations: availability.recordingStations,
+        recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+        recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+        recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+        onlineStations: availability.onlineStations,
+      },
+    },
+  );
+
+  if (availability.shouldRetry) {
+    scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
+  }
 
   return {
     matchedCount: result.matchedCount,
     modifiedCount: result.modifiedCount,
     usableDevicesCount: usableDevices.length,
-    onlineStations,
+    onlineStations: availability.onlineStations,
+    recordingStations: availability.recordingStations,
+    candidateStations: availability.candidateStations,
+    recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+    recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+    retryScheduled: availability.shouldRetry,
   };
 }
 
@@ -539,15 +679,23 @@ async function updateOnlineStations() {
       continue;
     }
 
-    eventStationPairs.push({ eventId: event._id, onlineStations: refinement.onlineStations });
+    eventStationPairs.push({
+      eventId: event._id,
+      availability: buildRecordingAvailabilityUpdate(event, refinement),
+    });
   }
 
-  const operations = eventStationPairs.map(({ eventId, onlineStations }) => ({
+  const operations = eventStationPairs.map(({ eventId, availability }) => ({
     updateOne: {
       filter: { _id: eventId },
       update: {
         $set: {
-          onlineStations,
+          candidateStations: availability.candidateStations,
+          recordingStations: availability.recordingStations,
+          recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+          recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+          recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+          onlineStations: availability.onlineStations,
         },
       },
     },
@@ -1241,5 +1389,10 @@ module.exports = {
     normalizeCatalogSources: _normalizeCatalogSources,
     mergeCatalogSource: _mergeCatalogSource,
     getPendingCatalogSources: _getPendingCatalogSources,
+    normalizeStationList,
+    mergeStationLists,
+    buildRecordingAvailabilityUpdate,
+    resolveRecordingAvailabilityStatus,
+    resolveRecordingDisplayStations,
   },
 };

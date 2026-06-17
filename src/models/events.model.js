@@ -36,6 +36,26 @@
  *             type: array
  *             items:
  *               type: string
+ *             description: Compatibility display list for station recordings
+ *           candidateStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations active near event detection time
+ *           recordingStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations with FDSN-confirmed waveform data
+ *           recordingAvailabilityStatus:
+ *             type: string
+ *             enum: [pending, partial, verified, unavailable]
+ *             description: FDSN recording availability state
+ *           recordingAvailabilityCheckedAt:
+ *             type: string
+ *             format: date-time
+ *           recordingAvailabilityAttempts:
+ *             type: integer
  *           last_modification:
  *             type: string
  *             format: date-time
@@ -214,7 +234,17 @@ const eventSchema = new mongoose.Schema(
     type:             String,   // upstream eventType
     text:             String,
     place:            String,
-    onlineStations:   [String],
+    onlineStations:   { type: [String], default: [] },
+    candidateStations: { type: [String], default: [] },
+    recordingStations: { type: [String], default: [] },
+    recordingAvailabilityStatus: {
+      type: String,
+      enum: ['pending', 'partial', 'verified', 'unavailable'],
+      default: 'pending',
+      index: true,
+    },
+    recordingAvailabilityCheckedAt: Date,
+    recordingAvailabilityAttempts: { type: Number, default: 0 },
     last_modification: Date,
 
     summaryOverride: { type: summaryOverrideSchema, default: null },

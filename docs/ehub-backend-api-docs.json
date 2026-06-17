@@ -224,7 +224,39 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Compatibility display list for station recordings"
+          },
+          "candidateStations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Stations active near event detection time"
+          },
+          "recordingStations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Stations with FDSN-confirmed waveform data"
+          },
+          "recordingAvailabilityStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "partial",
+              "verified",
+              "unavailable"
+            ],
+            "description": "FDSN recording availability state"
+          },
+          "recordingAvailabilityCheckedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recordingAvailabilityAttempts": {
+            "type": "integer"
           },
           "last_modification": {
             "type": "string",
