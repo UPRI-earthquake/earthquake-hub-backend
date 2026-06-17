@@ -22,7 +22,7 @@ exports.createComment = async (req, res, next) => {
       "string.base": "Image URL must be a string.",
     }),
   }).custom((value, helpers) => {
-    if (!value.content && !value.imageURL) {
+    if (!value.content && !req.imageURL) {
       return helpers.error('any.custom', { message: 'Add a report or image before posting.' });
     }
     return value;
@@ -32,7 +32,7 @@ exports.createComment = async (req, res, next) => {
 
   const bodyToValidate = {
     ...req.body,
-    imageURL: req.imageURL || req.body.imageURL
+    imageURL: req.imageURL || null
   };
 
   try {
@@ -51,6 +51,14 @@ exports.createComment = async (req, res, next) => {
       content: value.content || undefined,
       imageURL: value.imageURL || null
     });
+
+    if (!newComment) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Event not found",
+      });
+      return;
+    }
     
     res.status(201).json({
         status: responseCodes.GENERIC_SUCCESS,

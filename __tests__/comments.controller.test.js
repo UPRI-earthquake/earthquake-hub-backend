@@ -181,6 +181,37 @@ describe('comments.controller createComment', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  test('does not trust client-supplied image URLs', async () => {
+    const req = {
+      isAuthenticated: false,
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: 'Guest comment.',
+        imageURL: 'https://example.com/remote-image.jpg',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue({
+      commentId: 'report-1',
+      username: 'Anonymous',
+      content: req.body.content,
+    });
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(CommentsService.createComment).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      accountId: undefined,
+      username: 'Anonymous',
+      content: 'Guest comment.',
+      imageURL: null,
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   test('allows image-only reports without sending empty content to the service', async () => {
     const req = {
       isAuthenticated: false,
@@ -210,6 +241,30 @@ describe('comments.controller createComment', () => {
       imageURL: '/uploads/report.jpg',
     });
     expect(res.status).toHaveBeenCalledWith(201);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('returns 404 when creating a report for a missing event', async () => {
+    const req = {
+      isAuthenticated: false,
+      body: {
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        content: 'Missing event comment.',
+      },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    CommentsService.createComment.mockResolvedValue(null);
+
+    await CommentsController.createComment(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Event not found',
+      }),
+    );
     expect(next).not.toHaveBeenCalled();
   });
 

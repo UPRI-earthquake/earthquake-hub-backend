@@ -85,25 +85,25 @@ function uploadReportImage(req, res, next) {
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required:
  *               - eventId
- *               - content
  *             properties:
  *               eventId:
  *                 type: string
  *                 description: The ID of the event being commented on
- *               userId:
- *                 type: string
- *                 description: The ID of the user making the comment, or Anonymous when omitted
+ *               anonymous:
+ *                 type: boolean
+ *                 description: Whether to hide the authenticated citizen username. Defaults to true.
  *               content:
  *                 type: string
- *                 description: The text content of the comment
- *               imageURL:
+ *                 description: Optional text content. A report must include text or an uploaded image.
+ *               image:
  *                 type: string
- *                 description: Optional URL to an image attached to the comment
+ *                 format: binary
+ *                 description: Optional uploaded report image.
  *     responses:
  *       201:
  *         description: Comment created successfully
