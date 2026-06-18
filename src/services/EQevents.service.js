@@ -14,6 +14,7 @@ const RECORDING_AVAILABILITY_GRACE_PERIOD_MS = _positiveNumberEnv('RECORDING_AVA
 const RECORDING_AVAILABILITY_RETRY_DELAY_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_RETRY_DELAY_MS', 5 * 60 * 1000);
 const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILABILITY_MAX_ATTEMPTS', 4);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
+const GEOSERVE_PLACE_REFRESH_DISTANCE_KM = _positiveNumberEnv('GEOSERVE_PLACE_REFRESH_DISTANCE_KM', 1);
 const EVENT_SOURCE_CATALOG = process.env.EVENT_SOURCE_CATALOG || 'upri-current';
 const EVENT_SOURCE_SERVER = process.env.EVENT_SOURCE_SERVER || 'earthquake.up.edu.ph';
 const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION || '';
@@ -25,6 +26,61 @@ const scheduledOnlineStationRefinements = new Set();
 function _positiveNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function _hasUsablePlace(place) {
+  if (typeof place !== 'string') return false;
+  const normalized = place.trim().toLowerCase();
+  return (
+    normalized.length > 0 &&
+    normalized !== 'unavailable' &&
+    normalized !== 'unable to geocode' &&
+    normalized !== 'nominatim unavailable'
+  );
+}
+
+function _getEventIdentityFilter(eventData) {
+  if (eventData?._id) return { _id: eventData._id };
+  if (eventData?.publicID) return { publicID: eventData.publicID };
+  return null;
+}
+
+async function _persistComputedPlace(eventData, place) {
+  if (!_hasUsablePlace(place)) return;
+
+  const identityFilter = _getEventIdentityFilter(eventData);
+  if (!identityFilter) return;
+
+  try {
+    await EQEvents.updateOne(
+      {
+        ...identityFilter,
+        $or: [
+          { place: { $exists: false } },
+          { place: null },
+          { place: '' },
+          { place: 'Unavailable' },
+          { place: 'Unable to geocode' },
+          { place: 'Nominatim unavailable' },
+        ],
+      },
+      { $set: { place } },
+    );
+  } catch (err) {
+    console.error(`addPlacesAttribute [${eventData.publicID || eventData._id}]: place persistence failed - ${err.message}`);
+  }
+}
+
+function _hasMeaningfulCoordinateChange(existingEvent, latitude, longitude) {
+  if (!existingEvent || !_hasUsablePlace(existingEvent.place)) return false;
+
+  const oldLat = Number(existingEvent.latitude_value);
+  const oldLon = Number(existingEvent.longitude_value);
+  const newLat = Number(latitude);
+  const newLon = Number(longitude);
+  if (![oldLat, oldLon, newLat, newLon].every(Number.isFinite)) return false;
+
+  return _getDistanceKm(oldLat, oldLon, newLat, newLon) > GEOSERVE_PLACE_REFRESH_DISTANCE_KM;
 }
 
 /************************ 
@@ -192,7 +248,7 @@ async function addPlacesAttribute(eventsList){
       eventData = event;
     }
 
-    if (eventData.place && typeof eventData.place === 'string' && eventData.place.trim()) {
+    if (_hasUsablePlace(eventData.place)) {
       updatedData.push(eventData);
       return;
     }
@@ -209,6 +265,7 @@ async function addPlacesAttribute(eventsList){
         }
       );
       var address = '';
+      let shouldPersistAddress = false;
       if (result.data.error){ address = result.data.error }
       else{
         [lon, lat, _] = result.data.geonames.features[0].geometry.coordinates
@@ -224,6 +281,7 @@ async function addPlacesAttribute(eventsList){
                   + prop.country_name
         address = address
           .replace(/, $/, '') // remove dangling comma-space, if any
+        shouldPersistAddress = true;
 
         // console.log(address)
       }
@@ -231,6 +289,9 @@ async function addPlacesAttribute(eventsList){
         ...eventData,
         place: address
       })
+      if (shouldPersistAddress) {
+        await _persistComputedPlace(eventData, address);
+      }
     }catch(err){
       // console.log('Catch: No Geoserve')
       var address = 'Unavailable'
@@ -296,6 +357,9 @@ async function addEQEvent(
     { publicID },
     {
       depth_value: 1,
+      latitude_value: 1,
+      longitude_value: 1,
+      place: 1,
       last_modification: 1,
       recordingStations: 1,
       recordingAvailabilityStatus: 1,
@@ -322,6 +386,11 @@ async function addEQEvent(
   const displayStations = existingRecordingStations.length > 0
     ? mergeStationLists(existingRecordingStations, onlineStations)
     : onlineStations;
+  const shouldRefreshPlace = _hasMeaningfulCoordinateChange(
+    existingEvent,
+    latitude_value,
+    longitude_value,
+  );
 
   const update = {
     $set: {
@@ -354,6 +423,9 @@ async function addEQEvent(
       catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
     },
   };
+  if (shouldRefreshPlace) {
+    update.$unset = { place: '' };
+  }
 
   await EQEvents.updateOne(filter, update, { upsert: true });
   scheduleOnlineStationsRefinement(publicID);
@@ -1403,5 +1475,6 @@ module.exports = {
     buildRecordingAvailabilityUpdate,
     resolveRecordingAvailabilityStatus,
     resolveRecordingDisplayStations,
+    hasMeaningfulCoordinateChange: _hasMeaningfulCoordinateChange,
   },
 };

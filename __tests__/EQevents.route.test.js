@@ -26,6 +26,12 @@ describe('GET /eq-events/:publicID', () => {
     };
 
     EQEventsService.getEventByPublicID.mockResolvedValue(event);
+    EQEventsService.addPlacesAttribute.mockResolvedValue([
+      {
+        ...event,
+        place: '524 km S 16° E of Balut Island',
+      },
+    ]);
 
     const res = await request(app).get('/eq-events/upri-event-001');
 
@@ -35,7 +41,7 @@ describe('GET /eq-events/:publicID', () => {
       place: '524 km S 16° E of Balut Island',
     });
     expect(EQEventsService.getEventByPublicID).toHaveBeenCalledWith('upri-event-001');
-    expect(EQEventsService.addPlacesAttribute).not.toHaveBeenCalled();
+    expect(EQEventsService.addPlacesAttribute).toHaveBeenCalledWith([event]);
   });
 
   test('returns 404 when publicID is not found', async () => {
