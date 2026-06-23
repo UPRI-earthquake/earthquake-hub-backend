@@ -1,8 +1,8 @@
-const mockEventExists = jest.fn();
+const mockEventFindById = jest.fn();
 let mockSaveResult;
 
 jest.mock('../src/models/events.model', () => ({
-  exists: (...args) => mockEventExists(...args),
+  findById: (...args) => mockEventFindById(...args),
 }));
 
 jest.mock('../src/models/comments.model', () => {
@@ -25,6 +25,15 @@ jest.mock('../src/models/comments.model', () => {
 const Comment = require('../src/models/comments.model');
 const CommentsService = require('../src/services/comments.service');
 
+function mockEventLookup(event) {
+  const chain = {
+    select: jest.fn(() => chain),
+    lean: jest.fn(() => Promise.resolve(event)),
+  };
+  mockEventFindById.mockReturnValue(chain);
+  return chain;
+}
+
 function createFindChain(result) {
   const chain = {
     sort: jest.fn(() => chain),
@@ -43,7 +52,7 @@ describe('comments.service', () => {
   });
 
   test('createComment returns null when the event does not exist', async () => {
-    mockEventExists.mockResolvedValue(null);
+    mockEventLookup(null);
 
     const result = await CommentsService.createComment({
       eventId: '69c217dc9728d1ee7fcb8ea6',
@@ -57,10 +66,11 @@ describe('comments.service', () => {
   test('createComment returns a public comment without account internals', async () => {
     const createdAt = new Date('2026-06-17T01:00:00.000Z');
     const updatedAt = new Date('2026-06-17T01:00:00.000Z');
-    mockEventExists.mockResolvedValue({ _id: '69c217dc9728d1ee7fcb8ea6' });
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
     mockSaveResult = {
       commentId: 'report-1',
       eventId: '69c217dc9728d1ee7fcb8ea6',
+      eventPublicID: 'gfz2025tean',
         accountId: '69c217dc9728d1ee7fcb8ea5',
         username: 'citizen-user',
         content: 'Felt light shaking.',
@@ -93,12 +103,16 @@ describe('comments.service', () => {
     expect(result).not.toHaveProperty('accountId');
     expect(result).not.toHaveProperty('eventId');
     expect(result).not.toHaveProperty('_id');
+    expect(Comment).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      eventPublicID: 'gfz2025tean',
+    }));
   });
 
   test('getCommentsByEventId returns public comments only', async () => {
     const createdAt = new Date('2026-06-17T02:00:00.000Z');
     const updatedAt = new Date('2026-06-17T02:00:00.000Z');
-    mockEventExists.mockResolvedValue({ _id: '69c217dc9728d1ee7fcb8ea6' });
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
     Comment.find.mockReturnValue(createFindChain([
       {
         commentId: 'report-1',
@@ -133,10 +147,26 @@ describe('comments.service', () => {
     expect(result.comments[0]).not.toHaveProperty('_id');
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeNull();
+    expect(Comment.find).toHaveBeenCalledWith({
+      $and: [
+        {
+          $or: [
+            { eventId: '69c217dc9728d1ee7fcb8ea6' },
+            { eventPublicID: 'gfz2025tean' },
+          ],
+        },
+        {
+          $or: [
+            { status: 'approved' },
+            { status: { $exists: false } },
+          ],
+        },
+      ],
+    });
   });
 
   test('getCommentsByEventId returns a next cursor when more reports exist', async () => {
-    mockEventExists.mockResolvedValue({ _id: '69c217dc9728d1ee7fcb8ea6' });
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
     Comment.find.mockReturnValue(createFindChain([
       {
         commentId: 'report-2',

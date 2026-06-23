@@ -14,6 +14,9 @@
  *           eventId:
  *             type: string
  *             description: Reference to the Event ObjectId
+ *           eventPublicID:
+ *             type: string
+ *             description: Stable SeisComP publicID for the referenced event
  *           username:
  *             type: string
  *             description: Account identifier or Anonymous when not provided
@@ -57,6 +60,11 @@ const commentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Event',  // References the Event model
       required: true,
+      index: true,
+    },
+    eventPublicID: {
+      type: String,
+      trim: true,
       index: true,
     },
     username: {
@@ -107,6 +115,7 @@ const commentSchema = new mongoose.Schema(
 
 // Indexes for performance (e.g., querying comments by event or user)
 commentSchema.index({ eventId: 1, status: 1, createdAt: -1, commentId: -1 });  // Sort visible comments by event and recency
+commentSchema.index({ eventPublicID: 1, status: 1, createdAt: -1, commentId: -1 });
 commentSchema.index({ username: 1 });
 commentSchema.index({ accountId: 1 });
 

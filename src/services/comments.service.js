@@ -42,6 +42,7 @@ function toAdminComment(comment) {
   return {
     ...toPublicComment(source),
     eventId: source.eventId,
+    eventPublicID: source.eventPublicID,
     accountId: source.accountId || null,
     status: normalizeCommentStatus(source.status),
     moderatedBy: source.moderatedBy,
@@ -84,18 +85,33 @@ function decodePaginationCursor(cursor) {
   }
 }
 
-function buildVisibleCommentQuery(eventId, cursor) {
+function buildVisibleCommentQuery(event, cursor) {
+  const eventPublicID = typeof event.publicID === 'string' ? event.publicID.trim() : '';
   const query = {
-    eventId,
-    status: COMMENT_STATUS.APPROVED,
+    $and: [
+      {
+        $or: [
+          { eventId: event._id },
+          ...(eventPublicID ? [{ eventPublicID }] : []),
+        ],
+      },
+      {
+        $or: [
+          { status: COMMENT_STATUS.APPROVED },
+          { status: { $exists: false } },
+        ],
+      },
+    ],
   };
 
   const decodedCursor = decodePaginationCursor(cursor);
   if (decodedCursor) {
-    query.$or = [
-      { createdAt: { $lt: decodedCursor.createdAt } },
-      { createdAt: decodedCursor.createdAt, commentId: { $lt: decodedCursor.commentId } },
-    ];
+    query.$and.push({
+      $or: [
+        { createdAt: { $lt: decodedCursor.createdAt } },
+        { createdAt: decodedCursor.createdAt, commentId: { $lt: decodedCursor.commentId } },
+      ],
+    });
   }
 
   return query;
@@ -109,14 +125,15 @@ async function createComment({
   content,
   imageURL,
 }) {
-  const eventExists = await Event.exists({ _id: eventId });
-  if (!eventExists) {
+  const event = await Event.findById(eventId).select('_id publicID').lean();
+  if (!event) {
     return null;
   }
 
   const normalizedContent = typeof content === 'string' ? content.trim() : '';
   const comment = new Comment({
-    eventId,
+    eventId: event._id,
+    eventPublicID: event.publicID,
     accountId: accountId || null,
     username: username || 'Anonymous',
     ...(normalizedContent ? { content: normalizedContent } : {}),
@@ -133,12 +150,12 @@ async function createComment({
 
 // Get all comments for a specific event
 async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = '' } = {}) {
-  const eventExists = await Event.exists({ _id: eventId });
-  if (!eventExists) {
+  const event = await Event.findById(eventId).select('_id publicID').lean();
+  if (!event) {
     return null;
   }
 
-  const query = buildVisibleCommentQuery(eventId, cursor);
+  const query = buildVisibleCommentQuery(event, cursor);
   const shouldUseOffset = !cursor && offset > 0;
 
   const [comments, total] = await Promise.all([
@@ -148,7 +165,7 @@ async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = 
       .limit(limit + 1)
       .select('commentId username content imageURL createdAt updatedAt -_id')
       .lean(),
-    Comment.countDocuments({ eventId, status: COMMENT_STATUS.APPROVED }),
+    Comment.countDocuments(query),
   ]);
 
   const hasMore = comments.length > limit;
