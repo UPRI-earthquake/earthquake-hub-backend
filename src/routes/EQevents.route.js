@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const EQEventsController = require('../controllers/EQevents.controller');
 const { cacheSeconds } = require('../middlewares/cache.middleware');
+const {
+  getTokenFromCookie,
+  verifyTokenWithRole,
+} = require('../middlewares/token.middleware');
 
 /**
   * @swagger
@@ -128,10 +132,65 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
 
 /**
   * @swagger
-  * /eq-events/update-online-stations:
-  *   post:
-  *     summary: Update onlineStations for all events based on closest devices
+  * /eq-events/{publicID}:
+  *   get:
+  *     summary: Get one recorded seismic event by public ID
   *     tags: [EQ Events]
+  *     parameters:
+  *       - in: path
+  *         name: publicID
+  *         schema:
+  *           type: string
+  *         description: The SeisComP public ID of the earthquake event
+  *         required: true
+  *         example: "upri-event-001"
+  *     responses:
+  *       200:
+  *         description: EQ event acquired successfully.
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 0
+  *                 message:
+  *                   type: string
+  *                   example: "EQ event acquired successfully"
+  *                 payload:
+  *                   $ref: '#/components/schemas/Event'
+  *       400:
+  *         description: Invalid public ID
+  *       404:
+  *         description: Earthquake event was not found
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: 1
+  *                 message:
+  *                   type: string
+  *                   example: "Earthquake with publicID \"upri-event-001\" was not found."
+  *                 payload:
+  *                   nullable: true
+  *                   example: null
+  *       500:
+  *         description: Internal server error
+  */
+router.get('/:publicID', cacheSeconds(60), EQEventsController.getEQEventByPublicID);
+
+/**
+  * @swagger
+  * /eq-events/restricted/update-online-stations:
+  *   post:
+  *     summary: Admin maintenance endpoint to update onlineStations for all events
+  *     tags: [EQ Events]
+  *     security:
+  *       - cookieAuth: []
   *     responses:
   *       200:
   *         description: Online stations updated successfully.
@@ -147,7 +206,7 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
-  *                   example: "Updated onlineStations: 10 events modified, 10 events matched, using 5 devices."
+  *                   example: "Updated onlineStations: 10 events modified, 10 events matched, 0 events skipped, using 5 devices."
   *                 payload:
   *                   type: object
   *                   properties:
@@ -174,10 +233,194 @@ router.get('/', cacheSeconds(60), EQEventsController.getEQEvents);
   *                   type: string
   *                   example: "Server error occurred"
   */
-router.post('/update-online-stations', EQEventsController.updateOnlineStations);
+router.post(
+  '/restricted/update-online-stations',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  EQEventsController.updateOnlineStations,
+);
 
-router.post('/scrape-additional-information', EQEventsController.addAdditionalInformation);
+/**
+  * @swagger
+  * /eq-events/restricted/scrape-additional-information:
+  *   post:
+  *     summary: Admin maintenance endpoint to run additional catalog enrichment
+  *     tags: [EQ Events]
+  *     security:
+  *       - cookieAuth: []
+  *     responses:
+  *       200:
+  *         description: Additional catalog information enrichment completed.
+  *       403:
+  *         description: Admin session cookie is required.
+  *       409:
+  *         description: Enrichment is already running.
+  *       '500':
+  *         description: Internal server error
+  */
+router.post(
+  '/restricted/scrape-additional-information',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  EQEventsController.addAdditionalInformation,
+);
 
+/**
+ * @swagger
+ * /eq-events/{publicID}/summary:
+ *   patch:
+ *     summary: Set or update a custom event summary override
+ *     tags: [EQ Events]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: publicID
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The SeisComP public ID of the earthquake event
+ *         example: "upri-event-001"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text:
+ *                 type: string
+ *                 description: The custom summary text to save for this event
+ *                 example: "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+ *     responses:
+ *       200:
+ *         description: Event summary updated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 0
+ *                 message:
+ *                   type: string
+ *                   example: "Event summary updated successfully."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     text:
+ *                       type: string
+ *                       example: "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+ *                     editedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T08:30:00.000Z"
+ *                     editedBy:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "admin_user"
+ *       400:
+ *         description: Missing or empty summary text.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 1
+ *                 message:
+ *                   type: string
+ *                   example: "Summary text is required and cannot be empty."
+ *       403:
+ *         description: Admin session cookie is required.
+ *       404:
+ *         description: Earthquake event was not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 1
+ *                 message:
+ *                   type: string
+ *                   example: "Event not found: upri-event-001"
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 1
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to update event summary."
+ *   delete:
+ *     summary: Revert event summary to auto-generated, removing the override
+ *     tags: [EQ Events]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: publicID
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The SeisComP public ID of the earthquake event
+ *         example: "upri-event-001"
+ *     responses:
+ *       200:
+ *         description: Event summary reverted to auto-generated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 0
+ *                 message:
+ *                   type: string
+ *                   example: "Event summary reverted to auto-generated."
+ *       403:
+ *         description: Admin session cookie is required.
+ *       404:
+ *         description: Earthquake event was not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 1
+ *                 message:
+ *                   type: string
+ *                   example: "Event not found: upri-event-001"
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: number
+ *                   example: 1
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to revert event summary."
+ */
+router.patch('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), EQEventsController.patchEventSummary);
+
+router.delete('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), EQEventsController.deleteEventSummary);
 
 
 module.exports = router;

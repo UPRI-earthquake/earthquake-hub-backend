@@ -11,6 +11,24 @@
  *           publicID:
  *             type: string
  *             description: Unique SeisComP public ID (unique index enforced)
+ *           sourceCatalog:
+ *             type: string
+ *             description: Canonical catalog that supplied the primary event record
+ *           sourceServer:
+ *             type: string
+ *             description: Server/domain that supplied the primary event record
+ *           sourceSeiscompVersion:
+ *             type: string
+ *             description: SeisComP version used by the source server, when known
+ *           isLegacyRecord:
+ *             type: boolean
+ *             description: True when this primary event only exists in the migrated legacy catalog
+ *           legacyImportedAt:
+ *             type: string
+ *             format: date-time
+ *           legacySourcePublicID:
+ *             type: string
+ *             description: Original publicID from the legacy catalog when it differs from the canonical record
  *           OT:
  *             type: string
  *             format: date-time
@@ -36,6 +54,26 @@
  *             type: array
  *             items:
  *               type: string
+ *             description: Compatibility display list for station recordings
+ *           candidateStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations active near event detection time
+ *           recordingStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations with FDSN-confirmed waveform data
+ *           recordingAvailabilityStatus:
+ *             type: string
+ *             enum: [pending, partial, verified, unavailable]
+ *             description: FDSN recording availability state
+ *           recordingAvailabilityCheckedAt:
+ *             type: string
+ *             format: date-time
+ *           recordingAvailabilityAttempts:
+ *             type: integer
  *           last_modification:
  *             type: string
  *             format: date-time
@@ -51,13 +89,36 @@
  *             description: >
  *               Number of times the enrichment job has attempted to process
  *               this event. Prevents indefinite retries on persistent failures.
- *           additionalInformation:
+*           summaryOverride:
  *             type: object
+ *             nullable: true
  *             properties:
- *               phivolcs:
- *                 $ref: '#/components/schemas/PhivolcsInfo'
- *               usgs:
- *                 $ref: '#/components/schemas/UsgsInfo'
+ *               text:
+ *                 type: string
+ *                 description: The user-edited summary text, overrides the auto-generated boilerplate.
+ *               editedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Timestamp of when the summary was last edited.
+ *               editedBy:
+ *                 type: string
+ *                 description: The userId or username of the person who edited the summary.
+ *           additionalInformation:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/CatalogSourceInfo'
+ *           pendingCatalogSources:
+ *             type: array
+ *             items:
+ *               type: string
+ *           catalogEnrichmentAttempts:
+ *             type: object
+ *             additionalProperties:
+ *               type: number
+ *           catalogEnrichmentStatus:
+ *             type: object
+ *             additionalProperties:
+ *               type: string
  *           createdAt:
  *             type: string
  *             format: date-time
@@ -65,10 +126,14 @@
  *             type: string
  *             format: date-time
  *
- *       PhivolcsInfo:
+ *       CatalogSourceInfo:
  *         type: object
  *         properties:
  *           source:
+ *             type: string
+ *           sourceLabel:
+ *             type: string
+ *           sourceIconUrl:
  *             type: string
  *           dateTime:
  *             type: string
@@ -76,33 +141,6 @@
  *             type: string
  *           hasFeltIntensity:
  *             type: boolean
- *           time:
- *             type: string
- *             format: date-time
- *           latitude:
- *             type: number
- *           longitude:
- *             type: number
- *           depthKm:
- *             type: number
- *           magnitude:
- *             type: number
- *           location:
- *             type: string
- *           distanceKm:
- *             type: number
- *           timeDifferenceMinutes:
- *             type: number
- *           magnitudeDifference:
- *             type: number
- *           score:
- *             type: number
- *
- *       UsgsInfo:
- *         type: object
- *         properties:
- *           source:
- *             type: string
  *           id:
  *             type: string
  *           title:
@@ -122,25 +160,74 @@
  *             type: number
  *           longitude:
  *             type: number
+ *           depthKm:
+ *             type: number
  *           depth:
  *             type: number
  *           magnitude:
  *             type: number
+ *           location:
+ *             type: string
  *           distanceKm:
  *             type: number
  *           timeDifferenceMinutes:
  *             type: number
  *           magnitudeDifference:
  *             type: number
+ *           score:
+ *             type: number
+ *           matchQuality:
+ *             type: string
+ *             enum: [high, medium, low]
  *           latitudeFloorMatch:
  *             type: boolean
  *           longitudeFloorMatch:
  *             type: boolean
- *           score:
- *             type: number
  */
 
 const mongoose = require('mongoose');
+
+const catalogSourceSchema = new mongoose.Schema(
+  {
+    source:                 { type: String, required: true },
+    sourceLabel:            String,
+    sourceIconUrl:          String,
+    dateTime:               String,
+    detailUrl:              String,
+    hasFeltIntensity:       Boolean,
+    id:                     String,
+    title:                  String,
+    place:                  String,
+    url:                    String,
+    detail:                 String,
+    queryUrl:               String,
+    time:                   Date,
+    latitude:               Number,
+    longitude:              Number,
+    depth:                  Number,
+    depthKm:                Number,
+    magnitude:              Number,
+    location:               String,
+    distanceKm:             Number,
+    timeDifferenceMinutes:  Number,
+    magnitudeDifference:    Number,
+    latitudeFloorMatch:     Boolean,
+    longitudeFloorMatch:    Boolean,
+    score:                  Number,
+    matchQuality:           String,
+    raw:                    mongoose.Schema.Types.Mixed,
+  },
+  { _id: false, strict: false },
+);
+
+const summaryOverrideSchema = new mongoose.Schema(
+  {
+    text:     { type: String, required: true }, // the edited content
+    editedAt: { type: Date,   default: Date.now },
+    editedBy: { type: String },                 // userId/username if you have auth
+  },
+  { _id: false },
+);
 
 // NOTE:
 // - We persist the upstream SeisComP identifier in `publicID` and enforce
@@ -156,61 +243,46 @@ const mongoose = require('mongoose');
 //   job can give up after a configurable number of persistent failures.
 const eventSchema = new mongoose.Schema(
   {
-    publicID:         { type: String, required: true, index: true, unique: true },
-    OT:               Date,
-    latitude_value:   Number,
-    longitude_value:  Number,
-    depth_value:      Number,
-    magnitude_value:  Number,
-    type:             String,   // upstream eventType
-    text:             String,
-    place:            String,
-    onlineStations:   [String],
+    publicID:              { type: String, required: true, index: true, unique: true },
+    sourceCatalog:         { type: String, default: 'upri-current', index: true },
+    sourceServer:          String,
+    sourceSeiscompVersion: String,
+    isLegacyRecord:        { type: Boolean, default: false, index: true },
+    legacyImportedAt:      Date,
+    legacySourcePublicID:  String,
+    OT:                    Date,
+    latitude_value:        Number,
+    longitude_value:       Number,
+    depth_value:           Number,
+    magnitude_value:       Number,
+    type:                  String,   // upstream eventType
+    text:                  String,
+    place:                 String,
+    onlineStations:   { type: [String], default: [] },
+    candidateStations: { type: [String], default: [] },
+    recordingStations: { type: [String], default: [] },
+    recordingAvailabilityStatus: {
+      type: String,
+      enum: ['pending', 'partial', 'verified', 'unavailable'],
+      default: 'pending',
+      index: true,
+    },
+    recordingAvailabilityCheckedAt: Date,
+    recordingAvailabilityAttempts: { type: Number, default: 0 },
     last_modification: Date,
 
-    // ── Enrichment tracking ──────────────────────────────────────────────
+    summaryOverride: { type: summaryOverrideSchema, default: null },
+
+    // Legacy global enrichment tracking. Kept for existing records and old
+    // operational scripts; new scraper logic uses source-level tracking below.
     upForEnrichment:    { type: Boolean, default: true, index: true },
     enrichmentAttempts: { type: Number,  default: 0 },
-    // ────────────────────────────────────────────────────────────────────
 
-    additionalInformation: {
-      phivolcs: {
-        source:                 String,
-        dateTime:               String,
-        detailUrl:              String,
-        hasFeltIntensity:       Boolean,
-        time:                   Date,
-        latitude:               Number,
-        longitude:              Number,
-        depthKm:                Number,
-        magnitude:              Number,
-        location:               String,
-        distanceKm:             Number,
-        timeDifferenceMinutes:  Number,
-        magnitudeDifference:    Number,
-        score:                  Number,
-      },
-      usgs: {
-        source:                 String,
-        id:                     String,
-        title:                  String,
-        place:                  String,
-        url:                    String,
-        detail:                 String,
-        queryUrl:               String,
-        time:                   Date,
-        latitude:               Number,
-        longitude:              Number,
-        depth:                  Number,
-        magnitude:              Number,
-        distanceKm:             Number,
-        timeDifferenceMinutes:  Number,
-        magnitudeDifference:    Number,
-        latitudeFloorMatch:     Boolean,
-        longitudeFloorMatch:    Boolean,
-        score:                  Number,
-      },
-    },
+    additionalInformation:      { type: [catalogSourceSchema], default: [] },
+    pendingCatalogSources:      { type: [String], default: ['phivolcs', 'usgs'], index: true },
+    catalogEnrichmentAttempts:  { type: Map, of: Number, default: {} },
+    catalogEnrichmentStatus:    { type: Map, of: String, default: {} },
+
   },
   {
     timestamps: true, // createdAt/updatedAt for troubleshooting

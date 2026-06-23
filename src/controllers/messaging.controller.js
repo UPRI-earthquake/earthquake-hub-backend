@@ -102,13 +102,7 @@ exports.newEQEvent = async (req, res, next) => {
     const {error, value} = schema.validate(req.body, {abortEarly: false})
     if(error){ throw error }
 
-    // Perform Task A: Notify subscribed clients
-    let returnStrA = await NotificationsService.notifySubscribersEQ(value)
-
-    // Perform Task B: Add EQevent to SSE cache
-    let returnStrB = await MessagingService.eventCache.newEvent("SC_*", req.body, "SC_EVENT");
-
-    // Perform Task C: Add EQevent to MongoDB
+    // Persist first so GeoServe enrichment can cache `place` on the event.
     let returnStrC = await EQEventsService.addEQEvent(
       value.publicID,
       value.OT,
@@ -120,6 +114,12 @@ exports.newEQEvent = async (req, res, next) => {
       value.text,
       value.last_modification
     )
+
+    // Perform Task A: Notify subscribed clients
+    let returnStrA = await NotificationsService.notifySubscribersEQ(value)
+
+    // Perform Task B: Add EQevent to SSE cache
+    let returnStrB = await MessagingService.eventCache.newEvent("SC_*", req.body, "SC_EVENT");
 
     // Respond based on return value
     let message = ""

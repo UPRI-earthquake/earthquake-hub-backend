@@ -78,6 +78,60 @@
           ]
         }
       },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "Auto-generated ObjectId"
+          },
+          "commentId": {
+            "type": "string",
+            "description": "Unique comment identifier (unique index enforced)"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "Reference to the Event ObjectId"
+          },
+          "eventPublicID": {
+            "type": "string",
+            "description": "Stable SeisComP publicID for the referenced event"
+          },
+          "username": {
+            "type": "string",
+            "description": "Account identifier or Anonymous when not provided"
+          },
+          "accountId": {
+            "type": "string",
+            "description": "Authenticated Account ObjectId when the comment is posted by a signed-in citizen"
+          },
+          "content": {
+            "type": "string",
+            "description": "The text content of the comment"
+          },
+          "imageURL": {
+            "type": "string",
+            "description": "Optional URL to an image attached to the comment"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "description": "Moderation status for public display"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Device": {
         "type": "object",
         "properties": {
@@ -141,6 +195,30 @@
             "type": "string",
             "description": "Unique SeisComP public ID (unique index enforced)"
           },
+          "sourceCatalog": {
+            "type": "string",
+            "description": "Canonical catalog that supplied the primary event record"
+          },
+          "sourceServer": {
+            "type": "string",
+            "description": "Server/domain that supplied the primary event record"
+          },
+          "sourceSeiscompVersion": {
+            "type": "string",
+            "description": "SeisComP version used by the source server, when known"
+          },
+          "isLegacyRecord": {
+            "type": "boolean",
+            "description": "True when this primary event only exists in the migrated legacy catalog"
+          },
+          "legacyImportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "legacySourcePublicID": {
+            "type": "string",
+            "description": "Original publicID from the legacy catalog when it differs from the canonical record"
+          },
           "OT": {
             "type": "string",
             "format": "date-time",
@@ -174,7 +252,39 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Compatibility display list for station recordings"
+          },
+          "candidateStations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Stations active near event detection time"
+          },
+          "recordingStations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Stations with FDSN-confirmed waveform data"
+          },
+          "recordingAvailabilityStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "partial",
+              "verified",
+              "unavailable"
+            ],
+            "description": "FDSN recording availability state"
+          },
+          "recordingAvailabilityCheckedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recordingAvailabilityAttempts": {
+            "type": "integer"
           },
           "last_modification": {
             "type": "string",
@@ -189,15 +299,47 @@
             "type": "integer",
             "description": "Number of times the enrichment job has attempted to process this event. Prevents indefinite retries on persistent failures.\n"
           },
-          "additionalInformation": {
+          "summaryOverride": {
             "type": "object",
+            "nullable": true,
             "properties": {
-              "phivolcs": {
-                "$ref": "#/components/schemas/PhivolcsInfo"
+              "text": {
+                "type": "string",
+                "description": "The user-edited summary text, overrides the auto-generated boilerplate."
               },
-              "usgs": {
-                "$ref": "#/components/schemas/UsgsInfo"
+              "editedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp of when the summary was last edited."
+              },
+              "editedBy": {
+                "type": "string",
+                "description": "The userId or username of the person who edited the summary."
               }
+            }
+          },
+          "additionalInformation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogSourceInfo"
+            }
+          },
+          "pendingCatalogSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "catalogEnrichmentAttempts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "catalogEnrichmentStatus": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
             }
           },
           "createdAt": {
@@ -210,10 +352,16 @@
           }
         }
       },
-      "PhivolcsInfo": {
+      "CatalogSourceInfo": {
         "type": "object",
         "properties": {
           "source": {
+            "type": "string"
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "sourceIconUrl": {
             "type": "string"
           },
           "dateTime": {
@@ -224,45 +372,6 @@
           },
           "hasFeltIntensity": {
             "type": "boolean"
-          },
-          "time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "latitude": {
-            "type": "number"
-          },
-          "longitude": {
-            "type": "number"
-          },
-          "depthKm": {
-            "type": "number"
-          },
-          "magnitude": {
-            "type": "number"
-          },
-          "location": {
-            "type": "string"
-          },
-          "distanceKm": {
-            "type": "number"
-          },
-          "timeDifferenceMinutes": {
-            "type": "number"
-          },
-          "magnitudeDifference": {
-            "type": "number"
-          },
-          "score": {
-            "type": "number"
-          }
-        }
-      },
-      "UsgsInfo": {
-        "type": "object",
-        "properties": {
-          "source": {
-            "type": "string"
           },
           "id": {
             "type": "string"
@@ -292,11 +401,17 @@
           "longitude": {
             "type": "number"
           },
+          "depthKm": {
+            "type": "number"
+          },
           "depth": {
             "type": "number"
           },
           "magnitude": {
             "type": "number"
+          },
+          "location": {
+            "type": "string"
           },
           "distanceKm": {
             "type": "number"
@@ -307,14 +422,22 @@
           "magnitudeDifference": {
             "type": "number"
           },
+          "score": {
+            "type": "number"
+          },
+          "matchQuality": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
           "latitudeFloorMatch": {
             "type": "boolean"
           },
           "longitudeFloorMatch": {
             "type": "boolean"
-          },
-          "score": {
-            "type": "number"
           }
         }
       }
@@ -1402,6 +1525,246 @@
         }
       }
     },
+    "/comments": {
+      "post": {
+        "summary": "Create a new comment on an event",
+        "tags": [
+          "Comments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eventId"
+                ],
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "description": "The ID of the event being commented on"
+                  },
+                  "anonymous": {
+                    "type": "boolean",
+                    "description": "Whether to hide the authenticated citizen username. Defaults to true."
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Optional text content. A report must include text or an uploaded image."
+                  },
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Optional uploaded report image."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Comment created successfully"
+                    },
+                    "payload": {
+                      "$ref": "#/components/schemas/Comment"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get all comments for a specific event",
+        "tags": [
+          "Comments"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "eventId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The ID of the event to retrieve comments for",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Maximum number of comments to return"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Number of comments to skip before returning results"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor returned by the previous page. When supplied, cursor pagination is used instead of offset."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comments retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "The status code for the response.",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "The message associated with the response.",
+                      "example": "Comments retrieved successfully"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "description": "An array of comments for the specified event.",
+                      "items": {
+                        "$ref": "#/components/schemas/Comment"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event not found"
+          }
+        }
+      }
+    },
+    "/comments/{commentId}/status": {
+      "patch": {
+        "summary": "Update comment moderation status (admin only)",
+        "tags": [
+          "Comments"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The UUID identifier of the comment to moderate"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "rejected"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Comment status updated successfully"
+          },
+          "403": {
+            "description": "Forbidden - admin authentication required"
+          },
+          "404": {
+            "description": "Comment not found"
+          }
+        }
+      }
+    },
+    "/comments/{commentId}": {
+      "delete": {
+        "summary": "Delete a comment (admin only)",
+        "tags": [
+          "Comments"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "commentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The UUID identifier of the comment to delete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comment deleted successfully"
+          },
+          "403": {
+            "description": "Forbidden - admin authentication required"
+          },
+          "404": {
+            "description": "Comment not found"
+          }
+        }
+      }
+    },
     "/device/link": {
       "post": {
         "summary": "Creates a device record under device list of a user",
@@ -2267,11 +2630,91 @@
         }
       }
     },
-    "/eq-events/update-online-stations": {
-      "post": {
-        "summary": "Update onlineStations for all events based on closest devices",
+    "/eq-events/{publicID}": {
+      "get": {
+        "summary": "Get one recorded seismic event by public ID",
         "tags": [
           "EQ Events"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publicID",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The SeisComP public ID of the earthquake event",
+            "required": true,
+            "example": "upri-event-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "EQ event acquired successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "EQ event acquired successfully"
+                    },
+                    "payload": {
+                      "$ref": "#/components/schemas/Event"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid public ID"
+          },
+          "404": {
+            "description": "Earthquake event was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Earthquake with publicID \"upri-event-001\" was not found."
+                    },
+                    "payload": {
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/eq-events/restricted/update-online-stations": {
+      "post": {
+        "summary": "Admin maintenance endpoint to update onlineStations for all events",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
         ],
         "responses": {
           "200": {
@@ -2289,7 +2732,7 @@
                     "message": {
                       "type": "string",
                       "description": "The message associated with the response.",
-                      "example": "Updated onlineStations: 10 events modified, 10 events matched, using 5 devices."
+                      "example": "Updated onlineStations: 10 events modified, 10 events matched, 0 events skipped, using 5 devices."
                     },
                     "payload": {
                       "type": "object",
@@ -2327,6 +2770,270 @@
                     "message": {
                       "type": "string",
                       "example": "Server error occurred"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/eq-events/restricted/scrape-additional-information": {
+      "post": {
+        "summary": "Admin maintenance endpoint to run additional catalog enrichment",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Additional catalog information enrichment completed."
+          },
+          "403": {
+            "description": "Admin session cookie is required."
+          },
+          "409": {
+            "description": "Enrichment is already running."
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/eq-events/{publicID}/summary": {
+      "patch": {
+        "summary": "Set or update a custom event summary override",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publicID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The SeisComP public ID of the earthquake event",
+            "example": "upri-event-001"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "The custom summary text to save for this event",
+                    "example": "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event summary updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event summary updated successfully."
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "example": "A magnitude 4.2 earthquake struck 40km north of Manila at a depth of 10km."
+                        },
+                        "editedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2024-01-15T08:30:00.000Z"
+                        },
+                        "editedBy": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "admin_user"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or empty summary text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Summary text is required and cannot be empty."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin session cookie is required."
+          },
+          "404": {
+            "description": "Earthquake event was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event not found: upri-event-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Failed to update event summary."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revert event summary to auto-generated, removing the override",
+        "tags": [
+          "EQ Events"
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "publicID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The SeisComP public ID of the earthquake event",
+            "example": "upri-event-001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event summary reverted to auto-generated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 0
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event summary reverted to auto-generated."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin session cookie is required."
+          },
+          "404": {
+            "description": "Earthquake event was not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Event not found: upri-event-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Failed to revert event summary."
                     }
                   }
                 }
@@ -2869,5 +3576,10 @@
       }
     }
   },
-  "tags": []
+  "tags": [
+    {
+      "name": "Comments",
+      "description": "API for managing comments on events"
+    }
+  ]
 }
