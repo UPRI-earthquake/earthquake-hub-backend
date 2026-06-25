@@ -52,4 +52,17 @@ describe('Comment model', () => {
 
     await expect(comment.validate()).rejects.toThrow('A report must include text or an image.');
   });
+
+  it('rejects unsupported private issue report reasons', async () => {
+    const comment = new Comment({
+      eventId: '64a7c2f3b8e4f9a1c2d3e4f5',
+      content: 'Felt light shaking.',
+      issueReports: [{
+        accountId: '64a7c2f3b8e4f9a1c2d3e4f6',
+        reason: 'not_helpful',
+      }],
+    });
+
+    await expect(comment.validate()).rejects.toThrow('not_helpful');
+  });
 });

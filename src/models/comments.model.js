@@ -45,9 +45,10 @@ const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 
 const COMMENT_STATUSES = ['pending', 'approved', 'rejected'];
+const COMMENT_ISSUE_REASONS = ['duplicate', 'unclear', 'wrong_location', 'not_related', 'inappropriate'];
 
 // Comments model: Simple display-only comments on events.
-// No replies or likes yet.
+// Helpful marks are public counts; issue reports are private moderation signals.
 const commentSchema = new mongoose.Schema(
   {
     commentId: {
@@ -107,6 +108,26 @@ const commentSchema = new mongoose.Schema(
     moderatedAt: {
       type: Date,
     },
+    helpfulAccountIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Account',
+    }],
+    issueReports: [{
+      accountId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Account',
+        required: true,
+      },
+      reason: {
+        type: String,
+        enum: COMMENT_ISSUE_REASONS,
+        required: true,
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
+    }],
   },
   {
     timestamps: true,  // Adds createdAt and updatedAt automatically
@@ -118,6 +139,8 @@ commentSchema.index({ eventId: 1, status: 1, createdAt: -1, commentId: -1 });  /
 commentSchema.index({ eventPublicID: 1, status: 1, createdAt: -1, commentId: -1 });
 commentSchema.index({ username: 1 });
 commentSchema.index({ accountId: 1 });
+commentSchema.index({ helpfulAccountIds: 1 });
+commentSchema.index({ 'issueReports.accountId': 1 });
 
 commentSchema.pre('validate', function requireTextOrImage(next) {
   const hasContent = typeof this.content === 'string' && this.content.trim().length > 0;
@@ -134,4 +157,7 @@ commentSchema.pre('validate', function requireTextOrImage(next) {
   return next();
 });
 
-module.exports = mongoose.model('Comment', commentSchema);
+const Comment = mongoose.model('Comment', commentSchema);
+Comment.COMMENT_ISSUE_REASONS = COMMENT_ISSUE_REASONS;
+
+module.exports = Comment;

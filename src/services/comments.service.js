@@ -6,7 +6,15 @@ const COMMENT_STATUS = Object.freeze({
   APPROVED: 'approved',
   REJECTED: 'rejected',
 });
+const COMMENT_ISSUE_REASON = Object.freeze({
+  DUPLICATE: 'duplicate',
+  UNCLEAR: 'unclear',
+  WRONG_LOCATION: 'wrong_location',
+  NOT_RELATED: 'not_related',
+  INAPPROPRIATE: 'inappropriate',
+});
 const COMMENT_STATUS_VALUES = Object.values(COMMENT_STATUS);
+const COMMENT_ISSUE_REASON_VALUES = Object.values(COMMENT_ISSUE_REASON);
 const DEFAULT_COMMENT_STATUS = COMMENT_STATUS.APPROVED;
 
 function normalizeCommentStatus(status, fallback = DEFAULT_COMMENT_STATUS) {
@@ -17,17 +25,45 @@ function getDefaultCommentStatus() {
   return normalizeCommentStatus(process.env.COMMENTS_DEFAULT_STATUS, DEFAULT_COMMENT_STATUS);
 }
 
-function toPublicComment(comment) {
+function normalizeAccountId(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value.toString === 'function') return value.toString();
+  return String(value);
+}
+
+function getHelpfulAccountIds(source) {
+  return Array.isArray(source?.helpfulAccountIds) ? source.helpfulAccountIds : [];
+}
+
+function buildVisibleCommentByIdQuery(commentId) {
+  return {
+    commentId,
+    $or: [
+      { status: COMMENT_STATUS.APPROVED },
+      { status: { $exists: false } },
+    ],
+  };
+}
+
+function toPublicComment(comment, { viewerAccountId } = {}) {
   if (!comment) return null;
   const source = typeof comment.toObject === 'function'
     ? comment.toObject()
     : comment;
+  const helpfulAccountIds = getHelpfulAccountIds(source);
+  const normalizedViewerAccountId = normalizeAccountId(viewerAccountId);
 
   return {
     commentId: source.commentId,
     username: source.username || 'Anonymous',
     ...(source.content ? { content: source.content } : {}),
     ...(source.imageURL ? { imageURL: source.imageURL } : {}),
+    helpfulCount: helpfulAccountIds.length,
+    viewerHasMarkedHelpful: Boolean(
+      normalizedViewerAccountId &&
+      helpfulAccountIds.some((accountId) => normalizeAccountId(accountId) === normalizedViewerAccountId)
+    ),
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
   };
@@ -149,7 +185,7 @@ async function createComment({
 }
 
 // Get all comments for a specific event
-async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = '' } = {}) {
+async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = '', viewerAccountId = null } = {}) {
   const event = await Event.findById(eventId).select('_id publicID').lean();
   if (!event) {
     return null;
@@ -163,7 +199,7 @@ async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = 
       .sort({ createdAt: -1, commentId: -1 })
       .skip(shouldUseOffset ? offset : 0)
       .limit(limit + 1)
-      .select('commentId username content imageURL createdAt updatedAt -_id')
+      .select('commentId username content imageURL helpfulAccountIds createdAt updatedAt -_id')
       .lean(),
     Comment.countDocuments(query),
   ]);
@@ -172,7 +208,7 @@ async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = 
   const visibleComments = hasMore ? comments.slice(0, limit) : comments;
 
   return {
-    comments: visibleComments.map(toPublicComment),
+    comments: visibleComments.map((comment) => toPublicComment(comment, { viewerAccountId })),
     total,
     limit,
     offset: shouldUseOffset ? offset : 0,
@@ -207,12 +243,81 @@ async function updateCommentStatus(commentId, status, moderatedBy) {
   return toAdminComment(updatedComment);
 }
 
+async function markCommentHelpful(commentId, accountId) {
+  if (!accountId) {
+    return { unauthenticated: true };
+  }
+
+  const updatedComment = await Comment.findOneAndUpdate(
+    buildVisibleCommentByIdQuery(commentId),
+    { $addToSet: { helpfulAccountIds: accountId } },
+    { new: true },
+  ).select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
+
+  return toPublicComment(updatedComment, { viewerAccountId: accountId });
+}
+
+async function unmarkCommentHelpful(commentId, accountId) {
+  if (!accountId) {
+    return { unauthenticated: true };
+  }
+
+  const updatedComment = await Comment.findOneAndUpdate(
+    buildVisibleCommentByIdQuery(commentId),
+    { $pull: { helpfulAccountIds: accountId } },
+    { new: true },
+  ).select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
+
+  return toPublicComment(updatedComment, { viewerAccountId: accountId });
+}
+
+async function reportCommentIssue(commentId, { accountId, reason }) {
+  if (!accountId) {
+    return { unauthenticated: true };
+  }
+
+  if (!COMMENT_ISSUE_REASON_VALUES.includes(reason)) {
+    return { invalidReason: true };
+  }
+
+  const comment = await Comment.findOne(buildVisibleCommentByIdQuery(commentId));
+  if (!comment) {
+    return null;
+  }
+
+  const now = new Date();
+  if (!Array.isArray(comment.issueReports)) {
+    comment.issueReports = [];
+  }
+  const existingIssue = comment.issueReports.find(
+    (issue) => normalizeAccountId(issue.accountId) === normalizeAccountId(accountId)
+  );
+
+  if (existingIssue) {
+    existingIssue.reason = reason;
+    existingIssue.createdAt = now;
+  } else {
+    comment.issueReports.push({ accountId, reason, createdAt: now });
+  }
+
+  await comment.save();
+  return {
+    commentId: comment.commentId,
+    issueReported: true,
+    reason,
+  };
+}
+
 module.exports = {
   COMMENT_STATUS,
+  COMMENT_ISSUE_REASON,
   createComment,
   getCommentsByEventId,
   deleteComment,
   updateCommentStatus,
+  markCommentHelpful,
+  unmarkCommentHelpful,
+  reportCommentIssue,
   decodePaginationCursor,
   encodePaginationCursor,
   toPublicComment,

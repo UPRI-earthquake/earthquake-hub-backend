@@ -3,6 +3,16 @@ const CommentsService = require("../services/comments.service");
 const { responseCodes } = require("./responseCodes");
 const { formatErrorMessage } = require("./helpers");
 
+function ensureAuthenticatedCitizen(req, res) {
+  if (req.accountId && req.username) return true;
+
+  res.status(401).json({
+    status: responseCodes.GENERIC_ERROR,
+    message: "Sign in to interact with reports.",
+  });
+  return false;
+}
+
 // Create a new comment for an event
 exports.createComment = async (req, res, next) => {
   // Define validation schema
@@ -91,7 +101,7 @@ exports.getCommentsByEventId = async (req, res, next) => {
       "number.integer": "Offset must be an integer.",
       "number.min": "Offset must be at least 0.",
     }),
-    cursor: Joi.string().trim().allow('').optional().messages({
+    cursor: Joi.string().trim().allow('').default('').optional().messages({
       "string.base": "Cursor must be a string.",
     }),
   });
@@ -108,6 +118,7 @@ exports.getCommentsByEventId = async (req, res, next) => {
       limit: value.limit,
       offset: value.offset,
       cursor: value.cursor,
+      viewerAccountId: req.accountId || null,
     });
     if (!commentsResult) {
       res.status(404).json({
@@ -220,6 +231,134 @@ exports.updateCommentStatus = async (req, res, next) => {
     });
   } catch (err) {
     console.trace(`Updating comment status unsuccessful \n ${err}`);
+    next(err);
+  }
+}
+
+exports.markCommentHelpful = async (req, res, next) => {
+  const schema = Joi.object({
+    commentId: Joi.string().required().messages({
+      "any.required": "Comment ID is required.",
+      "string.base": "Comment ID must be a string.",
+    }),
+  });
+
+  try {
+    if (!ensureAuthenticatedCitizen(req, res)) return;
+
+    const { error, value } = schema.validate(req.params);
+    if (error) {
+      throw error;
+    }
+
+    const updatedComment = await CommentsService.markCommentHelpful(value.commentId, req.accountId);
+    if (!updatedComment) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Comment not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: "Report marked helpful",
+      payload: updatedComment,
+    });
+  } catch (err) {
+    console.trace(`Marking comment helpful unsuccessful \n ${err}`);
+    next(err);
+  }
+}
+
+exports.unmarkCommentHelpful = async (req, res, next) => {
+  const schema = Joi.object({
+    commentId: Joi.string().required().messages({
+      "any.required": "Comment ID is required.",
+      "string.base": "Comment ID must be a string.",
+    }),
+  });
+
+  try {
+    if (!ensureAuthenticatedCitizen(req, res)) return;
+
+    const { error, value } = schema.validate(req.params);
+    if (error) {
+      throw error;
+    }
+
+    const updatedComment = await CommentsService.unmarkCommentHelpful(value.commentId, req.accountId);
+    if (!updatedComment) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Comment not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: "Report helpful mark removed",
+      payload: updatedComment,
+    });
+  } catch (err) {
+    console.trace(`Removing comment helpful mark unsuccessful \n ${err}`);
+    next(err);
+  }
+}
+
+exports.reportCommentIssue = async (req, res, next) => {
+  const schema = Joi.object({
+    commentId: Joi.string().required().messages({
+      "any.required": "Comment ID is required.",
+      "string.base": "Comment ID must be a string.",
+    }),
+    reason: Joi.string().valid(...Object.values(CommentsService.COMMENT_ISSUE_REASON)).required().messages({
+      "any.only": "Report issue reason is invalid.",
+      "any.required": "Report issue reason is required.",
+      "string.base": "Report issue reason must be a string.",
+    }),
+  });
+
+  try {
+    if (!ensureAuthenticatedCitizen(req, res)) return;
+
+    const { error, value } = schema.validate({
+      ...req.params,
+      ...req.body,
+    }, { stripUnknown: true });
+    if (error) {
+      throw error;
+    }
+
+    const issueResult = await CommentsService.reportCommentIssue(value.commentId, {
+      accountId: req.accountId,
+      reason: value.reason,
+    });
+
+    if (!issueResult) {
+      res.status(404).json({
+        status: responseCodes.GENERIC_ERROR,
+        message: "Comment not found",
+      });
+      return;
+    }
+
+    if (issueResult.invalidReason) {
+      res.status(400).json({
+        status: responseCodes.VALIDATION_ERROR,
+        message: "Report issue reason is invalid.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: "Report issue submitted",
+      payload: issueResult,
+    });
+  } catch (err) {
+    console.trace(`Reporting comment issue unsuccessful \n ${err}`);
     next(err);
   }
 }

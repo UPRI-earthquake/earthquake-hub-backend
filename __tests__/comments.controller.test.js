@@ -8,6 +8,13 @@ CommentsService.COMMENT_STATUS = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
 };
+CommentsService.COMMENT_ISSUE_REASON = {
+  DUPLICATE: 'duplicate',
+  UNCLEAR: 'unclear',
+  WRONG_LOCATION: 'wrong_location',
+  NOT_RELATED: 'not_related',
+  INAPPROPRIATE: 'inappropriate',
+};
 
 function createMockResponse() {
   const res = {};
@@ -41,7 +48,7 @@ describe('comments.controller getCommentsByEventId', () => {
 
     expect(CommentsService.getCommentsByEventId).toHaveBeenCalledWith(
       '69c217dc9728d1ee7fcb8ea5',
-      { limit: 20, offset: 0 },
+      { limit: 20, offset: 0, cursor: '', viewerAccountId: null },
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -82,6 +89,131 @@ describe('comments.controller getCommentsByEventId', () => {
       }),
     );
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('comments.controller report interactions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('requires sign in before marking a report helpful', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    await CommentsController.markCommentHelpful(req, res, next);
+
+    expect(CommentsService.markCommentHelpful).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Sign in to interact with reports.',
+    }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('marks a report helpful for an authenticated citizen', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+    CommentsService.markCommentHelpful.mockResolvedValue({
+      commentId: 'report-1',
+      helpfulCount: 1,
+      viewerHasMarkedHelpful: true,
+    });
+
+    await CommentsController.markCommentHelpful(req, res, next);
+
+    expect(CommentsService.markCommentHelpful).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Report marked helpful',
+      payload: expect.objectContaining({
+        helpfulCount: 1,
+        viewerHasMarkedHelpful: true,
+      }),
+    }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('removes a helpful mark for an authenticated citizen', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+    CommentsService.unmarkCommentHelpful.mockResolvedValue({
+      commentId: 'report-1',
+      helpfulCount: 0,
+      viewerHasMarkedHelpful: false,
+    });
+
+    await CommentsController.unmarkCommentHelpful(req, res, next);
+
+    expect(CommentsService.unmarkCommentHelpful).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Report helpful mark removed',
+    }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('submits a private issue report for an authenticated citizen', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      body: { reason: 'not_related' },
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+    CommentsService.reportCommentIssue.mockResolvedValue({
+      commentId: 'report-1',
+      issueReported: true,
+      reason: 'not_related',
+    });
+
+    await CommentsController.reportCommentIssue(req, res, next);
+
+    expect(CommentsService.reportCommentIssue).toHaveBeenCalledWith('report-1', {
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'not_related',
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Report issue submitted',
+      payload: expect.objectContaining({
+        issueReported: true,
+        reason: 'not_related',
+      }),
+    }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid issue reasons before calling the service', async () => {
+    const req = {
+      params: { commentId: 'report-1' },
+      body: { reason: 'not_helpful' },
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+    };
+    const res = createMockResponse();
+    const next = jest.fn();
+
+    await CommentsController.reportCommentIssue(req, res, next);
+
+    expect(CommentsService.reportCommentIssue).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'ValidationError',
+    }));
   });
 });
 

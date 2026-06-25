@@ -18,6 +18,7 @@ jest.mock('../src/models/comments.model', () => {
   MockComment.countDocuments = jest.fn();
   MockComment.findOneAndDelete = jest.fn();
   MockComment.findOneAndUpdate = jest.fn();
+  MockComment.findOne = jest.fn();
 
   return MockComment;
 });
@@ -43,6 +44,12 @@ function createFindChain(result) {
     lean: jest.fn(() => Promise.resolve(result)),
   };
   return chain;
+}
+
+function createSelectChain(result) {
+  return {
+    select: jest.fn(() => Promise.resolve(result)),
+  };
 }
 
 describe('comments.service', () => {
@@ -75,6 +82,7 @@ describe('comments.service', () => {
         username: 'citizen-user',
         content: 'Felt light shaking.',
         imageURL: '/uploads/report.jpg',
+        helpfulAccountIds: [],
         status: 'approved',
         createdAt,
         updatedAt,
@@ -96,6 +104,8 @@ describe('comments.service', () => {
       username: 'citizen-user',
       content: 'Felt light shaking.',
       imageURL: '/uploads/report.jpg',
+      helpfulCount: 0,
+      viewerHasMarkedHelpful: false,
       status: 'approved',
       createdAt,
       updatedAt,
@@ -121,6 +131,7 @@ describe('comments.service', () => {
         accountId: '69c217dc9728d1ee7fcb8ea5',
         username: 'Anonymous',
         content: 'Felt shaking.',
+        helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
         status: 'approved',
         createdAt,
         updatedAt,
@@ -131,6 +142,7 @@ describe('comments.service', () => {
     const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', {
       limit: 20,
       offset: 0,
+      viewerAccountId: '69c217dc9728d1ee7fcb8ea5',
     });
 
     expect(result.comments).toEqual([
@@ -138,6 +150,8 @@ describe('comments.service', () => {
         commentId: 'report-1',
         username: 'Anonymous',
         content: 'Felt shaking.',
+        helpfulCount: 1,
+        viewerHasMarkedHelpful: true,
         createdAt,
         updatedAt,
       },
@@ -232,5 +246,139 @@ describe('comments.service', () => {
         moderatedBy: 'admin-user',
       }),
     );
+  });
+
+  test('markCommentHelpful adds the viewer account once and returns public counts', async () => {
+    const updatedComment = {
+      commentId: 'report-1',
+      username: 'Anonymous',
+      content: 'Felt shaking.',
+      helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
+      createdAt: new Date('2026-06-17T04:00:00.000Z'),
+      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
+    };
+    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(updatedComment));
+
+    const result = await CommentsService.markCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
+
+    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        commentId: 'report-1',
+        $or: [
+          { status: 'approved' },
+          { status: { $exists: false } },
+        ],
+      },
+      { $addToSet: { helpfulAccountIds: '69c217dc9728d1ee7fcb8ea5' } },
+      { new: true },
+    );
+    expect(result).toEqual(expect.objectContaining({
+      commentId: 'report-1',
+      helpfulCount: 1,
+      viewerHasMarkedHelpful: true,
+    }));
+  });
+
+  test('unmarkCommentHelpful removes the viewer account and returns public counts', async () => {
+    const updatedComment = {
+      commentId: 'report-1',
+      username: 'Anonymous',
+      content: 'Felt shaking.',
+      helpfulAccountIds: [],
+      createdAt: new Date('2026-06-17T04:00:00.000Z'),
+      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
+    };
+    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(updatedComment));
+
+    const result = await CommentsService.unmarkCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
+
+    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        commentId: 'report-1',
+        $or: [
+          { status: 'approved' },
+          { status: { $exists: false } },
+        ],
+      },
+      { $pull: { helpfulAccountIds: '69c217dc9728d1ee7fcb8ea5' } },
+      { new: true },
+    );
+    expect(result).toEqual(expect.objectContaining({
+      commentId: 'report-1',
+      helpfulCount: 0,
+      viewerHasMarkedHelpful: false,
+    }));
+  });
+
+  test('reportCommentIssue stores one private issue report per account', async () => {
+    const comment = {
+      commentId: 'report-1',
+      issueReports: [],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    Comment.findOne.mockResolvedValue(comment);
+
+    const result = await CommentsService.reportCommentIssue('report-1', {
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'not_related',
+    });
+
+    expect(Comment.findOne).toHaveBeenCalledWith({
+      commentId: 'report-1',
+      $or: [
+        { status: 'approved' },
+        { status: { $exists: false } },
+      ],
+    });
+    expect(comment.issueReports).toHaveLength(1);
+    expect(comment.issueReports[0]).toEqual(expect.objectContaining({
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'not_related',
+      createdAt: expect.any(Date),
+    }));
+    expect(comment.save).toHaveBeenCalled();
+    expect(result).toEqual({
+      commentId: 'report-1',
+      issueReported: true,
+      reason: 'not_related',
+    });
+  });
+
+  test('reportCommentIssue updates an existing issue from the same account', async () => {
+    const existingIssue = {
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'unclear',
+      createdAt: new Date('2026-06-17T01:00:00.000Z'),
+    };
+    const comment = {
+      commentId: 'report-1',
+      issueReports: [existingIssue],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    Comment.findOne.mockResolvedValue(comment);
+
+    const result = await CommentsService.reportCommentIssue('report-1', {
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'duplicate',
+    });
+
+    expect(comment.issueReports).toHaveLength(1);
+    expect(existingIssue.reason).toBe('duplicate');
+    expect(existingIssue.createdAt).toEqual(expect.any(Date));
+    expect(result).toEqual(expect.objectContaining({
+      commentId: 'report-1',
+      issueReported: true,
+      reason: 'duplicate',
+    }));
+  });
+
+  test('reportCommentIssue rejects unsupported reasons', async () => {
+    const result = await CommentsService.reportCommentIssue('report-1', {
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      reason: 'downvote',
+    });
+
+    expect(result).toEqual({ invalidReason: true });
+    expect(Comment.findOne).not.toHaveBeenCalled();
   });
 });

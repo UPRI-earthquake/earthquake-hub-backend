@@ -242,7 +242,10 @@ function uploadReportImage(req, res, next) {
  */
 
 router.post('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), limitReportPosts, uploadReportImage, CommentsController.createComment);
-router.get('/', CommentsController.getCommentsByEventId);
+router.get('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.getCommentsByEventId);
+router.put('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.markCommentHelpful);
+router.delete('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.unmarkCommentHelpful);
+router.post('/:commentId/issues', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.reportCommentIssue);
 router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.updateCommentStatus);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
 module.exports = router;
