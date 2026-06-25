@@ -23,8 +23,15 @@ jest.mock('../src/models/comments.model', () => {
   return MockComment;
 });
 
+jest.mock('../src/services/contributions.service', () => ({
+  recordReportPosted: jest.fn().mockResolvedValue([]),
+  recordHelpfulMarked: jest.fn().mockResolvedValue([]),
+  recordIssueSubmitted: jest.fn().mockResolvedValue(null),
+}));
+
 const Comment = require('../src/models/comments.model');
 const CommentsService = require('../src/services/comments.service');
+const ContributionsService = require('../src/services/contributions.service');
 
 function mockEventLookup(event) {
   const chain = {
@@ -117,6 +124,11 @@ describe('comments.service', () => {
       eventId: '69c217dc9728d1ee7fcb8ea6',
       eventPublicID: 'gfz2025tean',
     }));
+    expect(ContributionsService.recordReportPosted).toHaveBeenCalledWith({
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      comment: mockSaveResult,
+      hasImage: true,
+    });
   });
 
   test('getCommentsByEventId returns public comments only', async () => {
@@ -264,6 +276,7 @@ describe('comments.service', () => {
     expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
       {
         commentId: 'report-1',
+        helpfulAccountIds: { $ne: '69c217dc9728d1ee7fcb8ea5' },
         $or: [
           { status: 'approved' },
           { status: { $exists: false } },
@@ -277,6 +290,32 @@ describe('comments.service', () => {
       helpfulCount: 1,
       viewerHasMarkedHelpful: true,
     }));
+    expect(ContributionsService.recordHelpfulMarked).toHaveBeenCalledWith({
+      actorAccountId: '69c217dc9728d1ee7fcb8ea5',
+      comment: updatedComment,
+    });
+  });
+
+  test('markCommentHelpful returns existing helpful state without scoring duplicates', async () => {
+    const existingComment = {
+      commentId: 'report-1',
+      username: 'Anonymous',
+      content: 'Felt shaking.',
+      helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
+      createdAt: new Date('2026-06-17T04:00:00.000Z'),
+      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
+    };
+    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(null));
+    Comment.findOne.mockReturnValue(createSelectChain(existingComment));
+
+    const result = await CommentsService.markCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
+
+    expect(result).toEqual(expect.objectContaining({
+      commentId: 'report-1',
+      helpfulCount: 1,
+      viewerHasMarkedHelpful: true,
+    }));
+    expect(ContributionsService.recordHelpfulMarked).not.toHaveBeenCalled();
   });
 
   test('unmarkCommentHelpful removes the viewer account and returns public counts', async () => {
@@ -340,6 +379,11 @@ describe('comments.service', () => {
     expect(result).toEqual({
       commentId: 'report-1',
       issueReported: true,
+      reason: 'not_related',
+    });
+    expect(ContributionsService.recordIssueSubmitted).toHaveBeenCalledWith({
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      comment,
       reason: 'not_related',
     });
   });

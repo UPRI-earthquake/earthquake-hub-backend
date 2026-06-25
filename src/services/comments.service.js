@@ -1,5 +1,6 @@
 const Comment = require('../models/comments.model');
 const Event = require('../models/events.model');
+const ContributionsService = require('./contributions.service');
 
 const COMMENT_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -177,6 +178,11 @@ async function createComment({
     status: getDefaultCommentStatus(),
   });
   const savedComment = await comment.save();
+  await ContributionsService.recordReportPosted({
+    accountId,
+    comment: savedComment,
+    hasImage: Boolean(imageURL),
+  });
   const publicComment = toPublicComment(savedComment);
   return {
     ...publicComment,
@@ -249,12 +255,26 @@ async function markCommentHelpful(commentId, accountId) {
   }
 
   const updatedComment = await Comment.findOneAndUpdate(
-    buildVisibleCommentByIdQuery(commentId),
+    {
+      ...buildVisibleCommentByIdQuery(commentId),
+      helpfulAccountIds: { $ne: accountId },
+    },
     { $addToSet: { helpfulAccountIds: accountId } },
     { new: true },
-  ).select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
+  ).select('commentId username content imageURL accountId eventId eventPublicID helpfulAccountIds createdAt updatedAt');
 
-  return toPublicComment(updatedComment, { viewerAccountId: accountId });
+  if (updatedComment) {
+    await ContributionsService.recordHelpfulMarked({
+      actorAccountId: accountId,
+      comment: updatedComment,
+    });
+    return toPublicComment(updatedComment, { viewerAccountId: accountId });
+  }
+
+  const existingComment = await Comment.findOne(buildVisibleCommentByIdQuery(commentId))
+    .select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
+
+  return toPublicComment(existingComment, { viewerAccountId: accountId });
 }
 
 async function unmarkCommentHelpful(commentId, accountId) {
@@ -301,6 +321,11 @@ async function reportCommentIssue(commentId, { accountId, reason }) {
   }
 
   await comment.save();
+  await ContributionsService.recordIssueSubmitted({
+    accountId,
+    comment,
+    reason,
+  });
   return {
     commentId: comment.commentId,
     issueReported: true,
