@@ -4,7 +4,7 @@ const EQEvents = require('../models/events.model');
 const Device = require('../models/device.model');
 const puppeteer = require('puppeteer-core');
 
-const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.science.upd.edu.ph/fdsnws/dataselect/1/query';
+const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.up.edu.ph/fdsnws/dataselect/1/query';
 const FDSN_NETWORK = process.env.FDSNWS_NETWORK || 'AM';
 const FDSN_LOCATION = process.env.FDSNWS_LOCATION || '00';
 const FDSN_CHANNEL = process.env.FDSNWS_CHANNEL || 'EHZ';

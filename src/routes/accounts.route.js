@@ -719,7 +719,7 @@ router.route('/').delete(
   *                         example: "UP-RingServer"
   *                       ringserverUrl:
   *                         type: string
-  *                         example: "earthquake.science.upd.edu.ph"
+  *                         example: "earthquake.up.edu.ph"
   *                       ringserverPort:
   *                         type: Number
   *                         example: 16000

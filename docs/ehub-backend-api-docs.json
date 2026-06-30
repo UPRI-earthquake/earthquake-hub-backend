@@ -1369,7 +1369,7 @@
                           },
                           "ringserverUrl": {
                             "type": "string",
-                            "example": "earthquake.science.upd.edu.ph"
+                            "example": "earthquake.up.edu.ph"
                           },
                           "ringserverPort": {
                             "type": "Number",

@@ -97,7 +97,7 @@ describe('Device remote actions routes', () => {
       status: 'active',
       listener: 'up',
       servers: [
-        { institutionName: 'UP-Diliman', url: 'earthquake.science.upd.edu.ph:16000', status: 'Streaming' },
+        { institutionName: 'UP-Diliman', url: 'earthquake.up.edu.ph:16000', status: 'Streaming' },
       ],
     });
 
@@ -176,7 +176,7 @@ describe('Device remote actions routes', () => {
         action: 'ADD_SERVER',
         payload: {
           institutionName: 'UP-Diliman',
-          url: 'earthquake.science.upd.edu.ph:16000',
+          url: 'earthquake.up.edu.ph:16000',
         },
       });
 

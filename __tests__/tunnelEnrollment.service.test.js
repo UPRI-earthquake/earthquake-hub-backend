@@ -47,7 +47,7 @@ describe('tunnelEnrollment.service', () => {
     process.env.TUNNEL_BASTION_HOST = 'ops.example.org';
     process.env.TUNNEL_BASTION_PORT = '443';
     process.env.TUNNEL_BASTION_HOST_KEY = 'ops.example.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockHostKey';
-    process.env.TUNNEL_WSS_URL = 'wss://earthquake.science.upd.edu.ph';
+    process.env.TUNNEL_WSS_URL = 'wss://earthquake.up.edu.ph';
     process.env.TUNNEL_WSS_PATH_PREFIX = 'api/ws-tunnel/test-secret';
   });
 
@@ -75,7 +75,7 @@ describe('tunnelEnrollment.service', () => {
     expect(result.REMOTE_TUNNEL_BASTION_USER).toBe('rt-am_r24fa');
     expect(result.REMOTE_TUNNEL_REMOTE_PORT).toBe(22501);
     expect(result.REMOTE_TUNNEL_BASTION_HOST_KEY).toContain('ssh-ed25519');
-    expect(result.REMOTE_TUNNEL_WSS_URL).toBe('wss://earthquake.science.upd.edu.ph');
+    expect(result.REMOTE_TUNNEL_WSS_URL).toBe('wss://earthquake.up.edu.ph');
     expect(result.REMOTE_TUNNEL_WSS_PATH_PREFIX).toBe('api/ws-tunnel/test-secret');
   });
 
