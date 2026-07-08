@@ -1,6 +1,6 @@
 # Stage 1: base, minimal setup for dev, shall contain non-js deps.
 #          To be bind-mounted to local dev files (includint node_modules)
-FROM node:18-alpine AS base
+FROM node:22-alpine AS base
 
 EXPOSE 5000
 
