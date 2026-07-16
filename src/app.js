@@ -20,7 +20,19 @@ const {
   legacyPublicUploadPath,
 } = getUploadConfig();
 
-app.set('trust proxy', true);
+function getTrustProxySetting() {
+  const configured = String(process.env.TRUST_PROXY || '').trim();
+  if (!configured) return false;
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+  if (/^\d+$/.test(configured)) return Number(configured);
+
+  const subnets = configured.split(',').map((value) => value.trim()).filter(Boolean);
+  return subnets.length === 1 ? subnets[0] : subnets;
+}
+
+app.set('trust proxy', getTrustProxySetting());
+app.disable('x-powered-by');
 
 // Serve files from a directory named 'public'
 app.use(express.static('public'));
@@ -115,6 +127,19 @@ app.get('/', (req, res) => {
   res.json({ version: '1.0' });
 });
 app.use('/accounts', require('./routes/accounts.route'));
+app.use('/admin', require('./routes/admin.route'));
+app.use('/admin/overview', require('./routes/adminOverview.route'));
+app.use('/admin/audit-logs', require('./routes/auditLog.route'));
+app.use('/admin/community-reports', require('./routes/adminCommunityReports.route'));
+app.use('/admin/earthquake-events', require('./routes/adminEarthquakeEvents.route'));
+app.use('/admin/devices-stations', require('./routes/adminDevicesStations.route'));
+app.use('/admin/accounts', require('./routes/adminAccounts.route'));
+app.use('/admin/ringserver', require('./routes/adminRingserver.route'));
+app.use('/admin/seiscomp', require('./routes/adminSeiscomp.route'));
+app.use('/admin/archive-storage', require('./routes/adminArchiveStorage.route'));
+app.use('/admin/inventory-import', require('./routes/adminInventoryImport.route'));
+app.use('/admin/deployment-health', require('./routes/adminDeploymentHealth.route'));
+app.use('/admin/configuration-diagnostics', require('./routes/adminConfigurationDiagnostics.route'));
 app.use('/device', require('./routes/devices.route'));
 app.use('/messaging', require('./routes/messaging.route'));
 app.use('/notifications', require('./routes/notifications.route'));

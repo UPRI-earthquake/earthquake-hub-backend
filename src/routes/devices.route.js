@@ -7,6 +7,7 @@ const {
   verifyTokenWithRole,
   verifyTokenWithRoleOptional,
 } = require('../middlewares/token.middleware')
+const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
 
 const router = express.Router(); 
 
@@ -303,6 +304,7 @@ router.route('/tunnel/mappings').get(
 router.route('/tunnel/revoke').post(
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
+  requireAdminCsrf,
   DeviceController.revokeDeviceTunnel,
 );
 

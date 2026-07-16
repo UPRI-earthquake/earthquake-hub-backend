@@ -143,6 +143,37 @@ async function getEventByPublicID(publicID) {
   return EQEvents.findOne({ publicID });
 }
 
+async function getAdminEventQueue({ endTime, hasSummary, pendingEnrichment, search, startTime, limit = 25, offset = 0 } = {}) {
+  const query = {};
+  if (startTime || endTime) {
+    query.OT = {};
+    if (startTime) query.OT.$gte = startTime;
+    if (endTime) query.OT.$lte = endTime;
+  }
+  if (hasSummary === true) query['summaryOverride.text'] = { $exists: true, $ne: '' };
+  if (hasSummary === false) query.$or = [{ summaryOverride: { $exists: false } }, { summaryOverride: null }, { 'summaryOverride.text': { $exists: false } }, { 'summaryOverride.text': '' }];
+  if (pendingEnrichment === true) query.pendingCatalogSources = { $exists: true, $ne: [] };
+  if (pendingEnrichment === false) query.pendingCatalogSources = { $in: [[], null] };
+  if (search) {
+    const expression = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const searchTerms = [{ publicID: expression }, { text: expression }, { place: expression }];
+    if (query.$or) query.$and = [{ $or: query.$or }, { $or: searchTerms }];
+    else query.$or = searchTerms;
+  }
+
+  const [events, total] = await Promise.all([
+    EQEvents.find(query)
+      .sort({ OT: -1, publicID: -1 })
+      .skip(offset)
+      .limit(limit)
+      .select('publicID OT magnitude_value depth_value text place onlineStations recordingAvailabilityStatus summaryOverride additionalInformation pendingCatalogSources catalogEnrichmentAttempts catalogEnrichmentStatus updatedAt')
+      .lean(),
+    EQEvents.countDocuments(query),
+  ]);
+
+  return { events, total, limit, offset };
+}
+
 /***************************************************************************
   * distKM:
   *     Calculates the great-circle distance in kilometers between two points on the Earth's surface using the Haversine formula.
@@ -1456,6 +1487,7 @@ async function clearEventSummary(publicID) {
 module.exports = {
   getEventsList,
   getEventByPublicID,
+  getAdminEventQueue,
   addPlacesAttribute,
   addEQEvent,
   updateOnlineStationsForEvent,

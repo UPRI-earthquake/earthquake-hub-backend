@@ -1,0 +1,91 @@
+const Joi = require('joi');
+const EQEventsService = require('../services/EQevents.service');
+const AuditLogService = require('../services/auditLog.service');
+const { responseCodes } = require('./responseCodes');
+
+const queueSchema = Joi.object({
+  startTime: Joi.date().iso().optional(),
+  endTime: Joi.date().iso().min(Joi.ref('startTime')).optional(),
+  hasSummary: Joi.boolean().truthy('true').falsy('false').optional(),
+  pendingEnrichment: Joi.boolean().truthy('true').falsy('false').optional(),
+  search: Joi.string().trim().max(100).allow('').optional(),
+  limit: Joi.number().integer().min(1).max(100).default(25),
+  offset: Joi.number().integer().min(0).default(0),
+});
+
+const summarySchema = Joi.object({
+  publicID: Joi.string().trim().min(1).max(256).required(),
+  text: Joi.string().trim().min(1).max(5000).required(),
+  reason: Joi.string().trim().min(3).max(1000).required(),
+});
+
+const actionSchema = Joi.object({
+  reason: Joi.string().trim().min(3).max(1000).required(),
+});
+
+exports.listEvents = async (req, res, next) => {
+  try {
+    const { error, value } = queueSchema.validate(req.query, { stripUnknown: true });
+    if (error) throw error;
+    const result = await EQEventsService.getAdminEventQueue(value);
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: 'Earthquake events retrieved successfully.',
+      payload: result.events,
+      pagination: { total: result.total, limit: result.limit, offset: result.offset },
+    });
+    res.message = 'Earthquake events retrieved successfully.';
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateSummary = async (req, res, next) => {
+  try {
+    const { error, value } = summarySchema.validate({ ...req.params, ...req.body }, { stripUnknown: true });
+    if (error) throw error;
+    const updated = await AuditLogService.execute(req, {
+      eventType: 'earthquake_event.summary.update',
+      target: { type: 'earthquake_event', id: value.publicID, label: value.publicID },
+      reason: value.reason,
+      metadata: { summaryLength: value.text.length },
+    }, () => EQEventsService.setEventSummary(value.publicID, value.text, req.username || 'admin'));
+    res.status(200).json({ status: responseCodes.GENERIC_SUCCESS, message: 'Event summary updated successfully.', payload: updated.summaryOverride });
+    res.message = 'Event summary updated successfully.';
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.revertSummary = async (req, res, next) => {
+  try {
+    const { error, value } = Joi.object({ publicID: Joi.string().trim().min(1).max(256).required(), reason: Joi.string().trim().min(3).max(1000).required() })
+      .validate({ ...req.params, ...req.body }, { stripUnknown: true });
+    if (error) throw error;
+    await AuditLogService.execute(req, {
+      eventType: 'earthquake_event.summary.revert',
+      target: { type: 'earthquake_event', id: value.publicID, label: value.publicID },
+      reason: value.reason,
+    }, () => EQEventsService.clearEventSummary(value.publicID));
+    res.status(200).json({ status: responseCodes.GENERIC_SUCCESS, message: 'Event summary reverted to auto-generated.' });
+    res.message = 'Event summary reverted to auto-generated.';
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.runEnrichment = async (req, res, next) => {
+  try {
+    const { error, value } = actionSchema.validate(req.body, { stripUnknown: true });
+    if (error) throw error;
+    const result = await AuditLogService.execute(req, {
+      eventType: 'earthquake_event.enrichment.run',
+      target: { type: 'earthquake_event_queue', id: 'pending-enrichment', label: 'Pending catalog enrichment' },
+      reason: value.reason,
+    }, () => EQEventsService.addAdditionalInformation());
+    res.status(200).json({ status: responseCodes.GENERIC_SUCCESS, message: 'Catalog enrichment completed.', payload: result });
+    res.message = 'Catalog enrichment completed.';
+  } catch (error) {
+    next(error);
+  }
+};

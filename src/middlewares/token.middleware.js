@@ -125,6 +125,7 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
       req.username = decodedToken.username;
       req.role = decodedToken.role;
       req.tokenExpiry = decodedToken.exp;
+      req.csrfToken = decodedToken.csrfToken;
       if (decodedToken.streamIds) { // for roles of brgy & sensor
         req.streamIds = decodedToken.streamIds;
       }
@@ -170,6 +171,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
         req.username = decodedToken.username;
         req.role = decodedToken.role;
         req.tokenExpiry = decodedToken.exp;
+        req.csrfToken = decodedToken.csrfToken;
         if (decodedToken.streamIds) {
           req.streamIds = decodedToken.streamIds;
         }

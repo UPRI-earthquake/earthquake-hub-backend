@@ -6,6 +6,7 @@ const fs = require('fs');
 const { randomUUID } = require('crypto');
 const { getUploadConfig } = require('../config/upload.config');
 const { createInMemoryRateLimiter, positiveIntegerEnv } = require('../middlewares/rateLimit.middleware');
+const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
 
 const {
   getTokenFromCookie,
@@ -246,6 +247,6 @@ router.get('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citize
 router.put('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.markCommentHelpful);
 router.delete('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.unmarkCommentHelpful);
 router.post('/:commentId/issues', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.reportCommentIssue);
-router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.updateCommentStatus);
-router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
+router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, CommentsController.updateCommentStatus);
+router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, CommentsController.deleteComment);
 module.exports = router;

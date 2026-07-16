@@ -6,6 +6,7 @@ const {
   getTokenFromCookie,
   verifyTokenWithRole,
 } = require('../middlewares/token.middleware');
+const { requireAdminCsrf, requireAdminCsrfWhenAdmin } = require('../middlewares/adminCsrf.middleware');
 
 /**
   * @swagger
@@ -237,6 +238,7 @@ router.post(
   '/restricted/update-online-stations',
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
+  requireAdminCsrf,
   EQEventsController.updateOnlineStations,
 );
 
@@ -262,6 +264,7 @@ router.post(
   '/restricted/scrape-additional-information',
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
+  requireAdminCsrf,
   EQEventsController.addAdditionalInformation,
 );
 
@@ -418,9 +421,9 @@ router.post(
  *                   type: string
  *                   example: "Failed to revert event summary."
  */
-router.patch('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), EQEventsController.patchEventSummary);
+router.patch('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), requireAdminCsrfWhenAdmin, EQEventsController.patchEventSummary);
 
-router.delete('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), EQEventsController.deleteEventSummary);
+router.delete('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), requireAdminCsrfWhenAdmin, EQEventsController.deleteEventSummary);
 
 
 module.exports = router;

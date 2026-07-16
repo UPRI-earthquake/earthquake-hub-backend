@@ -446,6 +446,10 @@ async function resolveCapability({ username, deviceId, ownedDeviceSet }) {
     };
   }
 
+  return resolveMappedCapability(normalizedDeviceId);
+}
+
+async function resolveMappedCapability(normalizedDeviceId) {
   let mapping;
   try {
     mapping = await TunnelEnrollmentService.resolveDeviceMapping(normalizedDeviceId);
@@ -498,6 +502,14 @@ async function resolveCapability({ username, deviceId, ownedDeviceSet }) {
     listener: mapping.listener,
     remotePort: mapping.remotePort,
   };
+}
+
+async function resolveAdminCapability(deviceId) {
+  const normalizedDeviceId = normalizeDeviceId(deviceId);
+  if (!normalizedDeviceId) {
+    throw new RemoteDeviceActionError('validation_error', 'deviceId is required.', 400);
+  }
+  return resolveMappedCapability(normalizedDeviceId);
 }
 
 async function listRemoteActionCapabilities({ username, deviceIds = [] }) {
@@ -701,10 +713,57 @@ async function listRemoteDeviceServers({ username, deviceId }) {
   };
 }
 
+async function listAdminRemoteDeviceServers({ deviceId }) {
+  const capability = await resolveAdminCapability(deviceId);
+  assertCapabilityOrThrow(capability);
+  const remoteResult = await runRemoteCommand({
+    remotePort: capability.remotePort,
+    action: QUERY_ACTIONS.LIST_SERVERS,
+    payload: {},
+  });
+  return {
+    deviceId: capability.deviceId,
+    remotePort: capability.remotePort,
+    status: capability.status,
+    listener: capability.listener,
+    servers: parseServersFromRemoteResult(remoteResult),
+  };
+}
+
+async function executeAdminRemoteDeviceAction({ deviceId, action, payload = {} }) {
+  const normalizedAction = normalizeAction(action);
+  const adminActions = [ACTIONS.ADD_SERVER, ACTIONS.REMOVE_SERVER];
+  if (!adminActions.includes(normalizedAction)) {
+    throw new RemoteDeviceActionError('validation_error', 'Admin remote actions are limited to ADD_SERVER and REMOVE_SERVER.', 400);
+  }
+
+  const capability = await resolveAdminCapability(deviceId);
+  assertCapabilityOrThrow(capability);
+  const actionPayload = normalizedAction === ACTIONS.ADD_SERVER
+    ? await resolveAddServerPayload(payload)
+    : resolveRemoveServerPayload(payload);
+  const remoteResult = await runRemoteCommand({
+    remotePort: capability.remotePort,
+    action: normalizedAction,
+    payload: actionPayload,
+  });
+  return {
+    deviceId: capability.deviceId,
+    action: normalizedAction,
+    remotePort: capability.remotePort,
+    status: capability.status,
+    listener: capability.listener,
+    result: remoteResult,
+  };
+}
+
 module.exports = {
   ACTIONS,
   RemoteDeviceActionError,
   listRemoteActionCapabilities,
+  listAllowedRingserverTargets,
   listRemoteDeviceServers,
+  listAdminRemoteDeviceServers,
   executeRemoteDeviceAction,
+  executeAdminRemoteDeviceAction,
 };

@@ -1,0 +1,206 @@
+const AdminAccountsService = require('./adminAccounts.service');
+const AdminArchiveStorageService = require('./adminArchiveStorage.service');
+const AdminConfigurationDiagnosticsService = require('./adminConfigurationDiagnostics.service');
+const AdminDevicesStationsService = require('./adminDevicesStations.service');
+const AdminDeploymentHealthService = require('./adminDeploymentHealth.service');
+const AdminRingserverService = require('./adminRingserver.service');
+const AdminSeiscompService = require('./adminSeiscomp.service');
+const AuditLogService = require('./auditLog.service');
+const CommentsService = require('./comments.service');
+const EQEventsService = require('./EQevents.service');
+
+const DEFAULT_CACHE_TTL_MS = 5000;
+const DEFAULT_SOURCE_TIMEOUT_MS = 2500;
+
+let cachedSnapshot = null;
+let cacheExpiresAt = 0;
+let inFlightSnapshot = null;
+const sourceHealth = new Map();
+
+function positiveIntegerEnv(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function withTimeout(load, timeoutMs, sourceId) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(`${sourceId} snapshot timed out after ${timeoutMs}ms.`);
+      error.code = 'ADMIN_OVERVIEW_SOURCE_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+    Promise.resolve().then(load).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+function sourceState(id, label, route, result, project, observedAt) {
+  const prior = sourceHealth.get(id) || {};
+  if (result.status === 'rejected') {
+    const failureSince = prior.failureSince || observedAt;
+    const health = { ...prior, failureSince, lastError: result.reason?.message || 'Subsystem snapshot could not be retrieved.' };
+    sourceHealth.set(id, health);
+    return {
+      id,
+      label,
+      route,
+      status: 'unavailable',
+      message: health.lastError,
+      metrics: null,
+      lastSuccessfulAt: prior.lastSuccessfulAt || null,
+      failureSince,
+      failureDurationMs: Math.max(0, new Date(observedAt).getTime() - new Date(failureSince).getTime()),
+    };
+  }
+  sourceHealth.set(id, { lastSuccessfulAt: observedAt, failureSince: null, lastError: null });
+  return {
+    id,
+    label,
+    route,
+    status: 'available',
+    message: 'Live snapshot retrieved.',
+    metrics: project(result.value),
+    lastSuccessfulAt: observedAt,
+    failureSince: null,
+    failureDurationMs: null,
+  };
+}
+
+function sourceValue(sources, id) {
+  return sources.find((source) => source.id === id)?.metrics || null;
+}
+
+function numberOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+function definitions(req) {
+  return [
+    {
+      id: 'stations',
+      label: 'Devices & Stations',
+      route: '/devices-stations',
+      load: () => AdminDevicesStationsService.listDevices({ limit: 1, offset: 0 }),
+      project: (value) => ({ total: value.total }),
+    },
+    {
+      id: 'accounts',
+      label: 'Accounts',
+      route: '/accounts',
+      load: () => AdminAccountsService.listAccounts({ limit: 1, offset: 0 }),
+      project: (value) => ({ total: value.total }),
+    },
+    {
+      id: 'moderation',
+      label: 'Community Reports',
+      route: '/community-reports',
+      load: () => CommentsService.getAdminModerationQueue({ status: 'pending', limit: 1, offset: 0 }),
+      project: (value) => ({ pending: value.total }),
+    },
+    {
+      id: 'events',
+      label: 'Earthquake Events',
+      route: '/earthquake-events',
+      load: () => EQEventsService.getAdminEventQueue({ limit: 5, offset: 0 }),
+      project: (value) => ({
+        total: value.total,
+        recent: (value.events || []).map((event) => ({
+          id: event.publicID,
+          publicID: event.publicID,
+          magnitude: event.magnitude_value ?? null,
+          location: event.text || null,
+          originTime: event.OT ? new Date(event.OT).toISOString() : null,
+          enrichmentStatus: event.enrichmentStatus || null,
+        })),
+      }),
+    },
+    {
+      id: 'ringserver',
+      label: 'Ringserver',
+      route: '/ringserver',
+      load: () => AdminRingserverService.getSnapshot({ connectionLimit: 1, streamLimit: 1 }),
+      project: (value) => ({ activeConnections: numberOrNull(value.summary?.activeConnections), activeStreams: numberOrNull(value.summary?.activeStreams) }),
+    },
+    {
+      id: 'seiscomp', label: 'SeisComP', route: '/seiscomp', load: () => AdminSeiscompService.getSnapshot({ limit: 1 }, req),
+      project: (value) => ({ activeStations: numberOrNull(value.summary?.activeStations), inactiveStations: numberOrNull(value.summary?.inactiveStations), deliveredEvents: numberOrNull(value.summary?.deliveredEvents) }),
+    },
+    {
+      id: 'archive', label: 'Archive & Storage', route: '/archive-storage', load: () => AdminArchiveStorageService.getSnapshot({ windowHours: 24, limit: 1 }, req),
+      project: (value) => ({ partialEvents: numberOrNull(value.summary?.partialEvents), unavailableEvents: numberOrNull(value.summary?.unavailableEvents), pendingEvents: numberOrNull(value.summary?.pendingEvents) }),
+    },
+    {
+      id: 'deployment', label: 'Deployment', route: '/deployment', load: () => AdminDeploymentHealthService.getSnapshot(req),
+      project: (value) => ({ observedServices: numberOrNull(value.summary?.observedServices), unobservedServices: numberOrNull(value.summary?.unobservedServices) }),
+    },
+    {
+      id: 'configuration', label: 'Settings', route: '/settings', load: () => Promise.resolve(AdminConfigurationDiagnosticsService.getSnapshot()),
+      project: (value) => ({ missingRequired: (value.sensitiveSettings || []).filter((setting) => setting.required && setting.status === 'missing').length, validationWarnings: (value.validation || []).filter((check) => check.status === 'warning' || check.status === 'invalid').length }),
+    },
+    {
+      id: 'audit', label: 'Audit Logs', route: '/audit-logs', load: () => AuditLogService.list({}, { limit: 8, offset: 0 }),
+      project: (value) => ({ recent: (value.logs || []).map((log) => ({ id: String(log._id), eventType: log.eventType, outcome: log.outcome, actor: log.actor?.username || 'system', target: log.target?.label || log.target?.id || '—', createdAt: log.createdAt ? new Date(log.createdAt).toISOString() : null })) }),
+    },
+  ];
+}
+
+async function buildSnapshot(req) {
+  const observedAt = new Date().toISOString();
+  const sourceTimeoutMs = positiveIntegerEnv('ADMIN_OVERVIEW_SOURCE_TIMEOUT_MS', DEFAULT_SOURCE_TIMEOUT_MS);
+  const sourceDefinitions = definitions(req);
+  const settled = await Promise.allSettled(sourceDefinitions.map((definition) => withTimeout(definition.load, sourceTimeoutMs, definition.id)));
+  const sources = sourceDefinitions.map((definition, index) => sourceState(definition.id, definition.label, definition.route, settled[index], definition.project, observedAt));
+  const stationMetrics = sourceValue(sources, 'stations');
+  const moderationMetrics = sourceValue(sources, 'moderation');
+  const eventMetrics = sourceValue(sources, 'events');
+  const seiscompMetrics = sourceValue(sources, 'seiscomp');
+  const archiveMetrics = sourceValue(sources, 'archive');
+  const deploymentMetrics = sourceValue(sources, 'deployment');
+  const configurationMetrics = sourceValue(sources, 'configuration');
+  const auditMetrics = sourceValue(sources, 'audit');
+
+  return {
+    observedAt,
+    cache: { ttlMs: positiveIntegerEnv('ADMIN_OVERVIEW_CACHE_TTL_MS', DEFAULT_CACHE_TTL_MS), cached: false },
+    summary: {
+      totalStations: stationMetrics?.total ?? null,
+      activeStations: seiscompMetrics?.activeStations ?? null,
+      pendingReports: moderationMetrics?.pending ?? null,
+      recentEvents: eventMetrics?.total ?? null,
+      archiveAttention: archiveMetrics ? (archiveMetrics.partialEvents || 0) + (archiveMetrics.unavailableEvents || 0) + (archiveMetrics.pendingEvents || 0) : null,
+      deploymentAttention: deploymentMetrics?.unobservedServices ?? null,
+      configurationAttention: configurationMetrics ? (configurationMetrics.missingRequired || 0) + (configurationMetrics.validationWarnings || 0) : null,
+      availableSources: sources.filter((source) => source.status === 'available').length,
+      unavailableSources: sources.filter((source) => source.status === 'unavailable').length,
+    },
+    sources,
+    recentEvents: eventMetrics?.recent || [],
+    recentAudit: auditMetrics?.recent || [],
+  };
+}
+
+async function getSnapshot(req) {
+  const now = Date.now();
+  if (cachedSnapshot && now < cacheExpiresAt) return { ...cachedSnapshot, cache: { ...cachedSnapshot.cache, cached: true } };
+  if (inFlightSnapshot) return inFlightSnapshot;
+  const cacheTtlMs = positiveIntegerEnv('ADMIN_OVERVIEW_CACHE_TTL_MS', DEFAULT_CACHE_TTL_MS);
+  inFlightSnapshot = buildSnapshot(req)
+    .then((snapshot) => {
+      cachedSnapshot = snapshot;
+      cacheExpiresAt = Date.now() + cacheTtlMs;
+      return snapshot;
+    })
+    .finally(() => { inFlightSnapshot = null; });
+  return inFlightSnapshot;
+}
+
+function resetOverviewState() {
+  cachedSnapshot = null;
+  cacheExpiresAt = 0;
+  inFlightSnapshot = null;
+  sourceHealth.clear();
+}
+
+module.exports = { getSnapshot, resetOverviewState };

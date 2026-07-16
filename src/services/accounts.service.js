@@ -231,6 +231,17 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         passwordPolicyVersion: updatedPolicyVersion,
         rshakeEmailEnabled,
       };
+    case 'admin':
+      return {
+        str: 'successAdmin',
+        accountId,
+        username,
+        email: user.email,
+        roles: user.roles || [],
+        passwordStatus,
+        passwordPolicyVersion: updatedPolicyVersion,
+        rshakeEmailEnabled,
+      };
   }
   return {
     str: "success",

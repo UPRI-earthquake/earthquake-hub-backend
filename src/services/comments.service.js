@@ -249,6 +249,57 @@ async function updateCommentStatus(commentId, status, moderatedBy) {
   return toAdminComment(updatedComment);
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function toModerationQueueComment(comment) {
+  const source = typeof comment?.toObject === 'function' ? comment.toObject() : comment;
+  if (!source) return null;
+  return {
+    commentId: source.commentId,
+    eventPublicID: source.eventPublicID || '',
+    username: source.username || 'Anonymous',
+    content: source.content || '',
+    imageURL: source.imageURL || '',
+    status: normalizeCommentStatus(source.status),
+    helpfulCount: getHelpfulAccountIds(source).length,
+    issueCount: Array.isArray(source.issueReports) ? source.issueReports.length : 0,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+    moderatedBy: source.moderatedBy || '',
+    moderatedAt: source.moderatedAt || null,
+  };
+}
+
+async function getAdminModerationQueue({ status, hasImage, hasIssues, search, limit = 25, offset = 0 } = {}) {
+  const query = {};
+  if (status) query.status = status;
+  if (hasImage === true) query.imageURL = { $exists: true, $ne: '' };
+  if (hasIssues === true) query['issueReports.0'] = { $exists: true };
+  if (search) {
+    const expression = new RegExp(escapeRegex(search), 'i');
+    query.$or = [{ commentId: expression }, { eventPublicID: expression }, { username: expression }, { content: expression }];
+  }
+
+  const [comments, total] = await Promise.all([
+    Comment.find(query)
+      .sort({ createdAt: -1, commentId: -1 })
+      .skip(offset)
+      .limit(limit)
+      .select('commentId eventPublicID username content imageURL status helpfulAccountIds issueReports createdAt updatedAt moderatedBy moderatedAt')
+      .lean(),
+    Comment.countDocuments(query),
+  ]);
+
+  return {
+    comments: comments.map(toModerationQueueComment),
+    total,
+    limit,
+    offset,
+  };
+}
+
 async function markCommentHelpful(commentId, accountId) {
   if (!accountId) {
     return { unauthenticated: true };
@@ -338,6 +389,7 @@ module.exports = {
   COMMENT_ISSUE_REASON,
   createComment,
   getCommentsByEventId,
+  getAdminModerationQueue,
   deleteComment,
   updateCommentStatus,
   markCommentHelpful,
@@ -347,4 +399,5 @@ module.exports = {
   encodePaginationCursor,
   toPublicComment,
   toAdminComment,
+  toModerationQueueComment,
 };

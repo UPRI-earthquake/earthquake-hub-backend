@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
+const crypto = require('crypto');
 
 const WEB_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_WEB || process.env.ACCESS_TOKEN_PRIVATE_KEY;
 const DEVICE_ACCESS_SECRET = process.env.ACCESS_TOKEN_PRIVATE_KEY_DEVICE || process.env.ACCESS_TOKEN_PRIVATE_KEY;
@@ -139,13 +140,23 @@ function cookieOptions(maxAgeMs) {
 }
 
 function setSessionCookies(res, payload) {
-  const accessToken = generateAccessToken(payload, 'web');
-  const refreshToken = generateRefreshToken(payload, 'web');
+  // The CSRF value is readable by the same-site admin SPA, while its signed
+  // copy stays inside the HttpOnly access token. A sibling site cannot forge
+  // both values, and unsafe requests must also send it in a custom header.
+  const csrfToken = crypto.randomBytes(32).toString('base64url');
+  const sessionPayload = { ...payload, csrfToken };
+  const accessToken = generateAccessToken(sessionPayload, 'web');
+  const refreshToken = generateRefreshToken(sessionPayload, 'web');
 
   res.cookie('accessToken', accessToken, cookieOptions(ACCESS_TOKEN_MAX_AGE_MS));
   res.cookie('refreshToken', refreshToken, cookieOptions(REFRESH_TOKEN_MAX_AGE_MS));
+  res.cookie('csrfToken', csrfToken, {
+    ...cookieOptions(ACCESS_TOKEN_MAX_AGE_MS),
+    httpOnly: false,
+    sameSite: 'strict',
+  });
 
-  return { accessToken, refreshToken };
+  return { accessToken, refreshToken, csrfToken };
 }
 
 function clearSessionCookies(res) {
@@ -157,6 +168,7 @@ function clearSessionCookies(res) {
   };
   res.clearCookie('accessToken', clearOpts);
   res.clearCookie('refreshToken', clearOpts);
+  res.clearCookie('csrfToken', { ...clearOpts, httpOnly: false, sameSite: 'strict' });
 }
 
 const blockedPasswords = new Set([
