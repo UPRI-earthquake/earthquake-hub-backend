@@ -71,11 +71,25 @@ async function execute(req, event, operation) {
 }
 
 async function list(filters, { limit, offset }) {
-  const [logs, total] = await Promise.all([
+  const summaryFilters = { ...filters };
+  delete summaryFilters.outcome;
+  const countOutcome = (outcome) => AuditLog.countDocuments({ ...summaryFilters, outcome });
+  const [logs, total, summaryTotal, started, succeeded, failed, rejected] = await Promise.all([
     AuditLog.find(filters).sort({ createdAt: -1 }).skip(offset).limit(limit).lean(),
     AuditLog.countDocuments(filters),
+    AuditLog.countDocuments(summaryFilters),
+    countOutcome('started'),
+    countOutcome('succeeded'),
+    countOutcome('failed'),
+    countOutcome('rejected'),
   ]);
-  return { logs, total, limit, offset };
+  return {
+    logs,
+    total,
+    limit,
+    offset,
+    summary: { total: summaryTotal, started, succeeded, failed, rejected },
+  };
 }
 
 module.exports = { execute, list, record, redactMetadata };

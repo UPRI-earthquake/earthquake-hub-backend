@@ -33,6 +33,7 @@ exports.listAuditLogs = async (req, res, next) => {
       message: 'Audit logs retrieved successfully.',
       payload: result.logs,
       pagination: { total: result.total, limit: result.limit, offset: result.offset },
+      summary: result.summary,
     });
     res.message = 'Audit logs retrieved successfully.';
   } catch (error) {

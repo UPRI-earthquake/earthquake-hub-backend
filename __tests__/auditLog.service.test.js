@@ -61,4 +61,29 @@ describe('AuditLogService', () => {
     expect(failed.outcome).toBe('failed');
     expect(failed.metadata.errorCode).toBe('TUNNEL_UNREACHABLE');
   });
+
+  it('returns outcome counts for the current non-outcome filters', async () => {
+    const lean = jest.fn().mockResolvedValue([{ _id: 'audit-1', outcome: 'failed' }]);
+    const limit = jest.fn(() => ({ lean }));
+    const skip = jest.fn(() => ({ limit }));
+    const sort = jest.fn(() => ({ skip }));
+    AuditLog.find.mockReturnValue({ sort });
+    AuditLog.countDocuments
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+
+    const result = await AuditLogService.list(
+      { 'actor.username': 'admin-user', outcome: 'failed' },
+      { limit: 25, offset: 0 },
+    );
+
+    expect(result.total).toBe(1);
+    expect(result.summary).toEqual({ total: 7, started: 2, succeeded: 3, failed: 1, rejected: 1 });
+    expect(AuditLog.countDocuments).toHaveBeenNthCalledWith(2, { 'actor.username': 'admin-user' });
+    expect(AuditLog.countDocuments).toHaveBeenNthCalledWith(5, { 'actor.username': 'admin-user', outcome: 'failed' });
+  });
 });

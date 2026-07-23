@@ -33,6 +33,7 @@ describe('Audit log route', () => {
       total: 1,
       limit: 10,
       offset: 0,
+      summary: { total: 1, started: 0, succeeded: 1, failed: 0, rejected: 0 },
     });
     const token = signAdminToken();
     const response = await request(app)
@@ -42,5 +43,6 @@ describe('Audit log route', () => {
     expect(response.statusCode).toBe(200);
     expect(AuditLogService.list).toHaveBeenCalledWith({ outcome: 'succeeded' }, expect.objectContaining({ limit: 10, offset: 0 }));
     expect(response.body.payload).toHaveLength(1);
+    expect(response.body.summary.succeeded).toBe(1);
   });
 });
