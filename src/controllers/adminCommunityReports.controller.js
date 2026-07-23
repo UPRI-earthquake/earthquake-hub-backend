@@ -7,6 +7,8 @@ const queueSchema = Joi.object({
   status: Joi.string().valid(...Object.values(CommentsService.COMMENT_STATUS)).optional(),
   hasImage: Joi.boolean().truthy('true').falsy('false').optional(),
   hasIssues: Joi.boolean().truthy('true').falsy('false').optional(),
+  startTime: Joi.date().iso().optional(),
+  endTime: Joi.date().iso().min(Joi.ref('startTime')).optional(),
   search: Joi.string().trim().max(100).allow('').optional(),
   limit: Joi.number().integer().min(1).max(100).default(25),
   offset: Joi.number().integer().min(0).default(0),
@@ -27,12 +29,13 @@ exports.listCommunityReports = async (req, res, next) => {
   try {
     const { error, value } = queueSchema.validate(req.query, { stripUnknown: true });
     if (error) throw error;
-    const result = await CommentsService.getAdminModerationQueue(value);
+    const result = await CommentsService.getAdminModerationQueue({ ...value, includeSummary: true });
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message: 'Community reports retrieved successfully.',
       payload: result.comments,
       pagination: { total: result.total, limit: result.limit, offset: result.offset },
+      summary: result.summary,
     });
     res.message = 'Community reports retrieved successfully.';
   } catch (error) {

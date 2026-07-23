@@ -39,15 +39,17 @@ describe('Admin earthquake event routes', () => {
   });
 
   it('lists a filtered event queue', async () => {
-    EQEventsService.getAdminEventQueue.mockResolvedValue({ events: [{ publicID: 'event-1' }], total: 1, limit: 25, offset: 0 });
+    EQEventsService.getAdminEventQueue.mockResolvedValue({ events: [{ publicID: 'event-1' }], total: 1, limit: 25, offset: 0, summary: { total: 1 } });
     const response = await request(app)
-      .get('/admin/earthquake-events?hasSummary=true&pendingEnrichment=true&search=Batangas')
+      .get('/admin/earthquake-events?hasSummary=true&pendingEnrichment=true&recordingAttention=true&minMagnitude=4&sourceCatalog=upri-current&search=Batangas')
       .set('Cookie', [`accessToken=${signAdminToken()}`]);
 
     expect(response.statusCode).toBe(200);
     expect(EQEventsService.getAdminEventQueue).toHaveBeenCalledWith(expect.objectContaining({
-      hasSummary: true, pendingEnrichment: true, search: 'Batangas', limit: 25, offset: 0,
+      hasSummary: true, includeSummary: true, pendingEnrichment: true, recordingAttention: true,
+      minMagnitude: 4, sourceCatalog: 'upri-current', search: 'Batangas', limit: 25, offset: 0,
     }));
+    expect(response.body.summary).toEqual({ total: 1 });
   });
 
   it('audits a public-facing summary update', async () => {

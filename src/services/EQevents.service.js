@@ -143,7 +143,28 @@ async function getEventByPublicID(publicID) {
   return EQEvents.findOne({ publicID });
 }
 
-async function getAdminEventQueue({ endTime, hasSummary, pendingEnrichment, search, startTime, limit = 25, offset = 0 } = {}) {
+async function getAdminEventSummary() {
+  const sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
+  const [total, recentSevenDays, customSummaries, pendingEnrichment, recordingAttention, sources] = await Promise.all([
+    EQEvents.countDocuments({}),
+    EQEvents.countDocuments({ OT: { $gte: sevenDaysAgo } }),
+    EQEvents.countDocuments({ 'summaryOverride.text': { $exists: true, $ne: '' } }),
+    EQEvents.countDocuments({ 'pendingCatalogSources.0': { $exists: true } }),
+    EQEvents.countDocuments({ recordingAvailabilityStatus: { $in: ['pending', 'partial', 'unavailable'] } }),
+    EQEvents.distinct('sourceCatalog'),
+  ]);
+
+  return {
+    total,
+    recentSevenDays,
+    customSummaries,
+    pendingEnrichment,
+    recordingAttention,
+    sources: sources.filter(Boolean).sort(),
+  };
+}
+
+async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false, minMagnitude, pendingEnrichment, recordingAttention, recordingStatus, search, sourceCatalog, startTime, limit = 25, offset = 0 } = {}) {
   const query = {};
   if (startTime || endTime) {
     query.OT = {};
@@ -152,8 +173,12 @@ async function getAdminEventQueue({ endTime, hasSummary, pendingEnrichment, sear
   }
   if (hasSummary === true) query['summaryOverride.text'] = { $exists: true, $ne: '' };
   if (hasSummary === false) query.$or = [{ summaryOverride: { $exists: false } }, { summaryOverride: null }, { 'summaryOverride.text': { $exists: false } }, { 'summaryOverride.text': '' }];
-  if (pendingEnrichment === true) query.pendingCatalogSources = { $exists: true, $ne: [] };
-  if (pendingEnrichment === false) query.pendingCatalogSources = { $in: [[], null] };
+  if (pendingEnrichment === true) query['pendingCatalogSources.0'] = { $exists: true };
+  if (pendingEnrichment === false) query['pendingCatalogSources.0'] = { $exists: false };
+  if (minMagnitude !== undefined) query.magnitude_value = { $gte: minMagnitude };
+  if (recordingAttention === true) query.recordingAvailabilityStatus = { $in: ['pending', 'partial', 'unavailable'] };
+  else if (recordingStatus) query.recordingAvailabilityStatus = recordingStatus;
+  if (sourceCatalog) query.sourceCatalog = sourceCatalog;
   if (search) {
     const expression = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const searchTerms = [{ publicID: expression }, { text: expression }, { place: expression }];
@@ -161,17 +186,18 @@ async function getAdminEventQueue({ endTime, hasSummary, pendingEnrichment, sear
     else query.$or = searchTerms;
   }
 
-  const [events, total] = await Promise.all([
+  const [events, total, summary] = await Promise.all([
     EQEvents.find(query)
       .sort({ OT: -1, publicID: -1 })
       .skip(offset)
       .limit(limit)
-      .select('publicID OT magnitude_value depth_value text place onlineStations recordingAvailabilityStatus summaryOverride additionalInformation pendingCatalogSources catalogEnrichmentAttempts catalogEnrichmentStatus updatedAt')
+      .select('publicID sourceCatalog sourceServer OT latitude_value longitude_value magnitude_value depth_value type text place onlineStations candidateStations recordingStations recordingAvailabilityStatus recordingAvailabilityCheckedAt summaryOverride additionalInformation pendingCatalogSources catalogEnrichmentAttempts catalogEnrichmentStatus last_modification createdAt updatedAt')
       .lean(),
     EQEvents.countDocuments(query),
+    includeSummary ? getAdminEventSummary() : Promise.resolve(undefined),
   ]);
 
-  return { events, total, limit, offset };
+  return { events, total, limit, offset, summary };
 }
 
 /***************************************************************************
@@ -1488,6 +1514,7 @@ module.exports = {
   getEventsList,
   getEventByPublicID,
   getAdminEventQueue,
+  getAdminEventSummary,
   addPlacesAttribute,
   addEQEvent,
   updateOnlineStationsForEvent,

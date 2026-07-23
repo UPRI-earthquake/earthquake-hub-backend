@@ -65,6 +65,13 @@ describe('comments.service', () => {
     mockSaveResult = undefined;
   });
 
+  test('normalizes legacy upload paths to the canonical production route', () => {
+    expect(CommentsService.normalizeReportImageUrl('/uploads_dev/report.jpg')).toBe('/uploads/report.jpg');
+    expect(CommentsService.normalizeReportImageUrl('http://old-backend:5000/uploads_dev/report.jpg')).toBe('/uploads/report.jpg');
+    expect(CommentsService.normalizeReportImageUrl('/uploads/report.jpg')).toBe('/uploads/report.jpg');
+    expect(CommentsService.normalizeReportImageUrl('')).toBe('');
+  });
+
   test('createComment returns null when the event does not exist', async () => {
     mockEventLookup(null);
 

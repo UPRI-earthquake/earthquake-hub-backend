@@ -45,17 +45,20 @@ describe('Admin community reports routes', () => {
       total: 1,
       limit: 25,
       offset: 0,
+      summary: { total: 1, pending: 1 },
     });
 
     const response = await request(app)
-      .get('/admin/community-reports?status=pending&hasImage=true&hasIssues=true&search=Batangas')
+      .get('/admin/community-reports?status=pending&hasImage=true&hasIssues=true&startTime=2026-07-01T00:00:00.000Z&endTime=2026-07-22T00:00:00.000Z&search=Batangas')
       .set('Cookie', [`accessToken=${signAdminToken()}`]);
 
     expect(response.statusCode).toBe(200);
     expect(CommentsService.getAdminModerationQueue).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'pending', hasImage: true, hasIssues: true, search: 'Batangas', limit: 25, offset: 0,
+      status: 'pending', hasImage: true, hasIssues: true, includeSummary: true,
+      startTime: expect.any(Date), endTime: expect.any(Date), search: 'Batangas', limit: 25, offset: 0,
     }));
     expect(response.body.payload).toEqual([{ commentId: 'CR-1', status: 'pending' }]);
+    expect(response.body.summary).toEqual({ total: 1, pending: 1 });
   });
 
   it('audits an approval before updating report status', async () => {

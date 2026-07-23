@@ -17,6 +17,26 @@ const COMMENT_ISSUE_REASON = Object.freeze({
 const COMMENT_STATUS_VALUES = Object.values(COMMENT_STATUS);
 const COMMENT_ISSUE_REASON_VALUES = Object.values(COMMENT_ISSUE_REASON);
 const DEFAULT_COMMENT_STATUS = COMMENT_STATUS.APPROVED;
+const CANONICAL_UPLOAD_PREFIX = '/uploads/';
+const LEGACY_UPLOAD_PREFIX = '/uploads_dev/';
+
+function normalizeReportImageUrl(value) {
+  if (typeof value !== 'string') return '';
+  const imageUrl = value.trim();
+  if (!imageUrl) return '';
+  if (imageUrl.startsWith(LEGACY_UPLOAD_PREFIX)) {
+    return `${CANONICAL_UPLOAD_PREFIX}${imageUrl.slice(LEGACY_UPLOAD_PREFIX.length)}`;
+  }
+  try {
+    const absoluteUrl = new URL(imageUrl);
+    if (['http:', 'https:'].includes(absoluteUrl.protocol) && absoluteUrl.pathname.startsWith(LEGACY_UPLOAD_PREFIX)) {
+      return `${CANONICAL_UPLOAD_PREFIX}${absoluteUrl.pathname.slice(LEGACY_UPLOAD_PREFIX.length)}${absoluteUrl.search}`;
+    }
+  } catch {
+    // Relative canonical paths are returned unchanged below.
+  }
+  return imageUrl;
+}
 
 function normalizeCommentStatus(status, fallback = DEFAULT_COMMENT_STATUS) {
   return COMMENT_STATUS_VALUES.includes(status) ? status : fallback;
@@ -59,7 +79,7 @@ function toPublicComment(comment, { viewerAccountId } = {}) {
     commentId: source.commentId,
     username: source.username || 'Anonymous',
     ...(source.content ? { content: source.content } : {}),
-    ...(source.imageURL ? { imageURL: source.imageURL } : {}),
+    ...(normalizeReportImageUrl(source.imageURL) ? { imageURL: normalizeReportImageUrl(source.imageURL) } : {}),
     helpfulCount: helpfulAccountIds.length,
     viewerHasMarkedHelpful: Boolean(
       normalizedViewerAccountId &&
@@ -256,15 +276,21 @@ function escapeRegex(value) {
 function toModerationQueueComment(comment) {
   const source = typeof comment?.toObject === 'function' ? comment.toObject() : comment;
   if (!source) return null;
+  const issueReasons = (Array.isArray(source.issueReports) ? source.issueReports : []).reduce((counts, issue) => {
+    const reason = COMMENT_ISSUE_REASON_VALUES.includes(issue?.reason) ? issue.reason : 'unknown';
+    counts[reason] = (counts[reason] || 0) + 1;
+    return counts;
+  }, {});
   return {
     commentId: source.commentId,
     eventPublicID: source.eventPublicID || '',
     username: source.username || 'Anonymous',
     content: source.content || '',
-    imageURL: source.imageURL || '',
+    imageURL: normalizeReportImageUrl(source.imageURL),
     status: normalizeCommentStatus(source.status),
     helpfulCount: getHelpfulAccountIds(source).length,
     issueCount: Array.isArray(source.issueReports) ? source.issueReports.length : 0,
+    issueReasons,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
     moderatedBy: source.moderatedBy || '',
@@ -272,17 +298,38 @@ function toModerationQueueComment(comment) {
   };
 }
 
-async function getAdminModerationQueue({ status, hasImage, hasIssues, search, limit = 25, offset = 0 } = {}) {
+async function getAdminModerationSummary() {
+  const [total, pending, approved, rejected, withImages, withIssues] = await Promise.all([
+    Comment.countDocuments({}),
+    Comment.countDocuments({ status: COMMENT_STATUS.PENDING }),
+    Comment.countDocuments({ status: COMMENT_STATUS.APPROVED }),
+    Comment.countDocuments({ status: COMMENT_STATUS.REJECTED }),
+    Comment.countDocuments({ imageURL: { $exists: true, $ne: '' } }),
+    Comment.countDocuments({ 'issueReports.0': { $exists: true } }),
+  ]);
+  return { total, pending, approved, rejected, withImages, withIssues };
+}
+
+async function getAdminModerationQueue({ status, hasImage, hasIssues, includeSummary = false, search, startTime, endTime, limit = 25, offset = 0 } = {}) {
   const query = {};
   if (status) query.status = status;
   if (hasImage === true) query.imageURL = { $exists: true, $ne: '' };
+  if (hasImage === false) query.$or = [{ imageURL: { $exists: false } }, { imageURL: '' }, { imageURL: null }];
   if (hasIssues === true) query['issueReports.0'] = { $exists: true };
+  if (hasIssues === false) query['issueReports.0'] = { $exists: false };
+  if (startTime || endTime) {
+    query.createdAt = {};
+    if (startTime) query.createdAt.$gte = startTime;
+    if (endTime) query.createdAt.$lte = endTime;
+  }
   if (search) {
     const expression = new RegExp(escapeRegex(search), 'i');
-    query.$or = [{ commentId: expression }, { eventPublicID: expression }, { username: expression }, { content: expression }];
+    const searchTerms = [{ commentId: expression }, { eventPublicID: expression }, { username: expression }, { content: expression }];
+    if (query.$or) query.$and = [{ $or: query.$or }, { $or: searchTerms }];
+    else query.$or = searchTerms;
   }
 
-  const [comments, total] = await Promise.all([
+  const [comments, total, summary] = await Promise.all([
     Comment.find(query)
       .sort({ createdAt: -1, commentId: -1 })
       .skip(offset)
@@ -290,6 +337,7 @@ async function getAdminModerationQueue({ status, hasImage, hasIssues, search, li
       .select('commentId eventPublicID username content imageURL status helpfulAccountIds issueReports createdAt updatedAt moderatedBy moderatedAt')
       .lean(),
     Comment.countDocuments(query),
+    includeSummary ? getAdminModerationSummary() : Promise.resolve(undefined),
   ]);
 
   return {
@@ -297,6 +345,7 @@ async function getAdminModerationQueue({ status, hasImage, hasIssues, search, li
     total,
     limit,
     offset,
+    summary,
   };
 }
 
@@ -390,6 +439,7 @@ module.exports = {
   createComment,
   getCommentsByEventId,
   getAdminModerationQueue,
+  getAdminModerationSummary,
   deleteComment,
   updateCommentStatus,
   markCommentHelpful,
@@ -400,4 +450,5 @@ module.exports = {
   toPublicComment,
   toAdminComment,
   toModerationQueueComment,
+  normalizeReportImageUrl,
 };
