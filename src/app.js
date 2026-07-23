@@ -141,6 +141,7 @@ app.use('/admin/inventory-import', require('./routes/adminInventoryImport.route'
 app.use('/admin/deployment-health', require('./routes/adminDeploymentHealth.route'));
 app.use('/admin/configuration-diagnostics', require('./routes/adminConfigurationDiagnostics.route'));
 app.use('/admin/system', require('./routes/adminSystem.route'));
+app.use('/admin/search', require('./routes/adminGlobalSearch.route'));
 app.use('/device', require('./routes/devices.route'));
 app.use('/messaging', require('./routes/messaging.route'));
 app.use('/notifications', require('./routes/notifications.route'));
