@@ -1,4 +1,5 @@
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const AdminSystemService = require('./adminSystem.service');
 
 function durationLabel(seconds) {
   const totalMinutes = Math.max(0, Math.floor(seconds / 60));
@@ -26,7 +27,10 @@ function declaredService({ id, name, logCommand, purpose }) {
 async function getSnapshot(req) {
   const observedAt = new Date().toISOString();
   const backendUptime = process.uptime();
-  const hostTelemetry = await AdminHostTelemetryClient.getResource('deployment', req);
+  const [hostTelemetry, systemResources] = await Promise.all([
+    AdminHostTelemetryClient.getResource('deployment', req),
+    AdminSystemService.getSnapshot(req),
+  ]);
   const deploymentObserved = hostTelemetry.status === 'available';
   const services = [
     {
@@ -99,6 +103,7 @@ async function getSnapshot(req) {
       unobservedServices: services.filter((service) => service.status === 'unobserved').length,
       backendUptimeSeconds: Math.floor(backendUptime),
       hostTelemetryStatus: hostTelemetry.status,
+      systemTelemetryStatus: systemResources.status,
     },
     limitations: [
       'The private admin backend performs one fixed HTTP reachability check. Container health states and Docker logs remain unavailable; neither backend has Docker-socket access.',
@@ -106,6 +111,8 @@ async function getSnapshot(req) {
       'Use the supplied read-only commands from an authorized deployment-host shell. Commands are not run by this console.',
     ],
     hostTelemetry,
+    systemResources,
+    capabilities: systemResources.capabilities,
     services,
   };
 }

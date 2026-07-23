@@ -6,6 +6,7 @@ const RESOURCE_PATHS = Object.freeze({
   deployment: 'deployment',
   seiscomp: 'seiscomp',
   archive: 'archive',
+  system: 'system',
 });
 
 function positiveIntegerEnv(name, fallback) {

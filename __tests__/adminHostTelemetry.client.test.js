@@ -48,4 +48,24 @@ describe('admin host telemetry client', () => {
     await expect(AdminHostTelemetryClient.getResource('logs', req)).rejects.toMatchObject({ code: 'UNSUPPORTED_TELEMETRY_RESOURCE' });
     expect(axios.get).not.toHaveBeenCalled();
   });
+
+  it('uses the fixed system resource path for deployment-host metrics', async () => {
+    axios.get.mockResolvedValue({ data: {
+      requestId: 'system-request', observedAt: '2026-07-23T00:00:00.000Z', source: 'admin-backend',
+      status: 'available', durationMs: 150, data: {
+        checkId: 'deployment-host-resources',
+        cpu: { utilizationPercent: 28, status: 'healthy' },
+        memory: { utilizationPercent: 42, status: 'healthy' },
+        disk: { utilizationPercent: 35, status: 'healthy' },
+      },
+    } });
+
+    const result = await AdminHostTelemetryClient.getResource('system', req);
+
+    expect(result.resourceId).toBe('system');
+    expect(axios.get).toHaveBeenCalledWith(
+      'http://admin-backend-dep-test:5100/v1/system',
+      expect.objectContaining({ maxContentLength: 65536, maxRedirects: 0 }),
+    );
+  });
 });
