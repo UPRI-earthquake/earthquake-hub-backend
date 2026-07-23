@@ -32,10 +32,19 @@ describe('Admin account routes', () => {
   });
 
   it('lists canonical account approval states', async () => {
-    AdminAccountsService.listAccounts.mockResolvedValue({ accounts: [{ accountId, approvalStatus: 'pending', roles: ['brgy'] }], total: 1, limit: 25, offset: 0 });
-    const response = await request(app).get('/admin/accounts?approvalStatus=pending&role=brgy').set('Cookie', [`accessToken=${signAdminToken()}`]);
+    AdminAccountsService.listAccounts.mockResolvedValue({
+      accounts: [{ accountId, approvalStatus: 'pending', roles: ['brgy'] }],
+      total: 1,
+      limit: 25,
+      offset: 0,
+      summary: { total: 8, pendingBrgy: 1, approvedBrgy: 2, admins: 1, linked: 3 },
+    });
+    const response = await request(app).get('/admin/accounts?approvalStatus=pending&role=brgy&linkedDevice=unlinked').set('Cookie', [`accessToken=${signAdminToken()}`]);
     expect(response.statusCode).toBe(200);
-    expect(AdminAccountsService.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ approvalStatus: 'pending', role: 'brgy', limit: 25, offset: 0 }));
+    expect(AdminAccountsService.listAccounts).toHaveBeenCalledWith(expect.objectContaining({
+      approvalStatus: 'pending', includeSummary: true, linkedDevice: 'unlinked', role: 'brgy', limit: 25, offset: 0,
+    }));
+    expect(response.body.summary).toEqual(expect.objectContaining({ pendingBrgy: 1, linked: 3 }));
   });
 
   it('audits brgy approval before applying it', async () => {

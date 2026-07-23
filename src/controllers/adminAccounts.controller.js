@@ -6,6 +6,7 @@ const { responseCodes } = require('./responseCodes');
 const listSchema = Joi.object({
   role: Joi.string().valid('citizen', 'sensor', 'brgy', 'admin').optional(),
   approvalStatus: Joi.string().valid('pending', 'approved', 'not_required').optional(),
+  linkedDevice: Joi.string().valid('linked', 'unlinked').optional(),
   search: Joi.string().trim().max(100).allow('').optional(),
   limit: Joi.number().integer().min(1).max(100).default(25),
   offset: Joi.number().integer().min(0).default(0),
@@ -21,12 +22,13 @@ exports.listAccounts = async (req, res, next) => {
   try {
     const { error, value } = listSchema.validate(req.query, { stripUnknown: true });
     if (error) throw error;
-    const result = await AdminAccountsService.listAccounts(value);
+    const result = await AdminAccountsService.listAccounts({ ...value, includeSummary: true });
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message: 'Accounts retrieved successfully.',
       payload: result.accounts,
       pagination: { total: result.total, limit: result.limit, offset: result.offset },
+      summary: result.summary,
     });
     res.message = 'Accounts retrieved successfully.';
   } catch (error) { next(error); }

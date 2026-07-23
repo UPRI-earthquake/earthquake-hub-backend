@@ -24,7 +24,18 @@ function serializeAccount(account) {
   };
 }
 
-async function listAccounts({ approvalStatus: requestedApproval, role, search, limit = 25, offset = 0 } = {}) {
+async function getAccountSummary() {
+  const [total, pendingBrgy, approvedBrgy, admins, linked] = await Promise.all([
+    Account.countDocuments({}),
+    Account.countDocuments({ roles: 'brgy', isApproved: false }),
+    Account.countDocuments({ roles: 'brgy', isApproved: true }),
+    Account.countDocuments({ roles: 'admin' }),
+    Account.countDocuments({ 'devices.0': { $exists: true } }),
+  ]);
+  return { total, pendingBrgy, approvedBrgy, admins, linked };
+}
+
+async function listAccounts({ approvalStatus: requestedApproval, includeSummary = false, linkedDevice, role, search, limit = 25, offset = 0 } = {}) {
   const query = {};
   if (role) query.roles = role;
   if (requestedApproval === 'pending') {
@@ -36,12 +47,14 @@ async function listAccounts({ approvalStatus: requestedApproval, role, search, l
     query.isApproved = true;
   }
   if (requestedApproval === 'not_required') query.roles = { $ne: 'brgy' };
+  if (linkedDevice === 'linked') query['devices.0'] = { $exists: true };
+  if (linkedDevice === 'unlinked') query['devices.0'] = { $exists: false };
   if (search) {
     const expression = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     query.$or = [{ username: expression }, { email: expression }, { ringserverUrl: expression }];
   }
 
-  const [accounts, total] = await Promise.all([
+  const [accounts, total, summary] = await Promise.all([
     Account.find(query)
       .sort({ createdAt: -1, username: 1 })
       .skip(offset)
@@ -49,8 +62,9 @@ async function listAccounts({ approvalStatus: requestedApproval, role, search, l
       .select('username email roles isApproved devices ringserverUrl ringserverPort alertPreferences createdAt updatedAt')
       .lean(),
     Account.countDocuments(query),
+    includeSummary ? getAccountSummary() : Promise.resolve(undefined),
   ]);
-  return { accounts: accounts.map(serializeAccount), total, limit, offset };
+  return { accounts: accounts.map(serializeAccount), total, limit, offset, summary };
 }
 
 async function setBrgyApproval(accountId, approved) {
@@ -62,4 +76,4 @@ async function setBrgyApproval(accountId, approved) {
   return { account: serializeAccount(account) };
 }
 
-module.exports = { approvalStatus, listAccounts, serializeAccount, setBrgyApproval };
+module.exports = { approvalStatus, getAccountSummary, listAccounts, serializeAccount, setBrgyApproval };

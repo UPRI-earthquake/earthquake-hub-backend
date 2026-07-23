@@ -39,10 +39,11 @@ describe('Admin devices and stations routes', () => {
   });
 
   it('returns the read-only station inventory to administrators', async () => {
-    AdminDevicesStationsService.listDevices.mockResolvedValue({ devices: [{ deviceId: 'AM_R1382', activity: 'active' }], total: 1, limit: 25, offset: 0 });
-    const response = await request(app).get('/admin/devices-stations?hasTunnel=true&network=AM').set('Cookie', [`accessToken=${signAdminToken()}`]);
+    AdminDevicesStationsService.listDevices.mockResolvedValue({ devices: [{ deviceId: 'AM_R1382', activity: 'active' }], total: 1, limit: 25, offset: 0, summary: { total: 1 } });
+    const response = await request(app).get('/admin/devices-stations?hasTunnel=true&attention=true&network=AM').set('Cookie', [`accessToken=${signAdminToken()}`]);
     expect(response.statusCode).toBe(200);
-    expect(AdminDevicesStationsService.listDevices).toHaveBeenCalledWith(expect.objectContaining({ hasTunnel: true, network: 'AM', limit: 25, offset: 0 }));
+    expect(AdminDevicesStationsService.listDevices).toHaveBeenCalledWith(expect.objectContaining({ hasTunnel: true, attention: true, includeSummary: true, network: 'AM', limit: 25, offset: 0 }));
+    expect(response.body.summary).toEqual({ total: 1 });
   });
 
   it('audits approved remote ringserver changes', async () => {
