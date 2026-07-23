@@ -11,6 +11,8 @@ const EQEventsService = require('./EQevents.service');
 
 const DEFAULT_CACHE_TTL_MS = 5000;
 const DEFAULT_SOURCE_TIMEOUT_MS = 2500;
+const STATION_SNAPSHOT_LIMIT = 13;
+const MIN_MEANINGFUL_ACTIVITY_TIME = Date.UTC(2000, 0, 1);
 
 let cachedSnapshot = null;
 let cacheExpiresAt = 0;
@@ -76,14 +78,92 @@ function numberOrNull(value) {
   return Number.isFinite(value) ? value : null;
 }
 
+function stationActivityPriority(activity) {
+  switch (String(activity || '').toLowerCase()) {
+    case 'internal_error': return 0;
+    case 'inactive': return 1;
+    case 'unlinked': return 2;
+    case 'active':
+    case 'streaming': return 4;
+    default: return 3;
+  }
+}
+
+function meaningfulActivityTime(value) {
+  const time = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(time) && time >= MIN_MEANINGFUL_ACTIVITY_TIME ? time : null;
+}
+
+function stationMetrics(value) {
+  const devices = Array.isArray(value?.devices) ? value.devices : [];
+  const isActive = (device) => ['active', 'streaming'].includes(String(device.activity || '').toLowerCase());
+  const active = devices.filter(isActive).length;
+  const unlinked = devices.filter((device) => String(device.activity || '').toLowerCase() === 'unlinked'
+    || !device.streamId
+    || device.streamId === 'TO_BE_LINKED').length;
+  const stationRows = devices.map((device) => ({
+    deviceId: device.deviceId,
+    network: device.network || null,
+    streamId: device.streamId && device.streamId !== 'TO_BE_LINKED' ? device.streamId : null,
+    activity: device.activity || 'unknown',
+    activityToggleTime: meaningfulActivityTime(device.activityToggleTime) === null
+      ? null
+      : new Date(device.activityToggleTime).toISOString(),
+    hasTunnel: Boolean(device.tunnel),
+  }));
+  const rankedRows = [...stationRows].sort((left, right) => {
+    const priorityDifference = stationActivityPriority(left.activity) - stationActivityPriority(right.activity);
+    if (priorityDifference) return priorityDifference;
+
+    const leftTime = meaningfulActivityTime(left.activityToggleTime);
+    const rightTime = meaningfulActivityTime(right.activityToggleTime);
+    if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return leftTime - rightTime;
+    if (leftTime !== null) return -1;
+    if (rightTime !== null) return 1;
+    return String(left.deviceId || '').localeCompare(String(right.deviceId || ''));
+  });
+  const activeRows = rankedRows.filter(isActive);
+  const attentionRows = rankedRows.filter((device) => !isActive(device));
+  const snapshot = [
+    ...attentionRows,
+    ...activeRows,
+  ].slice(0, STATION_SNAPSHOT_LIMIT);
+  return {
+    total: numberOrNull(value?.total),
+    active,
+    inactive: Math.max(0, devices.length - active),
+    unlinked,
+    tunneled: devices.filter((device) => Boolean(device.tunnel)).length,
+    snapshot,
+  };
+}
+
+function deploymentMetrics(value) {
+  return {
+    observedServices: numberOrNull(value.summary?.observedServices),
+    unobservedServices: numberOrNull(value.summary?.unobservedServices),
+    services: (value.services || []).slice(0, 8).map((service) => ({
+      id: service.id,
+      name: service.name,
+      status: service.status,
+      observation: service.observation,
+      observedAt: service.observedAt || null,
+      purpose: service.purpose,
+    })),
+  };
+}
+
 function definitions(req) {
   return [
     {
       id: 'stations',
       label: 'Devices & Stations',
       route: '/devices-stations',
-      load: () => AdminDevicesStationsService.listDevices({ limit: 1, offset: 0 }),
-      project: (value) => ({ total: value.total }),
+      // listDevices already materializes the inventory before applying its
+      // pagination slice. Request the complete internal result for accurate
+      // totals, then expose a bounded, non-sensitive operational sample.
+      load: () => AdminDevicesStationsService.listDevices({ limit: Number.MAX_SAFE_INTEGER, offset: 0 }),
+      project: stationMetrics,
     },
     {
       id: 'accounts',
@@ -121,7 +201,12 @@ function definitions(req) {
       label: 'Ringserver',
       route: '/ringserver',
       load: () => AdminRingserverService.getSnapshot({ connectionLimit: 1, streamLimit: 1 }),
-      project: (value) => ({ activeConnections: numberOrNull(value.summary?.activeConnections), activeStreams: numberOrNull(value.summary?.activeStreams) }),
+      project: (value) => ({
+        activeConnections: numberOrNull(value.summary?.activeConnections),
+        activeStreams: numberOrNull(value.summary?.activeStreams),
+        dataLinkWriters: numberOrNull(value.summary?.dataLinkWriters),
+        seedLinkReaders: numberOrNull(value.summary?.seedLinkReaders),
+      }),
     },
     {
       id: 'seiscomp', label: 'SeisComP', route: '/seiscomp', load: () => AdminSeiscompService.getSnapshot({ limit: 1 }, req),
@@ -129,11 +214,20 @@ function definitions(req) {
     },
     {
       id: 'archive', label: 'Archive & Storage', route: '/archive-storage', load: () => AdminArchiveStorageService.getSnapshot({ windowHours: 24, limit: 1 }, req),
-      project: (value) => ({ partialEvents: numberOrNull(value.summary?.partialEvents), unavailableEvents: numberOrNull(value.summary?.unavailableEvents), pendingEvents: numberOrNull(value.summary?.pendingEvents) }),
+      project: (value) => ({
+        verifiedEvents: numberOrNull(value.summary?.verifiedEvents),
+        partialEvents: numberOrNull(value.summary?.partialEvents),
+        unavailableEvents: numberOrNull(value.summary?.unavailableEvents),
+        pendingEvents: numberOrNull(value.summary?.pendingEvents),
+        archiveMounted: value.summary?.archiveMounted ?? null,
+        archiveFreeSpaceBand: value.summary?.archiveFreeSpaceBand || null,
+        latestFdsnVerificationAt: value.summary?.latestFdsnVerificationAt || null,
+        latestFdsnVerificationStatus: value.summary?.latestFdsnVerificationStatus || null,
+      }),
     },
     {
       id: 'deployment', label: 'Deployment', route: '/deployment', load: () => AdminDeploymentHealthService.getSnapshot(req),
-      project: (value) => ({ observedServices: numberOrNull(value.summary?.observedServices), unobservedServices: numberOrNull(value.summary?.unobservedServices) }),
+      project: deploymentMetrics,
     },
     {
       id: 'configuration', label: 'Settings', route: '/settings', load: () => Promise.resolve(AdminConfigurationDiagnosticsService.getSnapshot()),
