@@ -69,6 +69,17 @@ function parseStreams(text, limit) {
   });
 }
 
+function parseTransferLine(line, direction) {
+  const match = String(line || '').match(new RegExp(`^${direction}\\s+(\\d+)\\s+packets,\\s+([\\d.]+)\\s+packets/sec\\s+(\\d+)\\s+bytes,\\s+([\\d.]+)\\s+bytes/sec$`, 'i'));
+  if (!match) return {};
+  return {
+    [`${direction.toLowerCase()}Packets`]: Number(match[1]),
+    [`${direction.toLowerCase()}PacketRate`]: Number(match[2]),
+    [`${direction.toLowerCase()}Bytes`]: Number(match[3]),
+    [`${direction.toLowerCase()}ByteRate`]: Number(match[4]),
+  };
+}
+
 function parseConnections(text, limit) {
   const blocks = String(text || '').trim().split(/\r?\n\s*\r?\n/);
   return blocks.filter((block) => !/^\d+ of \d+ connections$/m.test(block)).slice(0, limit).map((block, index) => {
@@ -78,6 +89,11 @@ function parseConnections(text, limit) {
     const match = typeLine.match(/^\[([^\]]+)\]\s+(.+?)\s{2,}(.+)$/);
     const streamCount = lines.find((line) => line.startsWith('Stream count:'));
     const packet = lines.find((line) => line.startsWith('Packet '));
+    const packetMatch = packet?.match(/^Packet\s+(\S+)\s+\(([^)]+)\)\s+Lag\s+([^,]+)/);
+    const txLine = lines.find((line) => line.startsWith('TX '));
+    const rxLine = lines.find((line) => line.startsWith('RX '));
+    const matchExpression = lines.find((line) => line.startsWith('Match:'));
+    const rejectExpression = lines.find((line) => line.startsWith('Reject:'));
     return {
       id: `${first || 'connection'}-${index}`,
       endpoint: first || 'Unknown endpoint',
@@ -85,7 +101,14 @@ function parseConnections(text, limit) {
       clientId: match?.[2] || null,
       connectedAt: match?.[3] || null,
       packet: packet?.replace(/^Packet\s+/, '') || null,
+      packetId: packetMatch?.[1] || null,
+      packetTime: packetMatch?.[2] || null,
+      packetLag: packetMatch?.[3]?.trim() || null,
       streamCount: streamCount ? Number(streamCount.replace('Stream count:', '').trim()) || 0 : 0,
+      match: matchExpression?.replace(/^Match:\s*/, '') || null,
+      reject: rejectExpression?.replace(/^Reject:\s*/, '') || null,
+      ...parseTransferLine(txLine, 'TX'),
+      ...parseTransferLine(rxLine, 'RX'),
     };
   });
 }
@@ -119,4 +142,4 @@ async function getSnapshot({ connectionLimit = 100, streamLimit = 200 } = {}) {
   }
 }
 
-module.exports = { RingserverMonitoringError, getSnapshot };
+module.exports = { RingserverMonitoringError, getSnapshot, parseConnections, parseStatus, parseStreams };

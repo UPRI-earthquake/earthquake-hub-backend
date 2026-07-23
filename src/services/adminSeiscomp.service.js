@@ -21,8 +21,8 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
       .lean(),
     Event.countDocuments({ createdAt: { $gte: since } }),
     Event.countDocuments({ createdAt: { $gte: since }, recordingAvailabilityStatus: { $in: ['pending', 'partial'] } }),
-    Device.countDocuments({ activity: 'active' }),
-    Device.countDocuments({ activity: { $ne: 'active' } }),
+    Device.countDocuments({ activity: { $in: ['active', 'streaming'] } }),
+    Device.countDocuments({ activity: { $nin: ['active', 'streaming'] } }),
     AdminHostTelemetryClient.getResource('seiscomp', req),
   ]);
 
@@ -43,7 +43,7 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
       id: 'seedlink',
       name: 'SeedLink input',
       status: 'observed',
-      observation: `${activeStations} station${activeStations === 1 ? '' : 's'} currently marked active by Ringserver stream telemetry.`,
+      observation: `${activeStations} station${activeStations === 1 ? '' : 's'} currently marked active or streaming in the station registry.`,
       observedAt: null,
     },
     {
