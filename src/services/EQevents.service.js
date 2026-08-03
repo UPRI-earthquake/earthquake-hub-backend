@@ -1,7 +1,9 @@
 const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
+const Comment = require('../models/comments.model');
 const Device = require('../models/device.model');
+const EventSummaryService = require('./eventSummary.service');
 const puppeteer = require('puppeteer-core');
 
 const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.up.edu.ph/fdsnws/dataselect/1/query';
@@ -22,6 +24,12 @@ const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
 const scheduledOnlineStationRefinements = new Set();
+const COMMENT_STATUS_PENDING = 'pending';
+const SUMMARY_REVIEW_TRANSITIONS = Object.freeze({
+  draft: Object.freeze(['needs_review']),
+  needs_review: Object.freeze(['draft', 'approved']),
+  approved: Object.freeze(['needs_review']),
+});
 
 function _positiveNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -145,10 +153,27 @@ async function getEventByPublicID(publicID) {
 
 async function getAdminEventSummary() {
   const sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
-  const [total, recentSevenDays, customSummaries, pendingEnrichment, recordingAttention, sources] = await Promise.all([
+  const [
+    total,
+    recentSevenDays,
+    customSummaries,
+    summariesNeedingReview,
+    approvedSummaries,
+    pendingEnrichment,
+    recordingAttention,
+    sources,
+  ] = await Promise.all([
     EQEvents.countDocuments({}),
     EQEvents.countDocuments({ OT: { $gte: sevenDaysAgo } }),
     EQEvents.countDocuments({ 'summaryOverride.text': { $exists: true, $ne: '' } }),
+    EQEvents.countDocuments({
+      'summaryOverride.text': { $exists: true, $ne: '' },
+      'summaryOverride.reviewStatus': 'needs_review',
+    }),
+    EQEvents.countDocuments({
+      'summaryOverride.text': { $exists: true, $ne: '' },
+      'summaryOverride.reviewStatus': 'approved',
+    }),
     EQEvents.countDocuments({ 'pendingCatalogSources.0': { $exists: true } }),
     EQEvents.countDocuments({ recordingAvailabilityStatus: { $in: ['pending', 'partial', 'unavailable'] } }),
     EQEvents.distinct('sourceCatalog'),
@@ -158,21 +183,36 @@ async function getAdminEventSummary() {
     total,
     recentSevenDays,
     customSummaries,
+    summariesNeedingReview,
+    approvedSummaries,
     pendingEnrichment,
     recordingAttention,
     sources: sources.filter(Boolean).sort(),
   };
 }
 
-async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false, minMagnitude, pendingEnrichment, recordingAttention, recordingStatus, search, sourceCatalog, startTime, limit = 25, offset = 0 } = {}) {
+async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false, minMagnitude, pendingEnrichment, recordingAttention, recordingStatus, search, sourceCatalog, startTime, summaryReviewStatus, limit = 25, offset = 0 } = {}) {
   const query = {};
   if (startTime || endTime) {
     query.OT = {};
     if (startTime) query.OT.$gte = startTime;
     if (endTime) query.OT.$lte = endTime;
   }
-  if (hasSummary === true) query['summaryOverride.text'] = { $exists: true, $ne: '' };
-  if (hasSummary === false) query.$or = [{ summaryOverride: { $exists: false } }, { summaryOverride: null }, { 'summaryOverride.text': { $exists: false } }, { 'summaryOverride.text': '' }];
+  if (summaryReviewStatus === 'none' || (!summaryReviewStatus && hasSummary === false)) {
+    query.$or = [{ summaryOverride: { $exists: false } }, { summaryOverride: null }, { 'summaryOverride.text': { $exists: false } }, { 'summaryOverride.text': '' }];
+  } else if (summaryReviewStatus === 'draft') {
+    query['summaryOverride.text'] = { $exists: true, $ne: '' };
+    query.$or = [
+      { 'summaryOverride.reviewStatus': 'draft' },
+      { 'summaryOverride.reviewStatus': { $exists: false } },
+      { 'summaryOverride.reviewStatus': null },
+    ];
+  } else if (['needs_review', 'approved'].includes(summaryReviewStatus)) {
+    query['summaryOverride.text'] = { $exists: true, $ne: '' };
+    query['summaryOverride.reviewStatus'] = summaryReviewStatus;
+  } else if (hasSummary === true) {
+    query['summaryOverride.text'] = { $exists: true, $ne: '' };
+  }
   if (pendingEnrichment === true) query['pendingCatalogSources.0'] = { $exists: true };
   if (pendingEnrichment === false) query['pendingCatalogSources.0'] = { $exists: false };
   if (minMagnitude !== undefined) query.magnitude_value = { $gte: minMagnitude };
@@ -197,7 +237,29 @@ async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false,
     includeSummary ? getAdminEventSummary() : Promise.resolve(undefined),
   ]);
 
-  return { events, total, limit, offset, summary };
+  const eventPublicIDs = events.map(({ publicID }) => publicID).filter(Boolean);
+  const reportCounts = eventPublicIDs.length
+    ? await Comment.aggregate([
+      { $match: { eventPublicID: { $in: eventPublicIDs } } },
+      {
+        $group: {
+          _id: '$eventPublicID',
+          total: { $sum: 1 },
+          pending: { $sum: { $cond: [{ $eq: ['$status', COMMENT_STATUS_PENDING] }, 1, 0] } },
+        },
+      },
+    ])
+    : [];
+  const reportCountByEvent = new Map(reportCounts.map(({ _id, pending, total }) => [
+    _id,
+    { pending: Number(pending || 0), total: Number(total || 0) },
+  ]));
+  const enrichedEvents = events.map((event) => EventSummaryService.enrichAdminEvent({
+    ...event,
+    communityReports: reportCountByEvent.get(event.publicID) || { pending: 0, total: 0 },
+  }));
+
+  return { events: enrichedEvents, total, limit, offset, summary };
 }
 
 /***************************************************************************
@@ -712,7 +774,7 @@ async function getEventOnlineStations(event, stationDevices, turf) {
 }
 
 async function updateOnlineStationsForEvent(publicID) {
-  const turf = await import('@turf/turf');
+  const turf = { point: turfHelpers.point, distance: turfDistance.default };
 
   const event = await EQEvents.findOne({ publicID }).lean();
   if (!event || event.longitude_value == null || event.latitude_value == null) {
@@ -789,18 +851,68 @@ async function updateOnlineStationsForEvent(publicID) {
   *     An object with matchedCount, modifiedCount, and usableDevicesCount.
   * 
  ***************************************************************************/
-async function updateOnlineStations() {
-  const turf = await import('@turf/turf');
+async function updateOnlineStations(options = {}) {
+  const {
+    batchSize,
+    onlyAttention = false,
+    onProgress,
+    signal,
+  } = options || {};
+  const throwIfAborted = () => {
+    if (!signal?.aborted) return;
+    const error = new Error('Recording availability verification was aborted.');
+    error.name = 'AbortError';
+    throw error;
+  };
+  const reportProgress = async (current, total, message) => {
+    if (typeof onProgress !== 'function') return;
+    try {
+      await onProgress({ current, total, message });
+    } catch (error) {
+      console.error(`Unable to persist recording verification progress: ${error.message}`);
+    }
+  };
 
-  const [events, devices] = await Promise.all([
-    EQEvents.find({}).lean(),
-    Device.find({}).lean()
+  throwIfAborted();
+  const turf = { point: turfHelpers.point, distance: turfDistance.default };
+
+  const eventFilter = onlyAttention
+    ? {
+      longitude_value: { $ne: null },
+      latitude_value: { $ne: null },
+      $or: [
+        { recordingAvailabilityStatus: { $in: ['pending', 'partial', 'unavailable'] } },
+        { recordingAvailabilityStatus: { $exists: false } },
+      ],
+    }
+    : {};
+  let eventQuery = EQEvents.find(eventFilter).sort({ OT: -1 });
+  if (Number.isInteger(batchSize) && batchSize > 0) eventQuery = eventQuery.limit(batchSize);
+
+  const [events, devices, eligibleCount] = await Promise.all([
+    eventQuery.lean(),
+    Device.find({}).lean(),
+    onlyAttention ? EQEvents.countDocuments(eventFilter) : Promise.resolve(null),
   ]);
 
   const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+  const totalProcessed = eventsWithCoords.length;
+  const boundedEligibleCount = eligibleCount ?? totalProcessed;
+  await reportProgress(0, totalProcessed, totalProcessed
+    ? `Preparing ${totalProcessed} event recording check(s).`
+    : 'No event recording checks require refresh.');
 
   if (eventsWithCoords.length === 0) {
-    return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
+    return {
+      matchedCount: 0,
+      modifiedCount: 0,
+      usableDevicesCount: 0,
+      skippedCount: 0,
+      totalProcessed: 0,
+      eligibleCount: boundedEligibleCount,
+      batchLimited: false,
+      statusCounts: { pending: 0, partial: 0, verified: 0, unavailable: 0 },
+    };
   }
 
   const usableDevices = devices.filter(
@@ -808,57 +920,79 @@ async function updateOnlineStations() {
   );
 
   const eventStationPairs = [];
+  const statusCounts = { pending: 0, partial: 0, verified: 0, unavailable: 0 };
+  const persistPerEvent = Boolean(onProgress || signal || batchSize || onlyAttention);
+  let matchedCount = 0;
+  let modifiedCount = 0;
   let skippedCount = 0;
+  let sampleOnlineStations = null;
   for (let index = 0; index < eventsWithCoords.length; index += 1) {
+    throwIfAborted();
     const event = eventsWithCoords[index];
     const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
     if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
       skippedCount += 1;
+      await reportProgress(
+        index + 1,
+        totalProcessed,
+        `Checked ${index + 1} of ${totalProcessed} events; all station probes failed for this event.`,
+      );
       continue;
     }
 
-    eventStationPairs.push({
-      eventId: event._id,
-      availability: buildRecordingAvailabilityUpdate(event, refinement),
-    });
+    const availability = buildRecordingAvailabilityUpdate(event, refinement);
+    statusCounts[availability.recordingAvailabilityStatus] += 1;
+    if (!sampleOnlineStations) sampleOnlineStations = availability.onlineStations;
+    const update = {
+      $set: {
+        candidateStations: availability.candidateStations,
+        recordingStations: availability.recordingStations,
+        recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+        recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+        recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+        onlineStations: availability.onlineStations,
+      },
+    };
+
+    if (persistPerEvent) {
+      const result = await EQEvents.updateOne({ _id: event._id }, update);
+      matchedCount += Number(result.matchedCount || 0);
+      modifiedCount += Number(result.modifiedCount || 0);
+    } else {
+      eventStationPairs.push({ eventId: event._id, update });
+    }
+    await reportProgress(
+      index + 1,
+      totalProcessed,
+      `Checked ${index + 1} of ${totalProcessed} event recording windows.`,
+    );
   }
 
-  const operations = eventStationPairs.map(({ eventId, availability }) => ({
+  const operations = eventStationPairs.map(({ eventId, update }) => ({
     updateOne: {
       filter: { _id: eventId },
-      update: {
-        $set: {
-          candidateStations: availability.candidateStations,
-          recordingStations: availability.recordingStations,
-          recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-          recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-          recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-          onlineStations: availability.onlineStations,
-        },
-      },
+      update,
     },
   }));
 
-  if (operations.length === 0) {
-    return {
-      matchedCount: 0,
-      modifiedCount: 0,
-      usableDevicesCount: usableDevices.length,
-      skippedCount,
-      sampleOnlineStations: null,
-    };
+  if (operations.length > 0) {
+    const result = await EQEvents.bulkWrite(operations);
+    matchedCount = Number(result.matchedCount || 0);
+    modifiedCount = Number(result.modifiedCount || 0);
+    const sampleEvent = await EQEvents.findOne({}).lean();
+    sampleOnlineStations = sampleEvent ? sampleEvent.onlineStations : null;
   }
 
-  const result = await EQEvents.bulkWrite(operations);
-
-  const sampleEvent = await EQEvents.findOne({}).lean();
-
   return {
-    matchedCount: result.matchedCount,
-    modifiedCount: result.modifiedCount,
+    matchedCount,
+    modifiedCount,
     usableDevicesCount: usableDevices.length,
     skippedCount,
-    sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
+    totalProcessed,
+    eligibleCount: boundedEligibleCount,
+    batchLimited: boundedEligibleCount > totalProcessed,
+    statusCounts,
+    sampleOnlineStations,
   };
 }
 
@@ -1246,7 +1380,24 @@ const CATALOG_SOURCE_ADAPTERS = {
   *     An object with modifiedCount, skippedCount, exhaustedCount, and totalProcessed.
   *
  ***************************************************************************/
-async function addAdditionalInformation() {
+async function addAdditionalInformation(options = {}) {
+  const { onProgress, signal } = options || {};
+  const throwIfAborted = () => {
+    if (!signal?.aborted) return;
+    const error = new Error('Catalog enrichment was aborted.');
+    error.name = 'AbortError';
+    throw error;
+  };
+  const reportProgress = async (current, total, message) => {
+    if (typeof onProgress !== 'function') return;
+    try {
+      await onProgress({ current, total, message });
+    } catch (error) {
+      console.error(`Unable to persist enrichment progress: ${error.message}`);
+    }
+  };
+
+  throwIfAborted();
   const browser = await puppeteer.launch({
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
     args: [
@@ -1273,6 +1424,9 @@ async function addAdditionalInformation() {
       .sort({ OT: 1 })
       .limit(ENRICHMENT_BATCH_SIZE)
       .lean();
+    await reportProgress(0, events.length, events.length
+      ? `Preparing ${events.length} eligible event(s).`
+      : 'No eligible events require enrichment.');
 
     console.log(
       `addAdditionalInformation: processing ${events.length} event(s) ` +
@@ -1289,6 +1443,7 @@ async function addAdditionalInformation() {
     let failedSourceCount = 0;
 
     for (let i = 0; i < events.length; i += 1) {
+      throwIfAborted();
       const event         = events[i];
       const ref           = _buildReferenceEvent(event);
       const missingFields = _validateReferenceEvent(ref);
@@ -1304,6 +1459,7 @@ async function addAdditionalInformation() {
       if (pendingSources.length === 0) {
         process.stdout.write('skipped (no eligible pending source)\n');
         skippedCount += 1;
+        await reportProgress(i + 1, events.length, `Checked ${i + 1} of ${events.length} events.`);
         continue;
       }
 
@@ -1329,6 +1485,7 @@ async function addAdditionalInformation() {
         process.stdout.write(`skipped (missing: ${missingFields.join(', ')})\n`);
         skippedCount  += 1;
         modifiedCount += 1;
+        await reportProgress(i + 1, events.length, `Checked ${i + 1} of ${events.length} events.`);
         continue;
       }
 
@@ -1446,6 +1603,7 @@ async function addAdditionalInformation() {
         await EQEvents.updateOne({ _id: event._id }, updateFields);
         modifiedCount += 1;
       }
+      await reportProgress(i + 1, events.length, `Checked ${i + 1} of ${events.length} events.`);
     }
 
     console.log(
@@ -1471,14 +1629,17 @@ async function addAdditionalInformation() {
 }
 
 async function setEventSummary(publicID, text, editedBy) {
+  const editedAt = new Date();
   const event = await EQEvents.findOneAndUpdate(
     { publicID },
     {
       $set: {
         summaryOverride: {
           text,
-          editedAt: new Date(),
-          ...(editedBy ? { editedBy } : {})
+          editedAt,
+          reviewStatus: 'draft',
+          reviewStatusChangedAt: editedAt,
+          ...(editedBy ? { editedBy, reviewStatusChangedBy: editedBy } : {})
         }
       }
     },
@@ -1491,7 +1652,92 @@ async function setEventSummary(publicID, text, editedBy) {
     throw error;
   }
 
-  return event
+  return event;
+}
+
+function currentSummaryReviewStatus(summaryOverride) {
+  return EventSummaryService.summaryReviewStatus(summaryOverride);
+}
+
+function summaryReviewError(message, status, code) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+async function transitionEventSummaryReview(publicID, currentStatus, nextStatus, changedBy) {
+  if (!SUMMARY_REVIEW_TRANSITIONS[currentStatus]?.includes(nextStatus)) {
+    throw summaryReviewError(
+      `Summary review cannot transition from ${currentStatus} to ${nextStatus}.`,
+      409,
+      'SUMMARY_REVIEW_INVALID_TRANSITION',
+    );
+  }
+
+  const changedAt = new Date();
+  const filter = {
+    publicID,
+    'summaryOverride.text': { $exists: true, $ne: '' },
+  };
+  if (currentStatus === 'draft') {
+    filter.$or = [
+      { 'summaryOverride.reviewStatus': 'draft' },
+      { 'summaryOverride.reviewStatus': { $exists: false } },
+      { 'summaryOverride.reviewStatus': null },
+    ];
+  } else {
+    filter['summaryOverride.reviewStatus'] = currentStatus;
+  }
+
+  const set = {
+    'summaryOverride.reviewStatus': nextStatus,
+    'summaryOverride.reviewStatusChangedAt': changedAt,
+    ...(changedBy ? { 'summaryOverride.reviewStatusChangedBy': changedBy } : {}),
+  };
+  const unset = {};
+  if (nextStatus === 'needs_review') {
+    set['summaryOverride.submittedAt'] = changedAt;
+    if (changedBy) set['summaryOverride.submittedBy'] = changedBy;
+    unset['summaryOverride.approvedAt'] = '';
+    unset['summaryOverride.approvedBy'] = '';
+  } else if (nextStatus === 'approved') {
+    set['summaryOverride.approvedAt'] = changedAt;
+    if (changedBy) set['summaryOverride.approvedBy'] = changedBy;
+  } else {
+    unset['summaryOverride.submittedAt'] = '';
+    unset['summaryOverride.submittedBy'] = '';
+    unset['summaryOverride.approvedAt'] = '';
+    unset['summaryOverride.approvedBy'] = '';
+  }
+
+  const update = { $set: set };
+  if (Object.keys(unset).length > 0) update.$unset = unset;
+
+  const event = await EQEvents.findOneAndUpdate(
+    filter,
+    update,
+    { new: true, runValidators: true },
+  );
+  if (event) return event;
+
+  const existing = await EQEvents.findOne({ publicID }).select('summaryOverride').lean();
+  if (!existing) {
+    throw summaryReviewError(`Event not found: ${publicID}`, 404, 'SUMMARY_REVIEW_EVENT_NOT_FOUND');
+  }
+  const actualStatus = currentSummaryReviewStatus(existing.summaryOverride);
+  if (actualStatus === 'none') {
+    throw summaryReviewError(
+      'A custom summary is required before review can begin.',
+      409,
+      'SUMMARY_REVIEW_SUMMARY_REQUIRED',
+    );
+  }
+  throw summaryReviewError(
+    `Summary review changed from ${currentStatus} to ${actualStatus}; refresh before retrying.`,
+    409,
+    'SUMMARY_REVIEW_CONFLICT',
+  );
 }
 
 async function clearEventSummary(publicID) {
@@ -1523,7 +1769,10 @@ module.exports = {
   countEligibleEnrichmentEvents,
   setEventSummary,
   clearEventSummary,
+  transitionEventSummaryReview,
   _test: {
+    currentSummaryReviewStatus,
+    summaryReviewTransitions: SUMMARY_REVIEW_TRANSITIONS,
     getCatalogMatchQuality: _getCatalogMatchQuality,
     selectCatalogMatch: _selectCatalogMatch,
     normalizeCatalogSources: _normalizeCatalogSources,

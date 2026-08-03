@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const jwt = require('jsonwebtoken');
 const AccountsService = require('../services/accounts.service');
+const AdminSessionService = require('../services/adminSession.service');
 const { responseCodes } = require('./responseCodes');
 const {
   generateAccessToken,
@@ -160,6 +161,13 @@ exports.authenticateAccount = async (req, res, next) => {
           message: message
         });
         break;
+      case "accountInactive":
+        message = 'This account has been deactivated.';
+        res.status(403).json({
+          status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
+          message,
+        });
+        break;
       case "brgyAccountInactive":
         message = 'Account is not yet approved';
         res.status(400).json({
@@ -176,7 +184,12 @@ exports.authenticateAccount = async (req, res, next) => {
         
         if (origin === allowedOrigin) { // origin is from web app
           // return access token in http cookie (so it's hidden from browser js)
-          setSessionCookies(res, { username: authenticatedUsername, role: 'brgy' });
+          setSessionCookies(res, {
+            accountId: loginResult?.accountId,
+            username: authenticatedUsername,
+            role: 'brgy',
+            sessionVersion: Number(loginResult?.sessionVersion || 0),
+          });
           res.status(200).json({
             status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
             message: "Authentication successful",
@@ -194,12 +207,16 @@ exports.authenticateAccount = async (req, res, next) => {
             username: authenticatedUsername,
             // return access token as part of json payload
             accessToken: generateAccessToken({
+              'accountId': loginResult?.accountId,
               'username': authenticatedUsername,
-              'role': result.value.role
+              'role': result.value.role,
+              'sessionVersion': Number(loginResult?.sessionVersion || 0),
             }, result.value.role === 'brgy' ? 'brgy' : 'device'),
             refreshToken: generateRefreshToken({
+              'accountId': loginResult?.accountId,
               'username': authenticatedUsername,
-              'role': result.value.role
+              'role': result.value.role,
+              'sessionVersion': Number(loginResult?.sessionVersion || 0),
             }, result.value.role === 'brgy' ? 'brgy' : 'device'),
             passwordStatus: loginResult?.passwordStatus,
             passwordPolicyVersion: loginResult?.passwordPolicyVersion,
@@ -212,7 +229,12 @@ exports.authenticateAccount = async (req, res, next) => {
         break;
       case "successCitizen":
         message = "Authentication successful";
-        setSessionCookies(res, { accountId: loginResult?.accountId, username: authenticatedUsername, role: 'citizen' });
+        setSessionCookies(res, {
+          accountId: loginResult?.accountId,
+          username: authenticatedUsername,
+          role: 'citizen',
+          sessionVersion: Number(loginResult?.sessionVersion || 0),
+        });
         res.status(200).json({
           status: responseCodes.AUTHENTICATION_TOKEN_COOKIE,
           message: message,
@@ -521,9 +543,27 @@ exports.getAccountProfile = async (req, res, next) => {
           });
         }
 
-        setSessionCookies(res, { username: decodedRefresh.username, role: decodedRefresh.role });
-        req.username = decodedRefresh.username;
-        req.role = decodedRefresh.role;
+        const refreshedState = await AdminSessionService.validateAccountSession(
+          decodedRefresh,
+          { allowLegacyGeneration: true },
+        );
+        if (!refreshedState.valid) {
+          clearSessionCookies(res);
+          return res.status(401).json({
+            status: responseCodes.AUTHENTICATION_SESSION_EXPIRED,
+            message: 'Session expired, was revoked, or is no longer authorized.',
+          });
+        }
+        setSessionCookies(res, {
+          accountId: refreshedState.accountId,
+          username: refreshedState.username,
+          role: refreshedState.role,
+          sessionVersion: refreshedState.sessionVersion,
+        });
+        req.accountId = refreshedState.accountId;
+        req.username = refreshedState.username;
+        req.role = refreshedState.role;
+        req.sessionVersion = refreshedState.sessionVersion;
         req.isAuthenticated = true;
         sessionWasRefreshed = true;
       } catch (err) {
@@ -936,7 +976,12 @@ exports.updateAccountUsername = async (req, res, next) => {
         });
         return;
       case 'success':
-        setSessionCookies(res, { username: outcome.username, role: req.role });
+        setSessionCookies(res, {
+          accountId: req.accountId,
+          username: outcome.username,
+          role: req.role,
+          sessionVersion: Number(req.sessionVersion || 0),
+        });
         res.status(200).json({
           status: responseCodes.GENERIC_SUCCESS,
           message: 'Username updated.',
@@ -1051,12 +1096,16 @@ exports.getBrgyToken = async (req, res, next) => {
       message: 'Authentication successful',
       // return access token as part of json payload
       accessToken: generateAccessToken({
+        'accountId': req.accountId,
         'username': req.username,
-        'role': req.role
+        'role': req.role,
+        'sessionVersion': Number(req.sessionVersion || 0),
       }, req.role === 'brgy' ? 'brgy' : 'device'),
       refreshToken: generateRefreshToken({
+        'accountId': req.accountId,
         'username': req.username,
-        'role': req.role
+        'role': req.role,
+        'sessionVersion': Number(req.sessionVersion || 0),
       }, req.role === 'brgy' ? 'brgy' : 'device'),
     });
     

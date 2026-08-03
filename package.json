@@ -9,7 +9,13 @@
     "start:dev": "nodemon --ignore docs/ -r dotenv/config src/index.js",
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
+    "test:integration:mongo": "RUN_MONGO_INTEGRATION=1 jest --setupFiles dotenv/config --runInBand __tests__/adminControlPlane.mongodb.integration.test.js",
     "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
+    "audit-retention:backfill": "node scripts/backfill-audit-retention.js",
+    "audit-retention:export": "node scripts/export-audit-logs.js",
+    "incident-retention:backfill": "node scripts/backfill-incident-retention.js",
+    "summary-review:backfill": "node scripts/backfill-summary-review.js",
+    "admin:bootstrap": "node scripts/bootstrap-admin.js",
     "overlays:fetch": "node scripts/fetch-overlays.js"
   },
   "repository": {

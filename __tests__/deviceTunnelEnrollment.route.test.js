@@ -18,8 +18,14 @@ jest.mock('../src/services/tunnelEnrollment.service', () => {
     revokeDeviceTunnel: jest.fn(),
   };
 });
+jest.mock('../src/services/auditLog.service', () => ({ execute: jest.fn() }));
+jest.mock('../src/services/stationOperationalHistory.service', () => ({
+  appendTunnelTransition: jest.fn().mockResolvedValue(undefined),
+}));
 
 const TunnelEnrollmentService = require('../src/services/tunnelEnrollment.service');
+const AuditLogService = require('../src/services/auditLog.service');
+const StationOperationalHistoryService = require('../src/services/stationOperationalHistory.service');
 
 function signDeviceToken(payload = {}) {
   return jwt.sign(
@@ -38,6 +44,7 @@ function signWebToken(payload = {}) {
     {
       username: 'admin-user',
       role: 'admin',
+      csrfToken: 'test-admin-csrf-token',
       ...payload,
     },
     process.env.ACCESS_TOKEN_PRIVATE_KEY_WEB,
@@ -57,6 +64,7 @@ describe('Device tunnel enrollment routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    AuditLogService.execute.mockImplementation(async (_req, _event, operation) => operation());
   });
 
   it('rejects unauthenticated enroll requests', async () => {
@@ -102,6 +110,16 @@ describe('Device tunnel enrollment routes', () => {
         deviceId: 'AM_R24FA',
       }),
     );
+    expect(AuditLogService.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      eventType: 'device.tunnel.enroll',
+      metadata: expect.objectContaining({ publicKeyFingerprint: expect.stringMatching(/^SHA256:/) }),
+    }), expect.any(Function));
+    expect(StationOperationalHistoryService.appendTunnelTransition).toHaveBeenCalledWith(expect.objectContaining({
+      actor: expect.objectContaining({ role: 'sensor' }),
+      deviceId: 'AM_R24FA',
+      eventType: 'tunnel_enrolled',
+      remotePort: 22501,
+    }));
   });
 
   it('returns conflict when enrollment collisions occur', async () => {
@@ -120,6 +138,7 @@ describe('Device tunnel enrollment routes', () => {
       });
 
     expect(response.statusCode).toBe(409);
+    expect(AuditLogService.execute).toHaveBeenCalled();
   });
 
   it('rejects enroll requests without device identity', async () => {
@@ -151,5 +170,32 @@ describe('Device tunnel enrollment routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body?.payload).toHaveLength(1);
     expect(response.body?.payload?.[0]?.deviceId).toBe('AM_R24FA');
+  });
+
+  it('audits tunnel revocation through the compatibility admin route', async () => {
+    TunnelEnrollmentService.revokeDeviceTunnel.mockResolvedValue({ deviceId: 'AM_R24FA' });
+
+    const token = signWebToken();
+    const response = await request(app)
+      .post('/device/tunnel/revoke')
+      .set('Cookie', [`accessToken=${token}`, 'csrfToken=test-admin-csrf-token'])
+      .set('X-CSRF-Token', 'test-admin-csrf-token')
+      .send({
+        deviceId: 'AM_R24FA',
+        confirmation: 'AM_R24FA',
+        reason: 'Retire the inactive station tunnel mapping.',
+      });
+
+    expect(response.statusCode).toBe(200);
+    expect(AuditLogService.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      eventType: 'device.tunnel.revoke',
+      metadata: { compatibilityRoute: true },
+    }), expect.any(Function));
+    expect(TunnelEnrollmentService.revokeDeviceTunnel).toHaveBeenCalledWith('AM_R24FA');
+    expect(StationOperationalHistoryService.appendTunnelTransition).toHaveBeenCalledWith(expect.objectContaining({
+      actor: expect.objectContaining({ role: 'super_admin' }),
+      deviceId: 'AM_R24FA',
+      eventType: 'tunnel_revoked',
+    }));
   });
 });

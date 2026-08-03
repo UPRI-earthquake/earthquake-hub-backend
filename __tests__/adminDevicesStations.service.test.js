@@ -1,8 +1,10 @@
 jest.mock('../src/models/device.model', () => ({ find: jest.fn() }));
 jest.mock('../src/services/tunnelEnrollment.service', () => ({ listActiveMappings: jest.fn() }));
+jest.mock('../src/services/adminHostTelemetry.client', () => ({ getResource: jest.fn() }));
 
 const Device = require('../src/models/device.model');
 const TunnelEnrollmentService = require('../src/services/tunnelEnrollment.service');
+const AdminHostTelemetryClient = require('../src/services/adminHostTelemetry.client');
 const AdminDevicesStationsService = require('../src/services/adminDevicesStations.service');
 
 function findChain(devices) {
@@ -58,5 +60,59 @@ describe('Admin devices and stations service', () => {
 
     expect(result.total).toBe(1);
     expect(result.summary).toMatchObject({ total: 2, active: 1, unlinked: 1, tunneled: 1 });
+  });
+
+  it('joins a registry-selected port to bounded host listener evidence', async () => {
+    TunnelEnrollmentService.listActiveMappings.mockResolvedValue([{ deviceId: 'AM_R1382', remotePort: 22012, createdAt: '2026-07-01T00:00:00.000Z' }]);
+    AdminHostTelemetryClient.getResource.mockResolvedValue({
+      status: 'available',
+      observedAt: '2026-08-02T01:02:03.000Z',
+      data: {
+        listenerPorts: [22012, 22020],
+        portRange: { start: 22000, end: 22999 },
+        limitations: 'Listener presence is point-in-time evidence only.',
+      },
+      operational: { state: 'healthy' },
+    });
+
+    const result = await AdminDevicesStationsService.getTunnelObservation({ deviceId: 'am_r1382', req: { accountId: 'account-1' } });
+
+    expect(AdminHostTelemetryClient.getResource).toHaveBeenCalledWith('wstunnel', { accountId: 'account-1' });
+    expect(result).toMatchObject({
+      deviceId: 'AM_R1382',
+      mapping: { remotePort: 22012 },
+      observation: {
+        state: 'listener_observed',
+        listenerPresent: true,
+        source: 'deployment-host-proc-net',
+      },
+    });
+  });
+
+  it('does not interpret unavailable host evidence as a disconnected tunnel', async () => {
+    TunnelEnrollmentService.listActiveMappings.mockResolvedValue([{ deviceId: 'AM_R1382', remotePort: 22012 }]);
+    AdminHostTelemetryClient.getResource.mockResolvedValue({
+      status: 'unavailable',
+      observedAt: null,
+      errorCode: 'not_configured',
+      operational: { state: 'unavailable' },
+    });
+
+    const result = await AdminDevicesStationsService.getTunnelObservation({ deviceId: 'AM_R1382' });
+
+    expect(result.observation).toMatchObject({
+      state: 'unavailable',
+      listenerPresent: null,
+      errorCode: 'not_configured',
+    });
+  });
+
+  it('does not request host telemetry when no active mapping exists', async () => {
+    TunnelEnrollmentService.listActiveMappings.mockResolvedValue([]);
+
+    const result = await AdminDevicesStationsService.getTunnelObservation({ deviceId: 'AM_R1382' });
+
+    expect(result.observation.state).toBe('not_mapped');
+    expect(AdminHostTelemetryClient.getResource).not.toHaveBeenCalled();
   });
 });

@@ -45,9 +45,12 @@ describe('Device refresh token route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Account.findOne.mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011',
       username: 'sensor-user',
       roles: ['sensor'],
       isApproved: true,
+      isActive: true,
+      sessionVersion: 0,
     });
     DeviceService.getAccountDevices.mockResolvedValue({
       str: 'success',
@@ -76,6 +79,15 @@ describe('Device refresh token route', () => {
     });
     expect(Account.findOne).toHaveBeenCalledWith({ username: 'sensor-user' });
     expect(DeviceService.getAccountDevices).toHaveBeenCalledWith('sensor-user');
+    const decodedAccess = jwt.verify(
+      response.body.payload.accessToken,
+      process.env.ACCESS_TOKEN_PRIVATE_KEY_DEVICE,
+    );
+    expect(decodedAccess).toMatchObject({
+      accountId: '507f1f77bcf86cd799439011',
+      role: 'sensor',
+      sessionVersion: 0,
+    });
   });
 
   it('rejects an invalid refresh token', async () => {
@@ -131,6 +143,65 @@ describe('Device refresh token route', () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.body?.message).toBe('Account is not yet approved');
+    expect(DeviceService.getAccountDevices).not.toHaveBeenCalled();
+  });
+
+  it('rejects a refresh token after its account session generation changes', async () => {
+    Account.findOne.mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011',
+      username: 'sensor-user',
+      roles: ['sensor'],
+      isActive: true,
+      isApproved: true,
+      sessionVersion: 4,
+    });
+
+    const response = await request(app)
+      .post('/device/refresh-token')
+      .send({
+        refreshToken: signRefreshToken({ sessionVersion: 3 }),
+      });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body?.message).toMatch(/revoked/i);
+    expect(DeviceService.getAccountDevices).not.toHaveBeenCalled();
+  });
+
+  it('does not let a legacy device refresh bypass an explicit revocation', async () => {
+    Account.findOne.mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011',
+      username: 'sensor-user',
+      roles: ['sensor'],
+      isActive: true,
+      isApproved: true,
+      sessionVersion: 1,
+    });
+
+    const response = await request(app)
+      .post('/device/refresh-token')
+      .send({ refreshToken: signRefreshToken() });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body?.message).toMatch(/revoked/i);
+    expect(DeviceService.getAccountDevices).not.toHaveBeenCalled();
+  });
+
+  it('rejects refresh for a deactivated account', async () => {
+    Account.findOne.mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011',
+      username: 'sensor-user',
+      roles: ['sensor'],
+      isActive: false,
+      isApproved: true,
+      sessionVersion: 3,
+    });
+
+    const response = await request(app)
+      .post('/device/refresh-token')
+      .send({ refreshToken: signRefreshToken({ sessionVersion: 3 }) });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body?.message).toMatch(/deactivated/i);
     expect(DeviceService.getAccountDevices).not.toHaveBeenCalled();
   });
 });

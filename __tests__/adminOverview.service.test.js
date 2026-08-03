@@ -3,6 +3,7 @@ jest.mock('../src/services/adminArchiveStorage.service', () => ({ getSnapshot: j
 jest.mock('../src/services/adminConfigurationDiagnostics.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/adminDevicesStations.service', () => ({ listDevices: jest.fn() }));
 jest.mock('../src/services/adminDeploymentHealth.service', () => ({ getSnapshot: jest.fn() }));
+jest.mock('../src/services/adminIncident.service', () => ({ synchronizeOverview: jest.fn() }));
 jest.mock('../src/services/adminRingserver.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/adminSeiscomp.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/auditLog.service', () => ({ list: jest.fn() }));
@@ -14,6 +15,7 @@ const AdminArchiveStorageService = require('../src/services/adminArchiveStorage.
 const AdminConfigurationDiagnosticsService = require('../src/services/adminConfigurationDiagnostics.service');
 const AdminDevicesStationsService = require('../src/services/adminDevicesStations.service');
 const AdminDeploymentHealthService = require('../src/services/adminDeploymentHealth.service');
+const AdminIncidentService = require('../src/services/adminIncident.service');
 const AdminRingserverService = require('../src/services/adminRingserver.service');
 const AdminSeiscompService = require('../src/services/adminSeiscomp.service');
 const AuditLogService = require('../src/services/auditLog.service');
@@ -44,6 +46,16 @@ describe('admin overview aggregation', () => {
       summary: { observedServices: 1, unobservedServices: 7 },
       services: [{ id: 'ehub-backend', name: 'ehub-backend', status: 'observed', observation: 'Backend responding.', observedAt: '2026-07-13T00:00:00.000Z', purpose: 'EarthquakeHub API', logCommand: 'sensitive operational command' }],
     });
+    AdminIncidentService.synchronizeOverview.mockResolvedValue({
+      incidents: [],
+      summary: {
+        active: 0,
+        open: 0,
+        acknowledged: 0,
+        investigating: 0,
+        critical: 0,
+      },
+    });
     AdminConfigurationDiagnosticsService.getSnapshot.mockReturnValue({ sensitiveSettings: [], validation: [] });
     AuditLogService.list.mockResolvedValue({ logs: [{ _id: 'audit-1', eventType: 'admin.test', outcome: 'succeeded', actor: { username: 'admin' }, target: { label: 'test' }, createdAt: '2026-07-13T00:00:00.000Z' }] });
   });
@@ -58,9 +70,42 @@ describe('admin overview aggregation', () => {
     expect(snapshot.summary.archiveAttention).toBe(3);
     expect(snapshot.summary.availableSources).toBe(9);
     expect(snapshot.summary.unavailableSources).toBe(1);
+    expect(snapshot.operational).toEqual(expect.objectContaining({
+      availability: 'degraded',
+      state: 'degraded',
+    }));
     expect(snapshot.sources.find((source) => source.id === 'ringserver')).toMatchObject({ status: 'unavailable', message: 'Ringserver unavailable' });
     expect(snapshot.recentEvents[0]).toMatchObject({ publicID: 'event-1', magnitude: 4.2 });
     expect(snapshot.recentAudit[0]).toMatchObject({ eventType: 'admin.test', outcome: 'succeeded' });
+  });
+
+  it('preserves metrics while identifying a fulfilled degraded subsystem', async () => {
+    AdminRingserverService.getSnapshot.mockResolvedValue({
+      observedAt: new Date().toISOString(),
+      operational: {
+        availability: 'degraded',
+        state: 'degraded',
+        message: 'Ringserver evidence is partial.',
+        freshness: {
+          status: 'fresh',
+          observedAt: new Date().toISOString(),
+          ageMs: 0,
+          staleAfterMs: 60_000,
+        },
+      },
+      summary: { activeConnections: 2, activeStreams: 3 },
+    });
+
+    const snapshot = await getSnapshot();
+    const ringserver = snapshot.sources.find((source) => source.id === 'ringserver');
+
+    expect(ringserver).toMatchObject({
+      status: 'degraded',
+      message: 'Ringserver evidence is partial.',
+      metrics: { activeConnections: 2, activeStreams: 3 },
+    });
+    expect(snapshot.summary.degradedSources).toBe(1);
+    expect(snapshot.summary.availableSources).toBe(9);
   });
 
   it('returns a bounded station sample and component evidence without sensitive device or command fields', async () => {

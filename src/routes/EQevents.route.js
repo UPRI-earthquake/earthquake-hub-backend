@@ -7,6 +7,9 @@ const {
   verifyTokenWithRole,
 } = require('../middlewares/token.middleware');
 const { requireAdminCsrf, requireAdminCsrfWhenAdmin } = require('../middlewares/adminCsrf.middleware');
+const AdminEarthquakeEventsController = require('../controllers/adminEarthquakeEvents.controller');
+const { requireAdminCapabilityWhenAdmin } = require('../middlewares/adminActionPolicy.middleware');
+const { ACTIONS } = require('../services/adminCapabilities.service');
 
 /**
   * @swagger
@@ -239,7 +242,8 @@ router.post(
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
   requireAdminCsrf,
-  EQEventsController.updateOnlineStations,
+  requireAdminCapabilityWhenAdmin(ACTIONS.EARTHQUAKE_EVENT_RECORDING_REFRESH),
+  AdminEarthquakeEventsController.refreshRecordingAvailability,
 );
 
 /**
@@ -265,7 +269,8 @@ router.post(
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
   requireAdminCsrf,
-  EQEventsController.addAdditionalInformation,
+  requireAdminCapabilityWhenAdmin(ACTIONS.EARTHQUAKE_EVENT_ENRICHMENT),
+  AdminEarthquakeEventsController.runEnrichment,
 );
 
 /**
@@ -421,9 +426,31 @@ router.post(
  *                   type: string
  *                   example: "Failed to revert event summary."
  */
-router.patch('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), requireAdminCsrfWhenAdmin, EQEventsController.patchEventSummary);
+router.patch(
+  '/:publicID/summary',
+  getTokenFromCookie,
+  verifyTokenWithRole(['admin', 'citizen']),
+  requireAdminCsrfWhenAdmin,
+  requireAdminCapabilityWhenAdmin(ACTIONS.EARTHQUAKE_EVENT_SUMMARY),
+  (req, res, next) => (
+    req.role === 'admin'
+      ? AdminEarthquakeEventsController.updateSummary(req, res, next)
+      : EQEventsController.patchEventSummary(req, res, next)
+  ),
+);
 
-router.delete('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), requireAdminCsrfWhenAdmin, EQEventsController.deleteEventSummary);
+router.delete(
+  '/:publicID/summary',
+  getTokenFromCookie,
+  verifyTokenWithRole(['admin', 'citizen']),
+  requireAdminCsrfWhenAdmin,
+  requireAdminCapabilityWhenAdmin(ACTIONS.EARTHQUAKE_EVENT_SUMMARY),
+  (req, res, next) => (
+    req.role === 'admin'
+      ? AdminEarthquakeEventsController.revertSummary(req, res, next)
+      : EQEventsController.deleteEventSummary(req, res, next)
+  ),
+);
 
 
 module.exports = router;

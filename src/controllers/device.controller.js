@@ -1,9 +1,12 @@
 const Joi = require('joi');
+const crypto = require('crypto');
 const AccountsService = require('../services/accounts.service');
 const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
 const RemoteDeviceActionsService = require('../services/remoteDeviceActions.service');
 const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
+const AuditLogService = require('../services/auditLog.service');
+const StationOperationalHistoryService = require('../services/stationOperationalHistory.service');
 const Account = require('../models/account.model');
 const logger = require('../middlewares/logger.middleware');
 const {responseCodes} = require('./responseCodes')
@@ -238,12 +241,16 @@ exports.linkDevice = async (req, res, next) => {
         ...returnObj.payload,
         rshakeAlertCredential: alertCredential.payload,
         accessToken: generateAccessToken({
+          'accountId': loginResult.accountId,
           'username': username,
-          'role': role
+          'role': role,
+          'sessionVersion': Number(loginResult.sessionVersion || 0),
         }, 'device'),
         refreshToken: generateRefreshToken({
+          'accountId': loginResult.accountId,
           'username': username,
-          'role': role
+          'role': role,
+          'sessionVersion': Number(loginResult.sessionVersion || 0),
         }, 'device')
       }
     });
@@ -358,10 +365,27 @@ exports.refreshToken = async (req, res, next) => {
         message: 'Invalid refresh token',
       });
     }
+    if (accountRecord.isActive === false) {
+      return res.status(403).json({
+        status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
+        message: 'This account has been deactivated.',
+      });
+    }
     if (role === 'brgy' && !accountRecord.isApproved) {
       return res.status(403).json({
         status: responseCodes.AUTHENTICATION_ACCOUNT_INACTIVE,
         message: 'Account is not yet approved',
+      });
+    }
+    const currentSessionVersion = Number(accountRecord.sessionVersion || 0);
+    if (
+      decoded.sessionVersion === undefined
+        ? currentSessionVersion !== 0
+        : Number(decoded.sessionVersion) !== currentSessionVersion
+    ) {
+      return res.status(401).json({
+        status: responseCodes.AUTHENTICATION_SESSION_EXPIRED,
+        message: 'Session was revoked. Sign in again.',
       });
     }
 
@@ -378,8 +402,14 @@ exports.refreshToken = async (req, res, next) => {
 
     const accessTokenScope = role === 'brgy' ? 'brgy' : 'device';
     const refreshTokenScope = role === 'brgy' ? 'brgy' : refreshScope;
-    const accessToken = generateAccessToken({ username, role }, accessTokenScope);
-    const newRefresh = generateRefreshToken({ username, role }, refreshTokenScope);
+    const sessionPayload = {
+      accountId: String(accountRecord._id),
+      username,
+      role,
+      sessionVersion: currentSessionVersion,
+    };
+    const accessToken = generateAccessToken(sessionPayload, accessTokenScope);
+    const newRefresh = generateRefreshToken(sessionPayload, refreshTokenScope);
 
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
@@ -623,11 +653,38 @@ exports.enrollDeviceTunnel = async (req, res, next) => {
       });
     }
 
-    const mapping = await TunnelEnrollmentService.enrollDeviceTunnel({
-      deviceId: resolvedDeviceId,
-      tunnelPublicKey: value.tunnelPublicKey,
-      bastionUser: value.bastionUser,
-      remotePort: value.remotePort,
+    const publicKeyFingerprint = crypto.createHash('sha256')
+      .update(value.tunnelPublicKey)
+      .digest('base64');
+    const mapping = await AuditLogService.execute(req, {
+      eventType: 'device.tunnel.enroll',
+      target: { type: 'device_station', id: resolvedDeviceId, label: resolvedDeviceId },
+      metadata: {
+        publicKeyFingerprint: `SHA256:${publicKeyFingerprint}`,
+        requestedBastionUser: value.bastionUser,
+        requestedRemotePort: value.remotePort,
+      },
+    }, async ({ correlationId } = {}) => {
+      const enrolled = await TunnelEnrollmentService.enrollDeviceTunnel({
+        deviceId: resolvedDeviceId,
+        tunnelPublicKey: value.tunnelPublicKey,
+        bastionUser: value.bastionUser,
+        remotePort: value.remotePort,
+      });
+      await StationOperationalHistoryService.appendTunnelTransition({
+        actor: {
+          accountId: req.accountId,
+          username: req.username,
+          role: req.adminRole || req.role,
+        },
+        correlationId,
+        deviceId: resolvedDeviceId,
+        eventType: 'tunnel_enrolled',
+        remotePort: enrolled.REMOTE_TUNNEL_REMOTE_PORT,
+      }).catch((historyError) => {
+        console.error(`Failed to retain WSTunnel enrollment for ${resolvedDeviceId}:`, historyError);
+      });
+      return enrolled;
     });
 
     const payload = {
@@ -886,6 +943,8 @@ exports.listDeviceTunnels = async (req, res, next) => {
 exports.revokeDeviceTunnel = async (req, res, next) => {
   const schema = Joi.object({
     deviceId: Joi.string().trim().max(128).required(),
+    confirmation: Joi.string().trim().max(128).required(),
+    reason: Joi.string().trim().min(3).max(1000).required(),
   }).required();
 
   try {
@@ -897,7 +956,27 @@ exports.revokeDeviceTunnel = async (req, res, next) => {
       });
     }
 
-    const revoked = await TunnelEnrollmentService.revokeDeviceTunnel(value.deviceId);
+    const revoked = await AuditLogService.execute(req, {
+      eventType: 'device.tunnel.revoke',
+      target: { type: 'device_station', id: value.deviceId, label: value.deviceId },
+      reason: value.reason,
+      metadata: { compatibilityRoute: true },
+    }, async ({ correlationId } = {}) => {
+      const revoked = await TunnelEnrollmentService.revokeDeviceTunnel(value.deviceId);
+      await StationOperationalHistoryService.appendTunnelTransition({
+        actor: {
+          accountId: req.accountId,
+          username: req.username,
+          role: req.adminRole || req.role,
+        },
+        correlationId,
+        deviceId: value.deviceId,
+        eventType: 'tunnel_revoked',
+      }).catch((historyError) => {
+        console.error(`Failed to retain WSTunnel revocation for ${value.deviceId}:`, historyError);
+      });
+      return revoked;
+    });
     res.status(200).json({
       status: responseCodes.TUNNEL_REVOKE_SUCCESS || responseCodes.GENERIC_SUCCESS,
       message: 'Device tunnel revoked',

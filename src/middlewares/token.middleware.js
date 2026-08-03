@@ -1,6 +1,49 @@
 const jwt = require('jsonwebtoken');
 const { responseCodes } = require('../controllers/responseCodes');
 const { getAccessTokenSecret } = require('../controllers/helpers');
+const AdminSessionService = require('../services/adminSession.service');
+
+async function bindDecodedToken(req, decodedToken) {
+  req.accountId = decodedToken.accountId;
+  req.username = decodedToken.username;
+  req.role = decodedToken.role;
+  req.tokenExpiry = decodedToken.exp;
+  req.csrfToken = decodedToken.csrfToken;
+  req.authTime = decodedToken.authTime;
+  req.sessionVersion = decodedToken.sessionVersion;
+  req.adminRole = decodedToken.adminRole;
+  if (decodedToken.streamIds) req.streamIds = decodedToken.streamIds;
+
+  // Tokens issued before session lifecycle support are accepted only for their
+  // existing bounded lifetime. Loading /admin/profile upgrades them to a
+  // generation-bound session; all newly issued admin tokens are DB-validated.
+  if (decodedToken.sessionVersion !== undefined) {
+    const state = await AdminSessionService.validateAccountSession(decodedToken);
+    if (!state.valid) return state;
+    req.accountId = state.accountId;
+    req.username = state.username;
+    req.sessionVersion = state.sessionVersion;
+    if (decodedToken.role === 'admin') req.adminRole = state.adminRole;
+  } else if (decodedToken.role === 'admin') {
+    req.adminRole = decodedToken.adminRole || 'super_admin';
+  }
+  return { valid: true };
+}
+
+function persistedSessionRejected(res, state) {
+  const forbidden = ['account_inactive', 'account_unapproved', 'role_removed', 'admin_role_removed']
+    .includes(state.reason);
+  return res.status(forbidden ? 403 : 401).json({
+    status: responseCodes.AUTHENTICATION_SESSION_EXPIRED,
+    errorCode: 'ACCOUNT_SESSION_INVALID',
+    retryable: false,
+    message: state.reason === 'account_inactive'
+      ? 'This account is inactive.'
+      : state.reason === 'account_unapproved'
+        ? 'This account is not approved.'
+        : 'Session expired, was revoked, or is no longer authorized. Sign in again.',
+  });
+}
 
 // Citizen role request sends tokens thru cookie in requests
 function getTokenFromCookie(req, res, next) {
@@ -96,7 +139,7 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
       req.token,
       getAccessTokenSecret(scope),
       { ignoreExpiration },
-      (err, decodedToken) => {
+      async (err, decodedToken) => {
 
       if (err) {
         if (err.name == 'JsonWebTokenError'){
@@ -121,15 +164,13 @@ function verifyTokenWithRole(role, ignoreExpiration = false) { // wrapper for cu
         return;
       }
 
-      req.accountId = decodedToken.accountId;
-      req.username = decodedToken.username;
-      req.role = decodedToken.role;
-      req.tokenExpiry = decodedToken.exp;
-      req.csrfToken = decodedToken.csrfToken;
-      if (decodedToken.streamIds) { // for roles of brgy & sensor
-        req.streamIds = decodedToken.streamIds;
+      try {
+        const state = await bindDecodedToken(req, decodedToken);
+        if (!state.valid) return persistedSessionRejected(res, state);
+        next();
+      } catch (error) {
+        next(error);
       }
-      next();
 
     }) //end of jwt.verify()
   } // end of standard middleware
@@ -151,7 +192,7 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
       req.token,
       getAccessTokenSecret(scope),
       { ignoreExpiration },
-      (err, decodedToken) => {
+      async (err, decodedToken) => {
         if (err) {
           // Invalid or expired token — treat as unauthenticated without responding
           req.isAuthenticated = false;
@@ -166,18 +207,19 @@ function verifyTokenWithRoleOptional(role, ignoreExpiration = false) {
           return next();
         }
 
-        // Valid token and role
-        req.accountId = decodedToken.accountId;
-        req.username = decodedToken.username;
-        req.role = decodedToken.role;
-        req.tokenExpiry = decodedToken.exp;
-        req.csrfToken = decodedToken.csrfToken;
-        if (decodedToken.streamIds) {
-          req.streamIds = decodedToken.streamIds;
+        try {
+          const state = await bindDecodedToken(req, decodedToken);
+          if (!state.valid) {
+            req.isAuthenticated = false;
+            req.sessionError = state.reason;
+            return next();
+          }
+          req.isAuthenticated = true;
+          req.sessionError = null;
+          next();
+        } catch (error) {
+          next(error);
         }
-        req.isAuthenticated = true;
-        req.sessionError = null;
-        next();
       }
     );
   };

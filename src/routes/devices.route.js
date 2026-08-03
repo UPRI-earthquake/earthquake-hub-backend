@@ -8,6 +8,11 @@ const {
   verifyTokenWithRoleOptional,
 } = require('../middlewares/token.middleware')
 const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
+const {
+  requireAdminCapability,
+  requireTypedTargetConfirmation,
+} = require('../middlewares/adminActionPolicy.middleware');
+const { ACTIONS } = require('../services/adminCapabilities.service');
 
 const router = express.Router(); 
 
@@ -305,6 +310,13 @@ router.route('/tunnel/revoke').post(
   getTokenFromCookie,
   verifyTokenWithRole('admin'),
   requireAdminCsrf,
+  requireAdminCapability(ACTIONS.DEVICE_TUNNEL_REVOCATION),
+  requireTypedTargetConfirmation({
+    actionId: ACTIONS.DEVICE_TUNNEL_REVOCATION,
+    bodyName: 'deviceId',
+    eventType: 'device.tunnel.revoke',
+    targetType: 'device_station',
+  }),
   DeviceController.revokeDeviceTunnel,
 );
 

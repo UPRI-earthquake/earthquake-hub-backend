@@ -46,6 +46,41 @@ const { randomUUID } = require('crypto');
 
 const COMMENT_STATUSES = ['pending', 'approved', 'rejected'];
 const COMMENT_ISSUE_REASONS = ['duplicate', 'unclear', 'wrong_location', 'not_related', 'inappropriate'];
+const MODERATION_CASE_STATUSES = ['open', 'investigating', 'escalated', 'resolved'];
+const MODERATION_CASE_EVENT_TYPES = ['opened', 'investigating', 'escalated', 'resolved', 'reopened', 'decision', 'note'];
+
+const moderationCaseHistorySchema = new mongoose.Schema(
+  {
+    eventId: { type: String, required: true, trim: true, maxlength: 64 },
+    eventType: { type: String, enum: MODERATION_CASE_EVENT_TYPES, required: true },
+    correlationId: { type: String, trim: true, maxlength: 128 },
+    actor: {
+      accountId: { type: String, trim: true, maxlength: 128 },
+      username: { type: String, trim: true, maxlength: 254 },
+      role: { type: String, trim: true, maxlength: 64 },
+    },
+    fromStatus: { type: String, enum: MODERATION_CASE_STATUSES },
+    toStatus: { type: String, enum: MODERATION_CASE_STATUSES },
+    fromReportStatus: { type: String, enum: COMMENT_STATUSES },
+    toReportStatus: { type: String, enum: COMMENT_STATUSES },
+    reason: { type: String, required: true, trim: true, maxlength: 1000 },
+    createdAt: { type: Date, required: true, default: Date.now },
+  },
+  { _id: false },
+);
+
+const moderationCaseSchema = new mongoose.Schema(
+  {
+    status: { type: String, enum: MODERATION_CASE_STATUSES, required: true },
+    version: { type: Number, required: true, min: 1 },
+    historyCount: { type: Number, required: true, min: 1 },
+    updatedAt: { type: Date, required: true },
+    updatedBy: { type: String, trim: true, maxlength: 254 },
+    resolvedAt: Date,
+    history: { type: [moderationCaseHistorySchema], default: [] },
+  },
+  { _id: false },
+);
 
 // Comments model: Simple display-only comments on events.
 // Helpful marks are public counts; issue reports are private moderation signals.
@@ -108,6 +143,7 @@ const commentSchema = new mongoose.Schema(
     moderatedAt: {
       type: Date,
     },
+    moderationCase: { type: moderationCaseSchema, default: null },
     helpfulAccountIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Account',
@@ -141,6 +177,7 @@ commentSchema.index({ username: 1 });
 commentSchema.index({ accountId: 1 });
 commentSchema.index({ helpfulAccountIds: 1 });
 commentSchema.index({ 'issueReports.accountId': 1 });
+commentSchema.index({ 'moderationCase.status': 1, updatedAt: -1 });
 
 commentSchema.pre('validate', function requireTextOrImage(next) {
   const hasContent = typeof this.content === 'string' && this.content.trim().length > 0;
@@ -159,5 +196,7 @@ commentSchema.pre('validate', function requireTextOrImage(next) {
 
 const Comment = mongoose.model('Comment', commentSchema);
 Comment.COMMENT_ISSUE_REASONS = COMMENT_ISSUE_REASONS;
+Comment.MODERATION_CASE_STATUSES = MODERATION_CASE_STATUSES;
+Comment.MODERATION_CASE_EVENT_TYPES = MODERATION_CASE_EVENT_TYPES;
 
 module.exports = Comment;

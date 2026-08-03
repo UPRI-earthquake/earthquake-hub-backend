@@ -1,5 +1,6 @@
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
 const AdminSystemService = require('./adminSystem.service');
+const { buildOperationalState } = require('./adminOperationalState.service');
 
 function durationLabel(seconds) {
   const totalMinutes = Math.max(0, Math.floor(seconds / 60));
@@ -32,6 +33,12 @@ async function getSnapshot(req) {
     AdminSystemService.getSnapshot(req),
   ]);
   const deploymentObserved = hostTelemetry.status === 'available';
+  const operationalAvailability = hostTelemetry.status === 'available'
+    && hostTelemetry.operational?.state === 'healthy'
+    && systemResources.status === 'available'
+    && systemResources.operational?.state === 'healthy'
+    ? 'available'
+    : 'degraded';
   const services = [
     {
       id: 'ehub-backend',
@@ -97,13 +104,22 @@ async function getSnapshot(req) {
 
   return {
     observedAt,
+    operational: buildOperationalState({
+      availability: operationalAvailability,
+      observedAt,
+      message: operationalAvailability === 'available'
+        ? 'Runtime and deployment-host evidence were retrieved.'
+        : 'The backend is responding, but some deployment-host evidence is unavailable or degraded.',
+    }),
     summary: {
       observedServices: services.filter((service) => service.status === 'observed').length,
       declaredServices: services.length - 1,
       unobservedServices: services.filter((service) => service.status === 'unobserved').length,
       backendUptimeSeconds: Math.floor(backendUptime),
       hostTelemetryStatus: hostTelemetry.status,
+      hostTelemetryFreshness: hostTelemetry.operational?.freshness?.status || 'unknown',
       systemTelemetryStatus: systemResources.status,
+      systemTelemetryFreshness: systemResources.operational?.freshness?.status || 'unknown',
     },
     limitations: [
       'The private admin backend performs one fixed HTTP reachability check. Container health states and Docker logs remain unavailable; neither backend has Docker-socket access.',

@@ -3,6 +3,7 @@ const EQEventsService = require('../services/EQevents.service')
 const { acquireJobLock } = require('../services/jobLock.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
+const EventSummaryService = require('../services/eventSummary.service');
 
 function positiveNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -39,6 +40,7 @@ exports.getEQEvents = async (req, res, next) => {
     var data = await EQEventsService.getEventsList(startTime, endTime);
     // append regional data 
     var updatedData = await EQEventsService.addPlacesAttribute(data)
+    const publishedData = (updatedData || []).map((event) => EventSummaryService.serializePublicEvent(event));
 
     // Respond based on returned values
     if(updatedData){
@@ -46,7 +48,7 @@ exports.getEQEvents = async (req, res, next) => {
       res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
         message: message,
-        payload: updatedData
+        payload: publishedData
       });
       res.message = message;
     }
@@ -83,11 +85,12 @@ exports.getEQEventByPublicID = async (req, res, next) => {
     }
 
     const [updatedEvent] = await EQEventsService.addPlacesAttribute([event]);
+    const publishedEvent = EventSummaryService.serializePublicEvent(updatedEvent || event);
     const message = "EQ event acquired successfully";
     res.status(200).json({
       status: responseCodes.GENERIC_SUCCESS,
       message,
-      payload: updatedEvent || event
+      payload: publishedEvent
     });
     res.message = message;
   } catch (err) {
@@ -168,11 +171,17 @@ exports.patchEventSummary = async (req, res) => {
   try {
     const editedBy = req.user?.id ?? req.user?.username ?? undefined;
     const updated = await EQEventsService.setEventSummary(publicID, text.trim(), editedBy);
+    const summary = EventSummaryService.enrichAdminEvent(updated);
 
     return res.status(200).json({
       status: 0,
       message: 'Event summary updated successfully.',
-      data: updated.summaryOverride,
+      data: {
+        summaryOverride: updated.summaryOverride,
+        generatedSummary: summary.generatedSummary,
+        effectiveSummary: summary.effectiveSummary,
+        summaryPublication: summary.summaryPublication,
+      },
     });
   } catch (error) {
     const statusCode = error.status ?? 500;

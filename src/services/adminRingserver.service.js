@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { buildOperationalState } = require('./adminOperationalState.service');
 
 class RingserverMonitoringError extends Error {
   constructor(message, cause) {
@@ -124,8 +125,14 @@ async function getSnapshot({ connectionLimit = 100, streamLimit = 200 } = {}) {
     const status = parseStatus(statusResponse.data);
     const connections = parseConnections(connectionsResponse.data, connectionLimit);
     const streams = parseStreams(streamsResponse.data, streamLimit);
+    const observedAt = new Date().toISOString();
     return {
-      observedAt: new Date().toISOString(),
+      observedAt,
+      operational: buildOperationalState({
+        availability: 'available',
+        observedAt,
+        message: 'Ringserver returned the requested status, connection, and stream evidence.',
+      }),
       status,
       summary: {
         activeConnections: status.totalConnections,

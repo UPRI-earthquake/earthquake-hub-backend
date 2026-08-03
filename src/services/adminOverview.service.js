@@ -3,8 +3,10 @@ const AdminArchiveStorageService = require('./adminArchiveStorage.service');
 const AdminConfigurationDiagnosticsService = require('./adminConfigurationDiagnostics.service');
 const AdminDevicesStationsService = require('./adminDevicesStations.service');
 const AdminDeploymentHealthService = require('./adminDeploymentHealth.service');
+const AdminIncidentService = require('./adminIncident.service');
 const AdminRingserverService = require('./adminRingserver.service');
 const AdminSeiscompService = require('./adminSeiscomp.service');
+const { buildOperationalState, freshness } = require('./adminOperationalState.service');
 const AuditLogService = require('./auditLog.service');
 const CommentsService = require('./comments.service');
 const EQEventsService = require('./EQevents.service');
@@ -54,17 +56,60 @@ function sourceState(id, label, route, result, project, observedAt) {
       lastSuccessfulAt: prior.lastSuccessfulAt || null,
       failureSince,
       failureDurationMs: Math.max(0, new Date(observedAt).getTime() - new Date(failureSince).getTime()),
+      freshness: freshness({ observedAt: null }),
     };
   }
-  sourceHealth.set(id, { lastSuccessfulAt: observedAt, failureSince: null, lastError: null });
+
+  const snapshot = result.value;
+  const sourceObservedAt = snapshot?.operational?.freshness?.observedAt
+    || snapshot?.observedAt
+    || observedAt;
+  const sourceFreshness = snapshot?.operational?.freshness
+    || freshness({ observedAt: sourceObservedAt, now: observedAt });
+  const availability = snapshot?.operational?.availability || 'available';
+  const status = availability === 'unavailable'
+    ? 'unavailable'
+    : availability === 'degraded'
+      ? 'degraded'
+      : sourceFreshness.status === 'stale'
+        ? 'stale'
+        : 'available';
+  const message = snapshot?.operational?.message
+    || (status === 'available' ? 'Live snapshot retrieved.' : 'Snapshot returned with limited operational evidence.');
+
+  if (status === 'unavailable') {
+    const failureSince = prior.failureSince || observedAt;
+    sourceHealth.set(id, {
+      ...prior,
+      failureSince,
+      lastError: message,
+    });
+    return {
+      id,
+      label,
+      route,
+      status,
+      message,
+      metrics: project(snapshot),
+      observedAt: sourceObservedAt,
+      freshness: sourceFreshness,
+      lastSuccessfulAt: prior.lastSuccessfulAt || null,
+      failureSince,
+      failureDurationMs: Math.max(0, new Date(observedAt).getTime() - new Date(failureSince).getTime()),
+    };
+  }
+
+  sourceHealth.set(id, { lastSuccessfulAt: sourceObservedAt, failureSince: null, lastError: null });
   return {
     id,
     label,
     route,
-    status: 'available',
-    message: 'Live snapshot retrieved.',
-    metrics: project(result.value),
-    lastSuccessfulAt: observedAt,
+    status,
+    message,
+    metrics: project(snapshot),
+    observedAt: sourceObservedAt,
+    freshness: sourceFreshness,
+    lastSuccessfulAt: sourceObservedAt,
     failureSince: null,
     failureDurationMs: null,
   };
@@ -254,9 +299,24 @@ async function buildSnapshot(req) {
   const deploymentMetrics = sourceValue(sources, 'deployment');
   const configurationMetrics = sourceValue(sources, 'configuration');
   const auditMetrics = sourceValue(sources, 'audit');
+  const unavailableSources = sources.filter((source) => source.status === 'unavailable').length;
+  const degradedSources = sources.filter((source) => source.status === 'degraded').length;
+  const staleSources = sources.filter((source) => source.status === 'stale').length;
+  const operationalAvailability = unavailableSources === sources.length
+    ? 'unavailable'
+    : unavailableSources || degradedSources || staleSources
+      ? 'degraded'
+      : 'available';
 
-  return {
+  const snapshot = {
     observedAt,
+    operational: buildOperationalState({
+      availability: operationalAvailability,
+      observedAt,
+      message: operationalAvailability === 'available'
+        ? 'All overview sources returned current operational evidence.'
+        : `${unavailableSources} unavailable, ${degradedSources} degraded, and ${staleSources} stale overview sources.`,
+    }),
     cache: { ttlMs: positiveIntegerEnv('ADMIN_OVERVIEW_CACHE_TTL_MS', DEFAULT_CACHE_TTL_MS), cached: false },
     summary: {
       totalStations: stationMetrics?.total ?? null,
@@ -267,12 +327,37 @@ async function buildSnapshot(req) {
       deploymentAttention: deploymentMetrics?.unobservedServices ?? null,
       configurationAttention: configurationMetrics ? (configurationMetrics.missingRequired || 0) + (configurationMetrics.validationWarnings || 0) : null,
       availableSources: sources.filter((source) => source.status === 'available').length,
-      unavailableSources: sources.filter((source) => source.status === 'unavailable').length,
+      degradedSources,
+      staleSources,
+      unavailableSources,
     },
     sources,
     recentEvents: eventMetrics?.recent || [],
     recentAudit: auditMetrics?.recent || [],
   };
+  try {
+    const incidentState = await AdminIncidentService.synchronizeOverview(snapshot);
+    return {
+      ...snapshot,
+      incidents: incidentState.incidents,
+      incidentSummary: incidentState.summary,
+      incidentOperational: {
+        availability: 'available',
+        message: 'Persistent operational incidents synchronized.',
+      },
+    };
+  } catch (error) {
+    console.error('Unable to synchronize operational incidents:', error?.message || error);
+    return {
+      ...snapshot,
+      incidents: [],
+      incidentSummary: null,
+      incidentOperational: {
+        availability: 'unavailable',
+        message: 'Operational incident persistence is currently unavailable.',
+      },
+    };
+  }
 }
 
 async function getSnapshot(req) {

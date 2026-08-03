@@ -13,6 +13,7 @@ jest.mock('../src/services/EQevents.service', () => ({
 describe('GET /eq-events/:publicID', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.EVENT_SUMMARY_ALLOW_UNAPPROVED_COMPAT = 'false';
   });
 
   test('returns one event by publicID', async () => {
@@ -39,9 +40,39 @@ describe('GET /eq-events/:publicID', () => {
     expect(res.body.payload).toMatchObject({
       publicID: 'upri-event-001',
       place: '524 km S 16° E of Balut Island',
+      effectiveSummary: expect.stringContaining('magnitude 7.3 earthquake'),
+      summaryPublication: {
+        compatibilityMode: false,
+        generatorVersion: '1',
+        policy: 'approved_only',
+        source: 'generated',
+      },
     });
     expect(EQEventsService.getEventByPublicID).toHaveBeenCalledWith('upri-event-001');
     expect(EQEventsService.addPlacesAttribute).toHaveBeenCalledWith([event]);
+  });
+
+  test('does not expose an unapproved custom summary in the public event contract', async () => {
+    const event = {
+      publicID: 'upri-event-draft',
+      OT: new Date('2026-04-02T00:48:00.000Z'),
+      magnitude_value: 4.2,
+      depth_value: 12,
+      summaryOverride: {
+        text: 'Internal draft summary.',
+        reviewStatus: 'needs_review',
+        editedBy: 'operator',
+      },
+    };
+    EQEventsService.getEventByPublicID.mockResolvedValue(event);
+    EQEventsService.addPlacesAttribute.mockResolvedValue([event]);
+
+    const res = await request(app).get('/eq-events/upri-event-draft');
+
+    expect(res.status).toBe(200);
+    expect(res.body.payload.summaryOverride).toBeUndefined();
+    expect(res.body.payload.effectiveSummary).not.toContain('Internal draft summary.');
+    expect(res.body.payload.summaryPublication.source).toBe('generated');
   });
 
   test('returns 404 when publicID is not found', async () => {

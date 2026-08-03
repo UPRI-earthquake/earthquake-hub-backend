@@ -9,8 +9,16 @@ jest.mock('../src/services/accounts.service', () => ({
   loginAccountRole: jest.fn(),
   getAccountProfile: jest.fn(),
 }));
+jest.mock('../src/services/adminAuthAudit.service', () => ({
+  recordAuthentication: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../src/services/auditLog.service', () => ({
+  record: jest.fn().mockResolvedValue(undefined),
+}));
 
 const AccountsService = require('../src/services/accounts.service');
+const AdminAuthAuditService = require('../src/services/adminAuthAudit.service');
+const AuditLogService = require('../src/services/auditLog.service');
 const app = require('../src/app');
 
 function signWebToken(payload = {}) {
@@ -56,6 +64,20 @@ describe('Admin routes', () => {
     expect(response.headers['set-cookie']?.join(';')).toContain('refreshToken=');
     expect(response.headers['set-cookie']?.join(';')).toContain('csrfToken=');
     expect(response.body?.payload?.profile?.username).toBe('admin-user');
+    expect(response.body?.payload?.capabilities?.actions?.['communityReport.deletion'])
+      .toEqual(expect.objectContaining({
+        enabled: true,
+        confirmation: expect.objectContaining({ typedTargetRequired: true }),
+      }));
+    expect(AdminAuthAuditService.recordAuthentication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: 'account-1',
+        outcome: 'succeeded',
+        reasonCode: 'credentials_verified',
+        username: 'admin-user',
+      }),
+    );
   });
 
   it('rejects non-admin accounts at admin authentication', async () => {
@@ -67,6 +89,10 @@ describe('Admin routes', () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.body?.message).toMatch(/Admin access/);
+    expect(AdminAuthAuditService.recordAuthentication).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ outcome: 'rejected', reasonCode: 'invalid_role' }),
+    );
   });
 
   it('rate limits repeated admin login attempts for one identifier', async () => {
@@ -86,6 +112,10 @@ describe('Admin routes', () => {
     expect(response.statusCode).toBe(429);
     expect(response.headers['retry-after']).toBeDefined();
     expect(AccountsService.loginAccountRole).toHaveBeenCalledTimes(5);
+    expect(AdminAuthAuditService.recordAuthentication).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ outcome: 'rejected', reasonCode: 'rate_limited_identifier' }),
+    );
   });
 
   it('returns 401 for admin profile without cookies', async () => {
@@ -118,14 +148,22 @@ describe('Admin routes', () => {
         roles: ['admin'],
       }),
     );
+    expect(response.body?.payload?.capabilities?.actions?.['inventory.apply'])
+      .toEqual(expect.objectContaining({ enabled: false, authorization: 'host' }));
   });
 
   it('clears session cookies on admin signout', async () => {
-    const response = await request(app).post('/admin/signout');
+    const token = signWebToken();
+    const response = await request(app)
+      .post('/admin/signout')
+      .set('Cookie', [`accessToken=${token}; refreshToken=${token}`]);
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['set-cookie']?.join(';')).toContain('accessToken=');
     expect(response.headers['set-cookie']?.join(';')).toContain('refreshToken=');
     expect(response.headers['set-cookie']?.join(';')).toContain('csrfToken=');
+    expect(AuditLogService.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      eventType: 'admin.signout', outcome: 'succeeded',
+    }));
   });
 });

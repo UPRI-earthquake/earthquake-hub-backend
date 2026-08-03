@@ -1,6 +1,8 @@
 jest.mock('../src/models/comments.model', () => ({
   countDocuments: jest.fn(),
   find: jest.fn(),
+  findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
 }));
 
 const Comment = require('../src/models/comments.model');
@@ -57,10 +59,13 @@ describe('Admin community report service', () => {
       .mockResolvedValueOnce(17)
       .mockResolvedValueOnce(5)
       .mockResolvedValueOnce(12)
-      .mockResolvedValueOnce(6);
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(9)
+      .mockResolvedValueOnce(2);
 
     await expect(CommentsService.getAdminModerationSummary()).resolves.toEqual({
       total: 30, pending: 8, approved: 17, rejected: 5, withImages: 12, withIssues: 6,
+      activeCases: 9, escalatedCases: 2,
     });
   });
 });

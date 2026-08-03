@@ -5,6 +5,9 @@ const Devices = require('../models/device.model');
 const Users = require('../models/account.model');
 
 const EQEventsService = require('./EQevents.service')
+const EventSummaryService = require('./eventSummary.service')
+const StationOperationalHistoryService = require('./stationOperationalHistory.service')
+const StationTelemetryService = require('./stationTelemetry.service')
 
 let sseConnectionsErrorFlag = 0;
 let sseStreamsErrorFlag = 0;
@@ -64,8 +67,14 @@ class EventCache extends EventEmitter {
 
     // Get data
     if(channel === 'SC_EVENT'){
-      let updatedEvent = await EQEventsService.addPlacesAttribute([event]) // parse
-      extendedEvent.data = updatedEvent[0]
+      // The ingest controller persists the event before publishing it. Reloading
+      // here preserves approved summary metadata that is intentionally absent
+      // from the restricted ingest payload.
+      const persistedEvent = event?.publicID
+        ? await EQEventsService.getEventByPublicID(event.publicID)
+        : null
+      let updatedEvent = await EQEventsService.addPlacesAttribute([persistedEvent || event]) // parse
+      extendedEvent.data = EventSummaryService.serializePublicEvent(updatedEvent[0] || event)
       this.push(extendedEvent) // cache
       console.log(this.cache) // log SC_EVENT cache (not picks)
     }
@@ -83,6 +92,101 @@ class EventCache extends EventEmitter {
   }
 }
 const eventCache = new EventCache(30); // will contain last 30 EQevents added via new-event
+const STATION_INACTIVITY_THRESHOLD_MS = 30 * 1000;
+
+function parseRingserverTimestamp(value) {
+  const raw = String(value || '').trim();
+  const timezoneFree = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?$/);
+  const normalized = timezoneFree
+    ? `${timezoneFree[1]}T${timezoneFree[2]}.${String(timezoneFree[3] || '0').padEnd(3, '0').slice(0, 3)}Z`
+    : raw;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function aggregateStreamObservations(streamIds = []) {
+  return streamIds.reduce((accumulated, stream) => {
+    const streamIdParts = String(stream?.stream_id || '').split('_');
+    const latestPacketAt = parseRingserverTimestamp(stream?.latest_data_end_time);
+    if (streamIdParts.length < 2 || !latestPacketAt) return accumulated;
+    const stationStreamId = `${streamIdParts[0]}_${streamIdParts[1]}_.*/MSEED`;
+    if (!accumulated[stationStreamId]) {
+      accumulated[stationStreamId] = { latestPacketAt, streamRowCount: 1 };
+      return accumulated;
+    }
+    accumulated[stationStreamId].streamRowCount += 1;
+    if (latestPacketAt > accumulated[stationStreamId].latestPacketAt) {
+      accumulated[stationStreamId].latestPacketAt = latestPacketAt;
+    }
+    return accumulated;
+  }, {});
+}
+
+async function applyDeviceActivityObservation(device, latestPacketAt, observedAt) {
+  const packetAgeMs = Math.max(0, observedAt.getTime() - latestPacketAt.getTime());
+  const nextActivity = packetAgeMs > STATION_INACTIVITY_THRESHOLD_MS ? 'inactive' : 'active';
+  if (device.activity === nextActivity) return false;
+  if (!['active', 'inactive'].includes(device.activity)) return false;
+
+  const deviceToUpdate = await Devices.findOne({ streamId: device.streamId });
+  if (!deviceToUpdate || deviceToUpdate.activity !== device.activity) return false;
+  const previousActivity = deviceToUpdate.activity;
+  deviceToUpdate.activityToggleTime = latestPacketAt;
+  deviceToUpdate.activity = nextActivity;
+  await deviceToUpdate.save();
+
+  await StationOperationalHistoryService.appendActivityTransition({
+    deviceId: `${deviceToUpdate.network}_${deviceToUpdate.station}`,
+    effectiveAt: latestPacketAt,
+    fromActivity: previousActivity,
+    latestPacketAt,
+    observedAt,
+    packetAgeMs,
+    streamId: deviceToUpdate.streamId,
+    thresholdMs: STATION_INACTIVITY_THRESHOLD_MS,
+    toActivity: nextActivity,
+  }).catch((error) => {
+    console.error(`Failed to retain station activity transition for ${deviceToUpdate.network}_${deviceToUpdate.station}:`, error);
+  });
+
+  try {
+    await eventCache.newEvent('SC_*', {
+      network: deviceToUpdate.network,
+      station: deviceToUpdate.station,
+      activity: nextActivity,
+      status: nextActivity === 'active' ? 'Streaming' : 'Not Streaming',
+      statusSince: deviceToUpdate.activityToggleTime,
+    }, 'STATION_STATUS');
+  } catch (_) {}
+  return true;
+}
+
+async function processStreamStatusSnapshot({ current_time: currentTime, stream_ids: streamIds = [] }) {
+  const observedAt = parseRingserverTimestamp(currentTime);
+  if (!observedAt) throw new Error('Ringserver stream snapshot has an invalid current_time.');
+  const latestStreamObservations = aggregateStreamObservations(streamIds);
+  const devices = await Devices.find();
+
+  for (const device of devices) {
+    const observation = latestStreamObservations[device.streamId];
+    if (!observation) continue;
+    const { latestPacketAt, streamRowCount } = observation;
+    const packetAgeMs = Math.max(0, observedAt.getTime() - latestPacketAt.getTime());
+    const observedActivity = packetAgeMs > STATION_INACTIVITY_THRESHOLD_MS ? 'inactive' : 'active';
+    await applyDeviceActivityObservation(device, latestPacketAt, observedAt);
+    await StationTelemetryService.retainFreshnessSample({
+      activity: observedActivity,
+      deviceId: `${device.network}_${device.station}`,
+      inactivityThresholdMs: STATION_INACTIVITY_THRESHOLD_MS,
+      latestPacketAt,
+      observedAt,
+      packetAgeMs,
+      streamRowCount,
+    }).catch((error) => {
+      console.error(`Failed to retain station freshness sample for ${device.network}_${device.station}:`, error);
+    });
+  }
+}
 
 
 /* --- External Event Sources --- */
@@ -176,84 +280,11 @@ const sseStreamsEventListener = async() => {
   const source = new EventSource(`${ringserver_ip}/sse-streams`)
 
   source.addEventListener('ringserver-streamids-status', async (event) => {
-    const { stream_ids, current_time } = JSON.parse(event.data);
-
-    /*
-      .reduce() - applies function to each object in array 
-    */
-    const latestStreamTimes = stream_ids.reduce((accumulated, stream_obj) => {
-      const stream_id_split = stream_obj.stream_id.split("_"); 
-      const newStreamId = `${stream_id_split[0]}_${stream_id_split[1]}_.*/MSEED`;
-
-      if (!accumulated[newStreamId]) { 
-        // assign latest_data_end_time as {newStreamId:latestTime}
-        accumulated[newStreamId] = new Date(stream_obj.latest_data_end_time); // assumed as latest time
-      } else {
-        // get time for this row and latestTime so far
-        const objTime = new Date(stream_obj.latest_data_end_time).getTime();
-        const latestTime = accumulated[newStreamId].getTime();
-
-        // update latestTime if objTime is later
-        if (objTime > latestTime) {
-          accumulated[newStreamId] = new Date(stream_obj.latest_data_end_time);
-        }
-      }
-
-      return accumulated;
-    }, {});
-
-    const devices = await Devices.find();
-
-    devices.forEach( async (device) => {
-        if (!latestStreamTimes[device.streamId]) {
-          return; // skip to the next iteration
-        }
-
-        const current_utc_time = new Date(current_time).getTime();
-        const latest_packet_time = latestStreamTimes[device.streamId].getTime();
-        const activityToggleTime = device.activityToggleTime.getTime();
-        const MAX_LAG_MS = 30 * 1000; // in milliseconds
-
-        if (current_utc_time - latest_packet_time > MAX_LAG_MS){
-          if (device.activity === 'active') {
-            const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
-
-            deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
-            deviceToUpdate.activity = 'inactive';
-            await deviceToUpdate.save();
-            try {
-              await eventCache.newEvent('SC_*', {
-                network: deviceToUpdate.network,
-                station: deviceToUpdate.station,
-                activity: 'inactive',
-                status: 'Not Streaming',
-                statusSince: deviceToUpdate.activityToggleTime,
-              }, 'STATION_STATUS');
-            } catch (_) {}
-            return;
-          } else { // Do nothing
-            return;
-          }
-        }
-
-        // latest_packet_time is within MAX_LAG; hence update device if necessary
-        if (device.activity === 'inactive') {
-          const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
-
-          deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
-          deviceToUpdate.activity = 'active';
-          await deviceToUpdate.save();
-          try {
-            await eventCache.newEvent('SC_*', {
-              network: deviceToUpdate.network,
-              station: deviceToUpdate.station,
-              activity: 'active',
-              status: 'Streaming',
-              statusSince: deviceToUpdate.activityToggleTime,
-            }, 'STATION_STATUS');
-          } catch (_) {}
-        }
-    })
+    try {
+      await processStreamStatusSnapshot(JSON.parse(event.data));
+    } catch (error) {
+      console.error('Failed to process Ringserver stream snapshot:', error);
+    }
   });
 
   source.addEventListener('open', () => {
@@ -279,4 +310,11 @@ module.exports = {
   eventCache,
   sseConnectionsEventListener,
   sseStreamsEventListener,
+  _test: {
+    STATION_INACTIVITY_THRESHOLD_MS,
+    aggregateStreamObservations,
+    applyDeviceActivityObservation,
+    parseRingserverTimestamp,
+    processStreamStatusSnapshot,
+  },
 }

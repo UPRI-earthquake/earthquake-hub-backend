@@ -5,6 +5,8 @@ const app = require('./app');
 const MessagingService = require('./services/messaging.service');
 const SubscriptionCleanupService = require('./services/subscriptionCleanup.service');
 const logger = require('./middlewares/logger.middleware');
+const { getAuditRetentionConfig } = require('./config/auditRetention.config');
+const AdminJobService = require('./services/adminJob.service');
 
 // cron setup
 const { startEnrichmentScheduler } = require('./job/enrichment.job');
@@ -13,9 +15,17 @@ const port = process.env.NODE_ENV === 'production'
              ? process.env.BACKEND_PROD_PORT
              : process.env.BACKEND_DEV_PORT;
 
+const auditRetention = getAuditRetentionConfig();
+console.log(
+  `admin-audit-retention: telemetry=${auditRetention.telemetryDays}d `
+  + `administrative=${auditRetention.administrativeDays}d (0 means no expiry for new records)`,
+);
+
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
 const mongodb = require('./services/mongodb.service');
-mongodb.connect(); // Required by notifs router
+mongodb.connect().then(() => AdminJobService.start()).catch((error) => {
+  console.error('Unable to start the admin job worker:', error?.message || error);
+}); // Required by notifs router
 
 // start cron enrichment
 startEnrichmentScheduler();

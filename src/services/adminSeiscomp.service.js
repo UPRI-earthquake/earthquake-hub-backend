@@ -1,6 +1,7 @@
 const Device = require('../models/device.model');
 const Event = require('../models/events.model');
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const { buildOperationalState } = require('./adminOperationalState.service');
 
 function toDate(value) {
   return value ? new Date(value).toISOString() : null;
@@ -90,8 +91,20 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
     },
   ];
 
+  const observedAt = now.toISOString();
+  const operationalAvailability = hostTelemetry.status === 'available'
+    && hostTelemetry.operational?.state === 'healthy'
+    ? 'available'
+    : 'degraded';
   return {
-    observedAt: now.toISOString(),
+    observedAt,
+    operational: buildOperationalState({
+      availability: operationalAvailability,
+      observedAt,
+      message: operationalAvailability === 'available'
+        ? 'Backend delivery evidence and the fixed host reachability check were retrieved.'
+        : 'Backend delivery evidence is available, but the fixed host reachability check is degraded or unavailable.',
+    }),
     window: { hours: windowHours, since: since.toISOString() },
     limitations: [
       'SeisComP runs on the deployment host, outside the Docker backend.',

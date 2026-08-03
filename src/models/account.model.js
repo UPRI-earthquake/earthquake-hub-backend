@@ -60,6 +60,24 @@ const AccountSchema = new mongoose.Schema({
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
+  deactivatedAt: Date,
+  deactivatedBy: String,
+  deactivationReason: String,
+  sessionVersion: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  lastLoginAt: Date,
+  lastActivityAt: Date,
+  adminRole: {
+    type: String,
+    enum: ['viewer', 'operator', 'super_admin'],
+  },
   passwordPolicyVersion: {
     type: Number,
     default: 1, // legacy until explicitly updated

@@ -11,6 +11,7 @@ const gaMiddleware = require('./middlewares/ga.middleware');
 const { responseCodes } = require('./controllers/responseCodes');
 const { formatErrorMessage } = require('./controllers/helpers');
 const logger = require('./middlewares/logger.middleware');
+const HealthService = require('./services/health.service');
 
 
 const app = express();
@@ -33,6 +34,15 @@ function getTrustProxySetting() {
 
 app.set('trust proxy', getTrustProxySetting());
 app.disable('x-powered-by');
+
+// Keep container probes lightweight and out of normal API request logging.
+app.get('/health/live', (_req, res) => {
+  res.status(200).json({ status: 'live' });
+});
+app.get('/health/ready', (_req, res) => {
+  const result = HealthService.readiness();
+  res.status(result.ready ? 200 : 503).json(result.payload);
+});
 
 // Serve files from a directory named 'public'
 app.use(express.static('public'));
@@ -129,6 +139,8 @@ app.get('/', (req, res) => {
 app.use('/accounts', require('./routes/accounts.route'));
 app.use('/admin', require('./routes/admin.route'));
 app.use('/admin/overview', require('./routes/adminOverview.route'));
+app.use('/admin/incidents', require('./routes/adminIncident.route'));
+app.use('/admin/jobs', require('./routes/adminJob.route'));
 app.use('/admin/audit-logs', require('./routes/auditLog.route'));
 app.use('/admin/community-reports', require('./routes/adminCommunityReports.route'));
 app.use('/admin/earthquake-events', require('./routes/adminEarthquakeEvents.route'));
@@ -167,15 +179,31 @@ function getValidationErrorMessages(err) {
 app.use((err, req, res, next) => {
   if (err.name === 'ValidationError') {
     const errorMessages = getValidationErrorMessages(err);
-    res.status(400).json({ status: responseCodes.VALIDATION_ERROR, message: errorMessages[0] });
+    res.status(400).json({
+      status: responseCodes.VALIDATION_ERROR,
+      errorCode: 'VALIDATION_ERROR',
+      retryable: false,
+      message: errorMessages[0],
+    });
     res.message = errorMessages; // used by res.on('finish') logger middleware
   } else {
     const statusCode = err.statusCode || 500;
+    const errorCode = String(req.originalUrl || '').startsWith('/admin/')
+      ? 'ADMIN_API_INTERNAL_ERROR'
+      : 'INTERNAL_SERVER_ERROR';
     if (process.env.NODE_ENV === 'production') {
-      res.status(statusCode).json({ status: responseCodes.GENERIC_ERROR, message: 'Server error occurred' });
+      res.status(statusCode).json({
+        status: responseCodes.GENERIC_ERROR,
+        errorCode,
+        retryable: statusCode >= 500,
+        message: 'Server error occurred',
+      });
     } else {
       res.status(statusCode).json({
         status: responseCodes.GENERIC_ERROR,
+        errorCode,
+        retryable: statusCode >= 500,
+        message: 'Server error occurred',
         err: err.stack,
         note: 'This error will only appear on non-production env. In production message is: Server error occurred',
       });

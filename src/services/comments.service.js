@@ -1,6 +1,7 @@
 const Comment = require('../models/comments.model');
 const Event = require('../models/events.model');
 const ContributionsService = require('./contributions.service');
+const { randomUUID } = require('crypto');
 
 const COMMENT_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -15,6 +16,14 @@ const COMMENT_ISSUE_REASON = Object.freeze({
   INAPPROPRIATE: 'inappropriate',
 });
 const COMMENT_STATUS_VALUES = Object.values(COMMENT_STATUS);
+const MODERATION_CASE_STATUSES = Object.freeze(['open', 'investigating', 'escalated', 'resolved']);
+const MODERATION_CASE_TRANSITIONS = Object.freeze({
+  open: Object.freeze(['investigating', 'escalated', 'resolved']),
+  investigating: Object.freeze(['open', 'escalated', 'resolved']),
+  escalated: Object.freeze(['investigating', 'resolved']),
+  resolved: Object.freeze(['open']),
+});
+const MODERATION_CASE_HISTORY_LIMIT = 100;
 const COMMENT_ISSUE_REASON_VALUES = Object.values(COMMENT_ISSUE_REASON);
 const DEFAULT_COMMENT_STATUS = COMMENT_STATUS.APPROVED;
 const CANONICAL_UPLOAD_PREFIX = '/uploads/';
@@ -281,6 +290,7 @@ function toModerationQueueComment(comment) {
     counts[reason] = (counts[reason] || 0) + 1;
     return counts;
   }, {});
+  const moderationCase = toModerationCase(source);
   return {
     commentId: source.commentId,
     eventPublicID: source.eventPublicID || '',
@@ -295,28 +305,364 @@ function toModerationQueueComment(comment) {
     updatedAt: source.updatedAt,
     moderatedBy: source.moderatedBy || '',
     moderatedAt: source.moderatedAt || null,
+    caseStatus: moderationCase.status,
+    caseVersion: moderationCase.version,
+    caseUpdatedAt: moderationCase.updatedAt,
+    caseUpdatedBy: moderationCase.updatedBy,
+    caseHistoryCount: moderationCase.historyCount,
   };
 }
 
+function derivedModerationCaseStatus(source) {
+  if (MODERATION_CASE_STATUSES.includes(source?.moderationCase?.status)) {
+    return source.moderationCase.status;
+  }
+  const hasIssues = Array.isArray(source?.issueReports) && source.issueReports.length > 0;
+  return normalizeCommentStatus(source?.status) === COMMENT_STATUS.PENDING || hasIssues
+    ? 'open'
+    : 'resolved';
+}
+
+function toModerationCase(comment, { includeHistory = false } = {}) {
+  const source = typeof comment?.toObject === 'function' ? comment.toObject() : comment;
+  if (!source) return null;
+  const stored = source.moderationCase || {};
+  const history = Array.isArray(stored.history) ? stored.history : [];
+  return {
+    reportId: source.commentId,
+    eventPublicID: source.eventPublicID || '',
+    reportStatus: normalizeCommentStatus(source.status),
+    status: derivedModerationCaseStatus(source),
+    version: Number(stored.version || 0),
+    updatedAt: stored.updatedAt || source.moderatedAt || source.updatedAt || source.createdAt || null,
+    updatedBy: stored.updatedBy || source.moderatedBy || '',
+    resolvedAt: stored.resolvedAt || null,
+    flagged: Array.isArray(source.issueReports) && source.issueReports.length > 0,
+    issueCount: Array.isArray(source.issueReports) ? source.issueReports.length : 0,
+    historyCount: Number.isFinite(Number(stored.historyCount))
+      ? Number(stored.historyCount)
+      : history.length,
+    ...(includeHistory ? { history: history.slice().reverse() } : {}),
+  };
+}
+
+function actorFields(actor = {}) {
+  return {
+    ...(actor.accountId ? { accountId: String(actor.accountId) } : {}),
+    ...(actor.username ? { username: actor.username } : {}),
+    ...(actor.role ? { role: actor.role } : {}),
+  };
+}
+
+function historyEntry({ actor, correlationId, eventType, fromReportStatus, fromStatus, reason, toReportStatus, toStatus }) {
+  return {
+    eventId: randomUUID(),
+    eventType,
+    correlationId,
+    actor: actorFields(actor),
+    fromStatus,
+    toStatus,
+    ...(fromReportStatus ? { fromReportStatus } : {}),
+    ...(toReportStatus ? { toReportStatus } : {}),
+    reason,
+    createdAt: new Date(),
+  };
+}
+
+function pushHistory(entry) {
+  return { $each: [entry], $slice: -MODERATION_CASE_HISTORY_LIMIT };
+}
+
+function initialModerationCase({ actor, entry, status }) {
+  return {
+    status,
+    version: 1,
+    historyCount: 1,
+    updatedAt: entry.createdAt,
+    updatedBy: actor.username || 'admin',
+    ...(status === 'resolved' ? { resolvedAt: entry.createdAt } : {}),
+    history: [entry],
+  };
+}
+
+function moderationCaseError(code, message, details = {}) {
+  return { error: code, message, ...details };
+}
+
+async function getModerationCase(commentId) {
+  const comment = await Comment.findOne({ commentId })
+    .select('commentId eventPublicID status issueReports moderatedAt moderatedBy moderationCase createdAt updatedAt')
+    .lean();
+  if (!comment) return { notFound: true };
+  return { moderationCase: toModerationCase(comment, { includeHistory: true }) };
+}
+
+async function transitionModerationCase(commentId, input, actor = {}, correlationId) {
+  const { currentStatus, currentVersion, reason, status } = input;
+  if (!MODERATION_CASE_TRANSITIONS[currentStatus]?.includes(status)) {
+    return moderationCaseError('invalidTransition', 'Invalid moderation case transition.', {
+      fromStatus: currentStatus,
+      toStatus: status,
+    });
+  }
+  const existing = await Comment.findOne({ commentId })
+    .select('commentId eventPublicID status issueReports moderatedAt moderatedBy moderationCase createdAt updatedAt')
+    .lean();
+  if (!existing) return { notFound: true };
+  const actual = toModerationCase(existing);
+  if (actual.status !== currentStatus || actual.version !== currentVersion) {
+    return moderationCaseError('conflict', 'Moderation case changed; refresh before retrying.', {
+      currentStatus: actual.status,
+      currentVersion: actual.version,
+    });
+  }
+
+  const now = new Date();
+  const entry = historyEntry({
+    actor,
+    correlationId,
+    eventType: status === 'open' ? 'reopened' : status,
+    fromStatus: currentStatus,
+    reason,
+    toStatus: status,
+  });
+  const filter = { commentId };
+  if (currentVersion === 0) {
+    filter['moderationCase.version'] = { $exists: false };
+    filter.updatedAt = existing.updatedAt;
+  }
+  else {
+    filter['moderationCase.version'] = currentVersion;
+    filter['moderationCase.status'] = currentStatus;
+  }
+  let update;
+  if (currentVersion === 0) {
+    update = { $set: { moderationCase: initialModerationCase({ actor, entry, status }) } };
+  } else {
+    const set = {
+      'moderationCase.status': status,
+      'moderationCase.version': currentVersion + 1,
+      'moderationCase.historyCount': actual.historyCount + 1,
+      'moderationCase.updatedAt': now,
+      'moderationCase.updatedBy': actor.username || 'admin',
+    };
+    update = {
+      $set: set,
+      $push: { 'moderationCase.history': pushHistory(entry) },
+    };
+    if (status === 'resolved') set['moderationCase.resolvedAt'] = now;
+    else update.$unset = { 'moderationCase.resolvedAt': '' };
+  }
+  const updated = await Comment.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+  if (!updated) return moderationCaseError('conflict', 'Moderation case changed; refresh before retrying.');
+  return {
+    report: toModerationQueueComment(updated),
+    moderationCase: toModerationCase(updated, { includeHistory: true }),
+  };
+}
+
+async function addModerationCaseNote(commentId, input, actor = {}, correlationId) {
+  const { currentStatus, currentVersion, reason } = input;
+  const existing = await Comment.findOne({ commentId })
+    .select('commentId eventPublicID status issueReports moderatedAt moderatedBy moderationCase createdAt updatedAt')
+    .lean();
+  if (!existing) return { notFound: true };
+  const actual = toModerationCase(existing);
+  if (actual.status !== currentStatus || actual.version !== currentVersion) {
+    return moderationCaseError('conflict', 'Moderation case changed; refresh before retrying.', {
+      currentStatus: actual.status,
+      currentVersion: actual.version,
+    });
+  }
+  const entry = historyEntry({ actor, correlationId, eventType: 'note', fromStatus: currentStatus, reason, toStatus: currentStatus });
+  const filter = { commentId };
+  if (currentVersion === 0) {
+    filter['moderationCase.version'] = { $exists: false };
+    filter.updatedAt = existing.updatedAt;
+  } else {
+    filter['moderationCase.version'] = currentVersion;
+    filter['moderationCase.status'] = currentStatus;
+  }
+  const update = currentVersion === 0
+    ? { $set: { moderationCase: initialModerationCase({ actor, entry, status: currentStatus }) } }
+    : {
+      $set: {
+        'moderationCase.status': currentStatus,
+        'moderationCase.version': currentVersion + 1,
+        'moderationCase.historyCount': actual.historyCount + 1,
+        'moderationCase.updatedAt': entry.createdAt,
+        'moderationCase.updatedBy': actor.username || 'admin',
+      },
+      $push: { 'moderationCase.history': pushHistory(entry) },
+    };
+  const updated = await Comment.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+  if (!updated) return moderationCaseError('conflict', 'Moderation case changed; refresh before retrying.');
+  return {
+    report: toModerationQueueComment(updated),
+    moderationCase: toModerationCase(updated, { includeHistory: true }),
+  };
+}
+
+async function moderateAdminComment(commentId, input, actor = {}, correlationId) {
+  const normalizedStatus = normalizeCommentStatus(input.status, null);
+  if (!normalizedStatus) return { invalidStatus: true };
+  const existing = await Comment.findOne({ commentId })
+    .select('commentId eventPublicID status issueReports moderatedAt moderatedBy moderationCase createdAt updatedAt')
+    .lean();
+  if (!existing) return { notFound: true };
+  const currentCase = toModerationCase(existing);
+  const actualReportStatus = normalizeCommentStatus(existing.status);
+  if (
+    actualReportStatus !== input.currentStatus
+    || currentCase.status !== input.currentCaseStatus
+    || currentCase.version !== input.currentCaseVersion
+  ) {
+    return moderationCaseError('conflict', 'Report or moderation case changed; refresh before retrying.', {
+      currentCaseStatus: currentCase.status,
+      currentCaseVersion: currentCase.version,
+      currentReportStatus: actualReportStatus,
+    });
+  }
+
+  const nextCaseStatus = normalizedStatus === COMMENT_STATUS.PENDING ? 'open' : 'resolved';
+  const now = new Date();
+  const entry = historyEntry({
+    actor,
+    correlationId,
+    eventType: 'decision',
+    fromReportStatus: actualReportStatus,
+    fromStatus: currentCase.status,
+    reason: input.reason,
+    toReportStatus: normalizedStatus,
+    toStatus: nextCaseStatus,
+  });
+  const filter = { commentId };
+  if (actualReportStatus === COMMENT_STATUS.APPROVED) {
+    filter.$or = [{ status: COMMENT_STATUS.APPROVED }, { status: { $exists: false } }];
+  } else filter.status = actualReportStatus;
+  if (currentCase.version === 0) {
+    filter['moderationCase.version'] = { $exists: false };
+    filter.updatedAt = existing.updatedAt;
+  } else {
+    filter['moderationCase.version'] = currentCase.version;
+    filter['moderationCase.status'] = currentCase.status;
+  }
+
+  const reportSet = {
+    status: normalizedStatus,
+    moderatedBy: actor.username || 'admin',
+    moderatedAt: now,
+  };
+  let update;
+  if (currentCase.version === 0) {
+    update = {
+      $set: {
+        ...reportSet,
+        moderationCase: initialModerationCase({ actor, entry, status: nextCaseStatus }),
+      },
+    };
+  } else {
+    const set = {
+      ...reportSet,
+      'moderationCase.status': nextCaseStatus,
+      'moderationCase.version': currentCase.version + 1,
+      'moderationCase.historyCount': currentCase.historyCount + 1,
+      'moderationCase.updatedAt': now,
+      'moderationCase.updatedBy': actor.username || 'admin',
+    };
+    update = {
+      $set: set,
+      $push: { 'moderationCase.history': pushHistory(entry) },
+    };
+    if (nextCaseStatus === 'resolved') set['moderationCase.resolvedAt'] = now;
+    else update.$unset = { 'moderationCase.resolvedAt': '' };
+  }
+  const updated = await Comment.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+  if (!updated) return moderationCaseError('conflict', 'Report or moderation case changed; refresh before retrying.');
+  return {
+    report: toModerationQueueComment(updated),
+    moderationCase: toModerationCase(updated, { includeHistory: true }),
+  };
+}
+
+function derivedCaseCondition(status) {
+  if (status === 'active') {
+    return {
+      $or: [
+        { 'moderationCase.status': { $in: ['open', 'investigating', 'escalated'] } },
+        {
+          $and: [
+            { 'moderationCase.status': { $exists: false } },
+            { $or: [{ status: COMMENT_STATUS.PENDING }, { 'issueReports.0': { $exists: true } }] },
+          ],
+        },
+      ],
+    };
+  }
+  if (status === 'open') {
+    return {
+      $or: [
+        { 'moderationCase.status': 'open' },
+        {
+          $and: [
+            { 'moderationCase.status': { $exists: false } },
+            { $or: [{ status: COMMENT_STATUS.PENDING }, { 'issueReports.0': { $exists: true } }] },
+          ],
+        },
+      ],
+    };
+  }
+  if (status === 'resolved') {
+    return {
+      $or: [
+        { 'moderationCase.status': 'resolved' },
+        {
+          $and: [
+            { 'moderationCase.status': { $exists: false } },
+            { status: { $in: [COMMENT_STATUS.APPROVED, COMMENT_STATUS.REJECTED] } },
+            { 'issueReports.0': { $exists: false } },
+          ],
+        },
+      ],
+    };
+  }
+  return { 'moderationCase.status': status };
+}
+
 async function getAdminModerationSummary() {
-  const [total, pending, approved, rejected, withImages, withIssues] = await Promise.all([
+  const activeCaseCondition = {
+    $or: [
+      { 'moderationCase.status': { $in: ['open', 'investigating', 'escalated'] } },
+      {
+        $and: [
+          { 'moderationCase.status': { $exists: false } },
+          { $or: [{ status: COMMENT_STATUS.PENDING }, { 'issueReports.0': { $exists: true } }] },
+        ],
+      },
+    ],
+  };
+  const [total, pending, approved, rejected, withImages, withIssues, activeCases, escalatedCases] = await Promise.all([
     Comment.countDocuments({}),
     Comment.countDocuments({ status: COMMENT_STATUS.PENDING }),
     Comment.countDocuments({ status: COMMENT_STATUS.APPROVED }),
     Comment.countDocuments({ status: COMMENT_STATUS.REJECTED }),
     Comment.countDocuments({ imageURL: { $exists: true, $ne: '' } }),
     Comment.countDocuments({ 'issueReports.0': { $exists: true } }),
+    Comment.countDocuments(activeCaseCondition),
+    Comment.countDocuments({ 'moderationCase.status': 'escalated' }),
   ]);
-  return { total, pending, approved, rejected, withImages, withIssues };
+  return { total, pending, approved, rejected, withImages, withIssues, activeCases, escalatedCases };
 }
 
-async function getAdminModerationQueue({ status, hasImage, hasIssues, includeSummary = false, search, startTime, endTime, limit = 25, offset = 0 } = {}) {
+async function getAdminModerationQueue({ status, caseStatus, hasImage, hasIssues, includeSummary = false, search, startTime, endTime, limit = 25, offset = 0 } = {}) {
   const query = {};
+  const conditions = [];
   if (status) query.status = status;
   if (hasImage === true) query.imageURL = { $exists: true, $ne: '' };
-  if (hasImage === false) query.$or = [{ imageURL: { $exists: false } }, { imageURL: '' }, { imageURL: null }];
+  if (hasImage === false) conditions.push({ $or: [{ imageURL: { $exists: false } }, { imageURL: '' }, { imageURL: null }] });
   if (hasIssues === true) query['issueReports.0'] = { $exists: true };
   if (hasIssues === false) query['issueReports.0'] = { $exists: false };
+  if (caseStatus) conditions.push(derivedCaseCondition(caseStatus));
   if (startTime || endTime) {
     query.createdAt = {};
     if (startTime) query.createdAt.$gte = startTime;
@@ -325,16 +671,16 @@ async function getAdminModerationQueue({ status, hasImage, hasIssues, includeSum
   if (search) {
     const expression = new RegExp(escapeRegex(search), 'i');
     const searchTerms = [{ commentId: expression }, { eventPublicID: expression }, { username: expression }, { content: expression }];
-    if (query.$or) query.$and = [{ $or: query.$or }, { $or: searchTerms }];
-    else query.$or = searchTerms;
+    conditions.push({ $or: searchTerms });
   }
+  if (conditions.length) query.$and = conditions;
 
   const [comments, total, summary] = await Promise.all([
     Comment.find(query)
       .sort({ createdAt: -1, commentId: -1 })
       .skip(offset)
       .limit(limit)
-      .select('commentId eventPublicID username content imageURL status helpfulAccountIds issueReports createdAt updatedAt moderatedBy moderatedAt')
+      .select('commentId eventPublicID username content imageURL status helpfulAccountIds issueReports createdAt updatedAt moderatedBy moderatedAt moderationCase.status moderationCase.version moderationCase.updatedAt moderationCase.updatedBy moderationCase.historyCount')
       .lean(),
     Comment.countDocuments(query),
     includeSummary ? getAdminModerationSummary() : Promise.resolve(undefined),
@@ -435,12 +781,17 @@ async function reportCommentIssue(commentId, { accountId, reason }) {
 
 module.exports = {
   COMMENT_STATUS,
+  MODERATION_CASE_STATUSES,
   COMMENT_ISSUE_REASON,
   createComment,
   getCommentsByEventId,
   getAdminModerationQueue,
   getAdminModerationSummary,
+  getModerationCase,
   deleteComment,
+  addModerationCaseNote,
+  moderateAdminComment,
+  transitionModerationCase,
   updateCommentStatus,
   markCommentHelpful,
   unmarkCommentHelpful,

@@ -1,4 +1,5 @@
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const { buildOperationalState } = require('./adminOperationalState.service');
 
 const GATED_OPERATIONS = Object.freeze([
   {
@@ -37,6 +38,7 @@ function hasCompleteMetrics(data) {
 async function getSnapshot(req) {
   const telemetry = await AdminHostTelemetryClient.getResource('system', req);
   const metricsAvailable = telemetry.status !== 'unavailable' && hasCompleteMetrics(telemetry.data);
+  const availability = metricsAvailable ? telemetry.status : 'unavailable';
   const reason = metricsAvailable
     ? null
     : telemetry.errorCode === 'not_configured'
@@ -45,7 +47,15 @@ async function getSnapshot(req) {
 
   return {
     observedAt: telemetry.observedAt,
-    status: metricsAvailable ? telemetry.status : 'unavailable',
+    operational: buildOperationalState({
+      availability,
+      observedAt: telemetry.observedAt,
+      staleAfter: telemetry.operational?.freshness?.staleAfterMs,
+      message: metricsAvailable
+        ? 'Deployment-host resource metrics were retrieved.'
+        : reason,
+    }),
+    status: availability,
     scope: telemetry.data?.scope || 'deployment-vm',
     sourceLabel: telemetry.data?.sourceLabel || 'EarthquakeHub deployment VM',
     sampleWindowMs: telemetry.data?.sampleWindowMs ?? null,

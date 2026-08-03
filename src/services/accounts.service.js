@@ -175,6 +175,10 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
     return maskUserNotFound ? 'invalidCredentials' : 'wrongPassword';
   }
 
+  if (user.isActive === false) {
+    return 'accountInactive';
+  }
+
   // check if claimed role reflects allowed role in db
   if(!user.roles.includes(role)){
     // Return the specific role error so the UI can surface an accurate cause
@@ -201,23 +205,32 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
     : 'legacy';
   const rshakeEmailEnabled = Boolean(user.alertPreferences?.rshakeEmailEnabled);
 
+  if (role === 'brgy' && !user.isApproved) {
+    return 'brgyAccountInactive';
+  }
+
+  const loginTime = new Date();
+  user.lastLoginAt = loginTime;
+  user.lastActivityAt = loginTime;
+  await user.save();
+
   switch(role) {
     case 'sensor':
       return {
         str: 'successSensorBrgy',
+        accountId,
         username,
+        sessionVersion: Number(user.sessionVersion || 0),
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
         rshakeEmailEnabled,
       };
     case 'brgy':
-      // check if brgy account is approved
-      if (!user.isApproved) {
-        return 'brgyAccountInactive';
-      }
       return {
         str: 'successSensorBrgy',
+        accountId,
         username,
+        sessionVersion: Number(user.sessionVersion || 0),
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
         rshakeEmailEnabled,
@@ -227,6 +240,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         str: 'successCitizen',
         accountId,
         username,
+        sessionVersion: Number(user.sessionVersion || 0),
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
         rshakeEmailEnabled,
@@ -240,6 +254,11 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
         roles: user.roles || [],
         passwordStatus,
         passwordPolicyVersion: updatedPolicyVersion,
+        sessionVersion: Number(user.sessionVersion || 0),
+        adminRole: ['viewer', 'operator', 'super_admin'].includes(user.adminRole)
+          ? user.adminRole
+          : 'super_admin',
+        lastLoginAt: loginTime,
         rshakeEmailEnabled,
       };
   }
@@ -467,6 +486,15 @@ exports.getAccountProfile = async (username) => {
         roles: citizen.roles || [],
         passwordPolicyVersion: citizen.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION,
         passwordUpdatedAt: citizen.passwordUpdatedAt,
+        isActive: citizen.isActive !== false,
+        sessionVersion: Number(citizen.sessionVersion || 0),
+        adminRole: citizen.roles?.includes('admin')
+          ? (['viewer', 'operator', 'super_admin'].includes(citizen.adminRole)
+            ? citizen.adminRole
+            : 'super_admin')
+          : null,
+        lastLoginAt: citizen.lastLoginAt || null,
+        lastActivityAt: citizen.lastActivityAt || null,
         alertPreferences: {
           rshakeEmailEnabled: Boolean(citizen.alertPreferences?.rshakeEmailEnabled),
           updatedAt: citizen.alertPreferences?.updatedAt || null,

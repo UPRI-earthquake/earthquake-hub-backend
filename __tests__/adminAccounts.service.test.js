@@ -11,6 +11,7 @@ function mockFindResult(accounts = []) {
   const query = {
     lean: jest.fn().mockResolvedValue(accounts),
     limit: jest.fn(),
+    populate: jest.fn(),
     select: jest.fn(),
     skip: jest.fn(),
     sort: jest.fn(),
@@ -19,6 +20,7 @@ function mockFindResult(accounts = []) {
   query.skip.mockReturnValue(query);
   query.limit.mockReturnValue(query);
   query.select.mockReturnValue(query);
+  query.populate.mockReturnValue(query);
   Account.find.mockReturnValue(query);
   return query;
 }
@@ -34,13 +36,21 @@ describe('AdminAccountsService', () => {
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(6);
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(2);
 
     const result = await listAccounts({ includeSummary: true, linkedDevice: 'linked', limit: 10, offset: 0 });
 
     expect(Account.find).toHaveBeenCalledWith({ 'devices.0': { $exists: true } });
     expect(result.total).toBe(3);
-    expect(result.summary).toEqual({ total: 12, pendingBrgy: 2, approvedBrgy: 4, admins: 1, linked: 6 });
+    expect(result.summary).toEqual({
+      total: 12,
+      pendingBrgy: 2,
+      approvedBrgy: 4,
+      admins: 1,
+      linked: 6,
+      inactive: 2,
+    });
   });
 
   it('filters accounts without linked devices without loading summary counts', async () => {

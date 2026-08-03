@@ -12,6 +12,7 @@ function createInMemoryRateLimiter({
   max = positiveIntegerEnv('RATE_LIMIT_MAX', 100),
   keyGenerator = defaultKeyGenerator,
   message = 'Too many requests. Please try again later.',
+  onLimit,
 } = {}) {
   const buckets = new Map();
 
@@ -40,11 +41,27 @@ function createInMemoryRateLimiter({
       return;
     }
 
-    res.set('Retry-After', String(Math.ceil((currentBucket.resetAt - now) / 1000)));
-    res.status(429).json({
-      status: 1,
-      message,
-    });
+    const rejectRequest = () => {
+      res.set('Retry-After', String(Math.ceil((currentBucket.resetAt - now) / 1000)));
+      res.status(429).json({
+        status: 1,
+        message,
+      });
+    };
+
+    if (!onLimit) {
+      rejectRequest();
+      return;
+    }
+
+    Promise.resolve(onLimit(req, {
+      count: currentBucket.count,
+      key,
+      max,
+      resetAt: new Date(currentBucket.resetAt),
+    }))
+      .then(rejectRequest)
+      .catch(next);
   };
 }
 

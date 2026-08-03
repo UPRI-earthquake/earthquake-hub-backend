@@ -1,5 +1,6 @@
 const express = require('express');
 const AdminController = require('../controllers/admin.controller');
+const AdminAuthAuditService = require('../services/adminAuthAudit.service');
 const {
   getTokenFromCookieIfPresent,
   verifyTokenWithRoleOptional,
@@ -20,6 +21,11 @@ const limitAdminAuthByIp = createInMemoryRateLimiter({
   max: positiveIntegerEnv('ADMIN_AUTH_RATE_LIMIT_IP_MAX', 30),
   keyGenerator: (req) => req.ip || 'unknown',
   message: 'Too many admin login attempts. Please try again later.',
+  onLimit: (req) => AdminAuthAuditService.recordAuthentication(req, {
+    identifier: req.body?.identifier || req.body?.username,
+    outcome: 'rejected',
+    reasonCode: 'rate_limited_ip',
+  }),
 });
 const limitAdminAuthByIdentifier = createInMemoryRateLimiter({
   windowMs: adminAuthRateLimitWindowMs,
@@ -29,6 +35,11 @@ const limitAdminAuthByIdentifier = createInMemoryRateLimiter({
     return String(identifier).trim().toLowerCase();
   },
   message: 'Too many login attempts for this account. Please try again later.',
+  onLimit: (req) => AdminAuthAuditService.recordAuthentication(req, {
+    identifier: req.body?.identifier || req.body?.username,
+    outcome: 'rejected',
+    reasonCode: 'rate_limited_identifier',
+  }),
 });
 
 router.post(
@@ -43,6 +54,11 @@ router.get(
   verifyTokenWithRoleOptional('admin'),
   AdminController.getAdminProfile,
 );
-router.post('/signout', AdminController.signOutAdmin);
+router.post(
+  '/signout',
+  getTokenFromCookieIfPresent,
+  verifyTokenWithRoleOptional('admin'),
+  AdminController.signOutAdmin,
+);
 
 module.exports = router;

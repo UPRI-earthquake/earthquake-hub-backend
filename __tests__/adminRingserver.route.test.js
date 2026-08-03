@@ -39,5 +39,9 @@ describe('Admin Ringserver monitoring routes', () => {
     const response = await request(app).get('/admin/ringserver/snapshot').set('Cookie', [`accessToken=${signAdminToken()}`]);
     expect(response.statusCode).toBe(502);
     expect(response.body.message).toMatch(/Unable to retrieve/);
+    expect(response.body).toMatchObject({
+      errorCode: 'RINGSERVER_MONITORING_UNAVAILABLE',
+      retryable: true,
+    });
   });
 });

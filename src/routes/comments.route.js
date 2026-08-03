@@ -7,6 +7,12 @@ const { randomUUID } = require('crypto');
 const { getUploadConfig } = require('../config/upload.config');
 const { createInMemoryRateLimiter, positiveIntegerEnv } = require('../middlewares/rateLimit.middleware');
 const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
+const AdminCommunityReportsController = require('../controllers/adminCommunityReports.controller');
+const {
+  requireAdminCapability,
+  requireTypedTargetConfirmation,
+} = require('../middlewares/adminActionPolicy.middleware');
+const { ACTIONS } = require('../services/adminCapabilities.service');
 
 const {
   getTokenFromCookie,
@@ -207,11 +213,27 @@ function uploadReportImage(req, res, next) {
  *           schema:
  *             type: object
  *             required:
+ *               - currentStatus
+ *               - currentCaseStatus
+ *               - currentCaseVersion
  *               - status
+ *               - reason
  *             properties:
+ *               currentStatus:
+ *                 type: string
+ *                 enum: [pending, approved, rejected]
+ *               currentCaseStatus:
+ *                 type: string
+ *                 enum: [open, investigating, escalated, resolved]
+ *               currentCaseVersion:
+ *                 type: integer
+ *                 minimum: 0
  *               status:
  *                 type: string
  *                 enum: [pending, approved, rejected]
+ *               reason:
+ *                 type: string
+ *                 description: Required administrator audit and case-history note
  *     responses:
  *       200:
  *         description: Comment status updated successfully
@@ -247,6 +269,26 @@ router.get('/', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citize
 router.put('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.markCommentHelpful);
 router.delete('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.unmarkCommentHelpful);
 router.post('/:commentId/issues', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.reportCommentIssue);
-router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, CommentsController.updateCommentStatus);
-router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, CommentsController.deleteComment);
+router.patch(
+  '/:commentId/status',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  requireAdminCsrf,
+  requireAdminCapability(ACTIONS.COMMUNITY_REPORT_MODERATION),
+  AdminCommunityReportsController.updateCommunityReportStatus,
+);
+router.delete(
+  '/:commentId',
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  requireAdminCsrf,
+  requireAdminCapability(ACTIONS.COMMUNITY_REPORT_DELETION),
+  requireTypedTargetConfirmation({
+    actionId: ACTIONS.COMMUNITY_REPORT_DELETION,
+    eventType: 'community_report.delete',
+    paramName: 'commentId',
+    targetType: 'community_report',
+  }),
+  AdminCommunityReportsController.deleteCommunityReport,
+);
 module.exports = router;

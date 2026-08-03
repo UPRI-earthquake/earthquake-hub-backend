@@ -16,7 +16,12 @@ exports.getSnapshot = async (req, res, next) => {
     res.message = 'Ringserver monitoring snapshot retrieved successfully.';
   } catch (error) {
     if (error?.name === 'RingserverMonitoringError') {
-      return res.status(502).json({ status: responseCodes.GENERIC_ERROR, message: error.message });
+      return res.status(502).json({
+        status: responseCodes.GENERIC_ERROR,
+        errorCode: 'RINGSERVER_MONITORING_UNAVAILABLE',
+        retryable: true,
+        message: error.message,
+      });
     }
     next(error);
   }

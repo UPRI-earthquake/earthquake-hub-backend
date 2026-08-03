@@ -1,6 +1,7 @@
 const Device = require('../models/device.model');
 const Event = require('../models/events.model');
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const { buildOperationalState } = require('./adminOperationalState.service');
 
 function toDate(value) {
   return value ? new Date(value).toISOString() : null;
@@ -61,8 +62,20 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
     AdminHostTelemetryClient.getResource('archive', req),
   ]);
 
+  const observedAt = now.toISOString();
+  const operationalAvailability = hostTelemetry.status === 'available'
+    && hostTelemetry.operational?.state === 'healthy'
+    ? 'available'
+    : 'degraded';
   return {
-    observedAt: now.toISOString(),
+    observedAt,
+    operational: buildOperationalState({
+      availability: operationalAvailability,
+      observedAt,
+      message: operationalAvailability === 'available'
+        ? 'Persisted recording evidence and bounded archive-host telemetry were retrieved.'
+        : 'Persisted recording evidence is available, but archive-host telemetry is degraded or unavailable.',
+    }),
     window: { hours: windowHours, since: since.toISOString() },
     limitations: [
       'The private admin backend exposes only archive mount availability and a free-space band; paths, files, and waveform contents remain hidden.',
