@@ -130,4 +130,21 @@ describe('tunnelEnrollment.service', () => {
     expect(mappings[0].deviceId).toBe('AM_R24FA');
     expect(mappings[0].remotePort).toBe(22501);
   });
+
+  it('parses the active mappings returned by the bastion list command', () => {
+    const mappings = service.parseActiveMappingsTable([
+      'DEVICE_ID BASTION_USER REMOTE_PORT STATUS LISTENER',
+      '--------- ------------ ----------- ------ --------',
+      'AM_R24FA rt-am_r24fa 22501 active up',
+      'AM_R24FB rt-am_r24fb 22502 revoked down',
+    ].join('\n'));
+
+    expect(mappings).toEqual([
+      expect.objectContaining({
+        deviceId: 'AM_R24FA',
+        bastionUser: 'rt-am_r24fa',
+        remotePort: 22501,
+      }),
+    ]);
+  });
 });

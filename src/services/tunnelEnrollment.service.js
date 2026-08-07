@@ -40,6 +40,7 @@ function resolveConfig() {
     execMode: normalizeExecMode(process.env.TUNNEL_SCRIPT_EXEC_MODE || 'local'),
     registerScript: process.env.TUNNEL_REGISTER_SCRIPT || '/opt/upri/bastion/register-device.sh',
     revokeScript: process.env.TUNNEL_REVOKE_SCRIPT || '/opt/upri/bastion/revoke-device.sh',
+    listScript: process.env.TUNNEL_LIST_SCRIPT || '/opt/upri/bastion/list-devices.sh',
     resolveScript: process.env.TUNNEL_RESOLVE_SCRIPT || '/opt/upri/bastion/resolve-device.sh',
     registryFile: process.env.TUNNEL_REGISTRY_FILE || '/etc/upri/rshake-tunnels/devices.csv',
     bastionHost: process.env.TUNNEL_BASTION_HOST || '',
@@ -392,8 +393,45 @@ function parseCsvLine(line) {
   };
 }
 
+function parseActiveMappingsTable(output) {
+  const lines = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines
+    .slice(2)
+    .map((line) => line.split(/\s+/))
+    .map(([deviceId, bastionUser, remotePort, status]) => ({
+      deviceId,
+      bastionUser,
+      remotePort: Number(remotePort),
+      status: String(status || '').toLowerCase(),
+    }))
+    .filter((entry) => entry.deviceId && entry.bastionUser
+      && Number.isFinite(entry.remotePort) && entry.remotePort >= 1
+      && entry.status === 'active')
+    .map((entry) => ({
+      deviceId: entry.deviceId,
+      bastionUser: entry.bastionUser,
+      remotePort: entry.remotePort,
+      keyFingerprint: '',
+      createdAt: null,
+    }));
+}
+
 async function listActiveMappings() {
   const cfg = resolveConfig();
+
+  if (cfg.execMode === 'ssh') {
+    const { stdout } = await runScript(
+      cfg,
+      cfg.listScript,
+      ['--registry-file', cfg.registryFile, '--active-only'],
+      cfg.commandTimeoutMs,
+    );
+    return parseActiveMappingsTable(stdout);
+  }
 
   let raw;
   try {
@@ -426,5 +464,6 @@ module.exports = {
   enrollDeviceTunnel,
   revokeDeviceTunnel,
   listActiveMappings,
+  parseActiveMappingsTable,
   resolveDeviceMapping,
 };

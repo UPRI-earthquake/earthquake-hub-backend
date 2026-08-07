@@ -4,6 +4,19 @@ earthquake-hub-backend program is the server-side component of the EarthquakeHub
 ## Development Setup
 To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
+## Admin Console control plane
+
+The browser-facing Admin Console API, authorization, application workflows,
+persistence, jobs, and audit policy live in this repository. Start with:
+
+- [Admin control-plane developer guide](docs/admin-control-plane.md)
+- [Admin action capability policy](docs/admin-action-capabilities.md)
+- [Station operational-history contract](docs/station-operational-history.md)
+
+The separate `earthquake-hub-admin-backend` is a private read-only telemetry
+adapter. It is not a second browser API and must never be proxied through public
+nginx.
+
 ## Email Branding
 Outgoing HTML emails (device alerts and password-reset emails) support logo branding through environment variables:
 - `EMAIL_LOGO_URL`: remote URL for the logo (preferred for production email clients)
