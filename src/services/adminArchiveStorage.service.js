@@ -11,6 +11,45 @@ function normalizeStations(value) {
   return Array.isArray(value) ? value.map((station) => String(station)).filter(Boolean) : [];
 }
 
+function safeByteCount(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
+}
+
+function safePercent(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
+    ? Math.round(parsed * 10) / 10
+    : null;
+}
+
+function archiveCapacity(data = {}) {
+  const totalBytes = safeByteCount(data.totalBytes);
+  const availableBytes = safeByteCount(data.availableBytes);
+  const usedBytes = safeByteCount(data.usedBytes);
+  const usedPercent = safePercent(data.usedPercent);
+  if (totalBytes === null || availableBytes === null || usedBytes === null || usedPercent === null) {
+    return { totalBytes: null, availableBytes: null, usedBytes: null, usedPercent: null };
+  }
+  if (availableBytes > totalBytes || usedBytes > totalBytes) {
+    return { totalBytes: null, availableBytes: null, usedBytes: null, usedPercent: null };
+  }
+  return { totalBytes, availableBytes, usedBytes, usedPercent };
+}
+
+function formatCapacity(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown capacity';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const precision = value >= 10 || unit === 0 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unit]}`;
+}
+
 function buildGapDiagnostic(event) {
   const candidateStations = normalizeStations(event.candidateStations);
   const recordingStations = normalizeStations(event.recordingStations);
@@ -63,6 +102,7 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
   ]);
 
   const observedAt = now.toISOString();
+  const capacity = archiveCapacity(hostTelemetry.data);
   const operationalAvailability = hostTelemetry.status === 'available'
     && hostTelemetry.operational?.state === 'healthy'
     ? 'available'
@@ -78,7 +118,7 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
     }),
     window: { hours: windowHours, since: since.toISOString() },
     limitations: [
-      'The private admin backend exposes only archive mount availability and a free-space band; paths, files, and waveform contents remain hidden.',
+      'The private admin backend exposes mount availability and rounded capacity figures only; paths, files, remote mount details, and waveform contents remain hidden.',
       'slarchive process state remains unavailable to both backends.',
       'Gap diagnostics are based on persisted FDSN waveform verification for recent events, not a direct scan of the SDS archive.',
     ],
@@ -94,6 +134,10 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
       archiveMounted: hostTelemetry.data?.mounted ?? null,
       archiveFreeSpaceBand: hostTelemetry.data?.freeSpaceBand || null,
       archiveSourceLabel: hostTelemetry.data?.sourceLabel || 'Configured archive telemetry source',
+      archiveTotalBytes: capacity.totalBytes,
+      archiveAvailableBytes: capacity.availableBytes,
+      archiveUsedBytes: capacity.usedBytes,
+      archiveUsedPercent: capacity.usedPercent,
     },
     hostTelemetry,
     checks: [
@@ -118,7 +162,7 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
         name: 'Archive storage mount',
         status: hostTelemetry.status === 'available' ? 'observed' : 'unobserved',
         observation: hostTelemetry.status === 'available'
-          ? `${hostTelemetry.data?.sourceLabel || 'The configured archive telemetry source'} is available; free-space band is ${hostTelemetry.data?.freeSpaceBand || 'unknown'}.`
+          ? `${hostTelemetry.data?.sourceLabel || 'The configured archive telemetry source'} is available; ${capacity.usedPercent === null ? 'capacity is unavailable' : `${capacity.usedPercent}% used with ${formatCapacity(capacity.availableBytes)} available of ${formatCapacity(capacity.totalBytes)}`}.`
           : 'The bounded archive mount check is unavailable.',
         observedAt: hostTelemetry.observedAt,
       },
@@ -127,4 +171,4 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
   };
 }
 
-module.exports = { getSnapshot };
+module.exports = { archiveCapacity, formatCapacity, getSnapshot };
