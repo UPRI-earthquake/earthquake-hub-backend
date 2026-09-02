@@ -27,9 +27,21 @@ describe('admin system service', () => {
     expect(snapshot.metrics.disk.scopeLabel).toBe('VM root filesystem');
     expect(snapshot.capabilities.hostMetrics).toEqual(expect.objectContaining({ available: true, mode: 'read-only' }));
     expect(snapshot.capabilities.hostOperations.available).toBe(false);
+    expect(snapshot.capabilities.hostOperations.unavailability).toEqual(expect.objectContaining({
+      kind: 'implementation_required',
+      runbook: expect.objectContaining({ path: 'docs/admin-action-capabilities.md' }),
+    }));
     expect(snapshot.capabilities.hostOperations.operations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'seiscomp.reload', available: false }),
-      expect.objectContaining({ id: 'inventory.apply', available: false }),
+      expect.objectContaining({
+        id: 'seiscomp.reload',
+        available: false,
+        unavailability: expect.objectContaining({ kind: 'implementation_required' }),
+      }),
+      expect.objectContaining({
+        id: 'inventory.apply',
+        available: false,
+        unavailability: expect.objectContaining({ kind: 'implementation_required' }),
+      }),
     ]));
   });
 
@@ -49,6 +61,29 @@ describe('admin system service', () => {
     expect(snapshot.capabilities.hostMetrics).toEqual(expect.objectContaining({
       available: false,
       reason: expect.stringContaining('not configured'),
+      unavailability: expect.objectContaining({
+        kind: 'host_setup_required',
+        runbook: expect.objectContaining({
+          repository: 'earthquake-hub-commons',
+          path: 'docs/admin-backend/host-bootstrap-and-migration.md',
+        }),
+      }),
     }));
+  });
+
+  it('does not describe a transient telemetry outage as missing host setup', async () => {
+    AdminHostTelemetryClient.getResource.mockResolvedValue({
+      observedAt: '2026-08-20T00:00:00.000Z',
+      status: 'unavailable',
+      data: null,
+      errorCode: 'upstream_unavailable',
+      message: 'Telemetry adapter timed out.',
+    });
+
+    const snapshot = await AdminSystemService.getSnapshot({ username: 'admin' });
+
+    expect(snapshot.capabilities.hostMetrics.available).toBe(false);
+    expect(snapshot.capabilities.hostMetrics.unavailability).toBeUndefined();
+    expect(snapshot.capabilities.hostMetrics.reason).toContain('currently unavailable');
   });
 });

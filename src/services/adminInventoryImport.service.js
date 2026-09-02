@@ -1,4 +1,21 @@
 const Device = require('../models/device.model');
+const {
+  RUNBOOKS,
+  UNAVAILABILITY_KINDS,
+  buildUnavailability,
+} = require('./adminCapabilities.service');
+
+const HOST_EXECUTOR_UNAVAILABILITY = buildUnavailability({
+  kind: UNAVAILABILITY_KINDS.IMPLEMENTATION_REQUIRED,
+  title: 'Inventory host integration required',
+  summary: 'Browser-initiated inventory execution is not implemented; the current workflow prepares safe host commands only.',
+  prerequisites: [
+    'Deploy a bounded inventory executor with a separate least-privilege host identity.',
+    'Persist immutable plan identity, approval, bounded output, verification, and rollback evidence.',
+    'Add backend authorization and audit coverage before enabling browser execution.',
+  ],
+  runbook: RUNBOOKS.ACTION_CAPABILITIES,
+});
 
 function stationLabel(device) {
   const network = String(device.network || '').toUpperCase();
@@ -14,9 +31,22 @@ async function getWorkflow() {
 
   return {
     capabilities: {
+      schemaVersion: '1.0',
       hostExecutorConfigured: false,
       applyEnabled: false,
       supportedModes: ['production-dry-run', 'compare-only'],
+      hostExecutor: {
+        available: false,
+        mode: 'host-integration',
+        reason: HOST_EXECUTOR_UNAVAILABILITY.summary,
+        unavailability: HOST_EXECUTOR_UNAVAILABILITY,
+      },
+      apply: {
+        available: false,
+        mode: 'host-integration',
+        reason: 'Inventory apply requires an approved, rollback-capable host workflow.',
+        unavailability: HOST_EXECUTOR_UNAVAILABILITY,
+      },
     },
     hostBoundary: [
       'inventory_import.py runs on the SeisComP deployment host, not in the backend container.',

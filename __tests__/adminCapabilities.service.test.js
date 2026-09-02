@@ -32,7 +32,7 @@ describe('admin capability policy', () => {
     POLICY_ENV.forEach((name) => delete process.env[name]);
     const capabilities = AdminCapabilitiesService.getCapabilities();
 
-    expect(capabilities.schemaVersion).toBe('1.2');
+    expect(capabilities.schemaVersion).toBe('1.3');
     expect(capabilities.actions[AdminCapabilitiesService.ACTIONS.ACCOUNT_BRGY_APPROVAL])
       .toEqual(expect.objectContaining({
         enabled: true,
@@ -53,6 +53,12 @@ describe('admin capability policy', () => {
 
     expect(viewer.actions[AdminCapabilitiesService.ACTIONS.INCIDENT_MANAGEMENT].enabled)
       .toBe(false);
+    expect(viewer.actions[AdminCapabilitiesService.ACTIONS.INCIDENT_MANAGEMENT].unavailability)
+      .toEqual(expect.objectContaining({
+        kind: 'role_restricted',
+        title: 'Permission required',
+        runbook: null,
+      }));
     expect(operator.actions[AdminCapabilitiesService.ACTIONS.INCIDENT_MANAGEMENT].enabled)
       .toBe(true);
     expect(operator.actions[AdminCapabilitiesService.ACTIONS.ACCOUNT_LIFECYCLE].enabled)
@@ -71,8 +77,20 @@ describe('admin capability policy', () => {
         enabled: false,
         authorization: 'host',
         unavailableReason: expect.any(String),
+        unavailability: expect.objectContaining({
+          prerequisites: expect.any(Array),
+          runbook: expect.objectContaining({
+            label: expect.any(String),
+            repository: expect.any(String),
+            path: expect.any(String),
+          }),
+        }),
       }));
     });
+    expect(capabilities.actions[AdminCapabilitiesService.ACTIONS.INVENTORY_APPLY]
+      .unavailability.kind).toBe('implementation_required');
+    expect(capabilities.actions[AdminCapabilitiesService.ACTIONS.DEPLOYMENT_SERVICE_CONTROL]
+      .unavailability.kind).toBe('intentionally_unsupported');
   });
 
   it('lets operators disable a supported mutation family without changing code', () => {
@@ -81,5 +99,17 @@ describe('admin capability policy', () => {
     expect(AdminCapabilitiesService.isCapabilityEnabled(
       AdminCapabilitiesService.ACTIONS.EARTHQUAKE_EVENT_ENRICHMENT,
     )).toBe(false);
+    expect(AdminCapabilitiesService.getCapability(
+      AdminCapabilitiesService.ACTIONS.EARTHQUAKE_EVENT_ENRICHMENT,
+    )).toEqual(expect.objectContaining({
+      unavailableReason: expect.any(String),
+      unavailability: expect.objectContaining({
+        kind: 'deployment_disabled',
+        prerequisites: expect.arrayContaining([
+          expect.stringContaining('ADMIN_EVENT_ENRICHMENT_ENABLED'),
+        ]),
+        runbook: expect.objectContaining({ path: 'docs/admin-action-capabilities.md' }),
+      }),
+    }));
   });
 });

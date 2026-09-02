@@ -1,5 +1,22 @@
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const {
+  RUNBOOKS,
+  UNAVAILABILITY_KINDS,
+  buildUnavailability,
+} = require('./adminCapabilities.service');
 const { buildOperationalState } = require('./adminOperationalState.service');
+
+const HOST_OPERATIONS_UNAVAILABILITY = buildUnavailability({
+  kind: UNAVAILABILITY_KINDS.IMPLEMENTATION_REQUIRED,
+  title: 'Host integration required',
+  summary: 'Host actions remain disabled until a reviewed, allowlisted executor and complete safety lifecycle are deployed.',
+  prerequisites: [
+    'Deploy a separate least-privilege host operations identity and fixed operation allowlist.',
+    'Add authorization, audit lifecycle, bounded output, verification, and rollback behavior.',
+    'Validate each operation against direct host evidence before enabling browser controls.',
+  ],
+  runbook: RUNBOOKS.ACTION_CAPABILITIES,
+});
 
 const GATED_OPERATIONS = Object.freeze([
   {
@@ -7,24 +24,28 @@ const GATED_OPERATIONS = Object.freeze([
     label: 'Reload SeisComP configuration',
     available: false,
     reason: 'The allowlisted host operations runner is not configured.',
+    unavailability: HOST_OPERATIONS_UNAVAILABILITY,
   },
   {
     id: 'seiscomp.restart',
     label: 'Restart SeisComP processing',
     available: false,
     reason: 'The allowlisted host operations runner is not configured.',
+    unavailability: HOST_OPERATIONS_UNAVAILABILITY,
   },
   {
     id: 'inventory.validate',
     label: 'Validate StationXML inventory',
     available: false,
     reason: 'The host inventory validation job is not configured.',
+    unavailability: HOST_OPERATIONS_UNAVAILABILITY,
   },
   {
     id: 'inventory.apply',
     label: 'Apply validated StationXML inventory',
     available: false,
     reason: 'The approved, rollback-capable inventory job is not configured.',
+    unavailability: HOST_OPERATIONS_UNAVAILABILITY,
   },
 ]);
 
@@ -44,6 +65,18 @@ async function getSnapshot(req) {
     : telemetry.errorCode === 'not_configured'
       ? 'Deployment-host telemetry is not configured in this environment.'
       : 'Deployment-host telemetry is currently unavailable.';
+  const hostMetricsUnavailability = !metricsAvailable && telemetry.errorCode === 'not_configured'
+    ? buildUnavailability({
+      kind: UNAVAILABILITY_KINDS.HOST_SETUP_REQUIRED,
+      title: 'Deployment-host telemetry setup required',
+      summary: reason,
+      prerequisites: [
+        'Run the idempotent Admin Console host bootstrap on the target server.',
+        'Restore the protected telemetry configuration and mTLS material.',
+        'Verify the private telemetry adapter before refreshing this workspace.',
+      ],
+      runbook: RUNBOOKS.HOST_BOOTSTRAP,
+    }) : null;
 
   return {
     observedAt: telemetry.observedAt,
@@ -69,11 +102,13 @@ async function getSnapshot(req) {
         available: metricsAvailable,
         mode: 'read-only',
         reason,
+        ...(hostMetricsUnavailability ? { unavailability: hostMetricsUnavailability } : {}),
       },
       hostOperations: {
         available: false,
         mode: 'gated',
         reason: 'Host actions remain disabled until an allowlisted executor, authorization policy, audit lifecycle, verification, and rollback path are deployed.',
+        unavailability: HOST_OPERATIONS_UNAVAILABILITY,
         operations: GATED_OPERATIONS.map((operation) => ({ ...operation })),
       },
     },

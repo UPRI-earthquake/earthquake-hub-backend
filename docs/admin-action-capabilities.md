@@ -38,6 +38,49 @@ procedure, before claiming immediate revocation of tokens issued by older
 releases. Generation-bound tokens issued by this release are invalidated
 immediately when the persisted generation changes.
 
+## Capability response contract
+
+Capability schema `1.3` retains the existing `enabled` and
+`unavailableReason` fields and adds structured setup guidance for disabled
+actions. Consumers must continue treating `enabled` as explanatory UI state;
+route authorization remains authoritative.
+
+Disabled actions may include:
+
+```json
+{
+  "enabled": false,
+  "unavailableReason": "This action is disabled for the current deployment.",
+  "unavailability": {
+    "kind": "deployment_disabled",
+    "title": "Disabled for this deployment",
+    "summary": "This action is disabled for the current deployment.",
+    "prerequisites": ["Confirm that this workflow is approved."],
+    "runbook": {
+      "label": "Admin action capability policy",
+      "repository": "earthquake-hub-backend",
+      "path": "docs/admin-action-capabilities.md"
+    }
+  }
+}
+```
+
+Allowed unavailability kinds are:
+
+- `role_restricted` — the deployment supports the workflow but the current
+  admin tier does not authorize it;
+- `deployment_disabled` — an implemented action is disabled by an operational
+  circuit breaker;
+- `host_setup_required` — a read-only host integration is implemented but its
+  reviewed host setup is absent;
+- `implementation_required` — the separately authorized host workflow and its
+  safety lifecycle do not exist yet;
+- `intentionally_unsupported` — the operation stays outside the browser-facing
+  Admin Console by design.
+
+Runbook references contain repository names and repository-relative paths, not
+host filesystem paths, command output, credentials, or configuration values.
+
 ## Supported mutation switches
 
 All currently supported action families default to enabled when the variable is
