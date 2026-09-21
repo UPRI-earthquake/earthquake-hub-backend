@@ -6,6 +6,7 @@ const DeviceAlertsService = require('../services/deviceAlerts.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
 const Device = require('../models/device.model');
+const SenderTunnelObservationService = require('../services/senderTunnelObservation.service');
 
 const rshakeAlertDeviceSchema = Joi.object({
   network: Joi.string().trim().uppercase().min(2).max(4),
@@ -212,6 +213,10 @@ exports.newRshakeAlert = async (req, res, next) => {
     const { error, value } = schema.validate(req.body, { abortEarly: false });
     if (error) throw error;
 
+    let tunnelObservation = null;
+    if (value.type === 'device.heartbeat' && value.alertCode === 'REMOTE_TUNNEL_STATE') {
+      tunnelObservation = await SenderTunnelObservationService.record(value);
+    }
     const result = await DeviceAlertsService.sendDeviceAlertEmails(value);
     if (result.str === 'deliveryFailed') {
       return res.status(502).json({
@@ -235,6 +240,7 @@ exports.newRshakeAlert = async (req, res, next) => {
           severity: result.event?.severity,
           alertCode: result.event?.alertCode,
           occurredAt: result.event?.occurredAt,
+          ...(tunnelObservation ? { tunnelObservation } : {}),
         },
       },
     });

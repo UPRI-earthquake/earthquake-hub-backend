@@ -9,6 +9,7 @@ jest.mock('../src/services/EQevents.service', () => ({
   addAdditionalInformation: jest.fn(),
   clearEventSummary: jest.fn(),
   getAdminEventQueue: jest.fn(),
+  getAdminEventCalendar: jest.fn(),
   setEventSummary: jest.fn(),
   transitionEventSummaryReview: jest.fn(),
   updateOnlineStations: jest.fn(),
@@ -67,6 +68,21 @@ describe('Admin earthquake event routes', () => {
       minMagnitude: 4, sourceCatalog: 'upri-current', search: 'Batangas', limit: 25, offset: 0,
     }));
     expect(response.body.summary).toEqual({ total: 1 });
+  });
+
+  it('returns an administrator-only bounded UTC event calendar', async () => {
+    EQEventsService.getAdminEventCalendar.mockResolvedValue({ timezone: 'UTC', days: [{ date: '2026-09-01', count: 2 }] });
+    const response = await request(app)
+      .get('/admin/earthquake-events/calendar?startTime=2026-09-01T00:00:00.000Z&endTime=2026-09-30T23:59:59.999Z')
+      .set('Cookie', [`accessToken=${signAdminToken()}`]);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.payload).toEqual({ timezone: 'UTC', days: [{ date: '2026-09-01', count: 2 }] });
+    expect(EQEventsService.getAdminEventCalendar).toHaveBeenCalledWith({
+      timezone: 'Asia/Manila',
+      startTime: new Date('2026-09-01T00:00:00.000Z'),
+      endTime: new Date('2026-09-30T23:59:59.999Z'),
+    });
   });
 
   it('audits a public-facing summary update', async () => {

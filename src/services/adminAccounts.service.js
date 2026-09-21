@@ -67,6 +67,8 @@ async function listAccounts({
   search,
   limit = 25,
   offset = 0,
+  sortBy,
+  sortDirection,
 } = {}) {
   const query = {};
   if (role) query.roles = role;
@@ -94,9 +96,12 @@ async function listAccounts({
     query.$or = [{ username: expression }, { email: expression }, { ringserverUrl: expression }];
   }
 
+  const ordering = ['username', 'createdAt', 'lastActivityAt'].includes(sortBy)
+    ? { [sortBy]: sortDirection === 'desc' ? -1 : 1, _id: 1 }
+    : { createdAt: -1, username: 1, _id: 1 };
   const [accounts, total, summary] = await Promise.all([
     Account.find(query)
-      .sort({ createdAt: -1, username: 1 })
+      .sort(ordering)
       .skip(offset)
       .limit(limit)
       .select('username email roles adminRole isActive sessionVersion lastLoginAt lastActivityAt deactivatedAt deactivatedBy deactivationReason isApproved devices ringserverUrl ringserverPort alertPreferences createdAt updatedAt')

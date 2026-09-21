@@ -78,6 +78,16 @@ const AccountSchema = new mongoose.Schema({
     type: String,
     enum: ['viewer', 'operator', 'super_admin'],
   },
+  adminPreferences: {
+    type: new mongoose.Schema({
+      version: { type: Number, default: 0, min: 0 },
+      dashboardLayout: { type: [new mongoose.Schema({
+        i: String, x: Number, y: Number, w: Number, h: Number,
+      }, { _id: false })], default: null },
+    }, { _id: false }),
+    default: undefined,
+    select: false,
+  },
   passwordPolicyVersion: {
     type: Number,
     default: 1, // legacy until explicitly updated
@@ -114,6 +124,12 @@ const AccountSchema = new mongoose.Schema({
       type: Boolean,
       default: false,
     },
+    updatedAt: Date,
+  },
+  // Personal administrator notification choices. These do not configure the
+  // system-wide rule or expose any delivery credential to the browser.
+  adminNotificationPreferences: {
+    incidentEmailEnabled: { type: Boolean, default: false },
     updatedAt: Date,
   },
 }, {

@@ -10,6 +10,7 @@ const { ACTIONS } = require('../services/adminCapabilities.service');
 
 const router = express.Router();
 router.get('/', getTokenFromCookie, verifyTokenWithRole('admin'), AdminDevicesStationsController.listDevices);
+router.get('/map', getTokenFromCookie, verifyTokenWithRole('admin'), AdminDevicesStationsController.getMap);
 router.get('/ringserver-targets', getTokenFromCookie, verifyTokenWithRole('admin'), AdminDevicesStationsController.listAllowedTargets);
 router.get('/:deviceId/history', getTokenFromCookie, verifyTokenWithRole('admin'), AdminDevicesStationsController.listHistory);
 router.get('/:deviceId/freshness', getTokenFromCookie, verifyTokenWithRole('admin'), AdminDevicesStationsController.listFreshness);

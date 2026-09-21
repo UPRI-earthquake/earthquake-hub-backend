@@ -1,3 +1,5 @@
+const { archiveCoverageEvidence } = require('./adminArchiveCoverage.service');
+const { runtimeEvidence } = require('./adminRuntimeEvidence.service');
 const Device = require('../models/device.model');
 const Event = require('../models/events.model');
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
@@ -12,11 +14,13 @@ function normalizeStations(value) {
 }
 
 function safeByteCount(value) {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
 
 function safePercent(value) {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100
     ? Math.round(parsed * 10) / 10
@@ -79,7 +83,7 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
   const now = new Date();
   const since = new Date(now.getTime() - (windowHours * 60 * 60 * 1000));
   const baseQuery = { createdAt: { $gte: since } };
-  const [verifiedEvents, partialEvents, unavailableEvents, pendingEvents, activeStations, inactiveStations, latestCheckedEvent, gapEvents, hostTelemetry] = await Promise.all([
+  const [verifiedEvents, partialEvents, unavailableEvents, pendingEvents, activeStations, inactiveStations, latestCheckedEvent, gapEvents, hostTelemetry, runtimeTelemetry, coverageTelemetry, fdsnTelemetry] = await Promise.all([
     Event.countDocuments({ ...baseQuery, recordingAvailabilityStatus: 'verified' }),
     Event.countDocuments({ ...baseQuery, recordingAvailabilityStatus: 'partial' }),
     Event.countDocuments({ ...baseQuery, recordingAvailabilityStatus: 'unavailable' }),
@@ -99,9 +103,14 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
       .select('publicID OT magnitude_value text recordingAvailabilityStatus recordingAvailabilityCheckedAt candidateStations recordingStations')
       .lean(),
     AdminHostTelemetryClient.getResource('archive', req),
+    AdminHostTelemetryClient.getResource('seiscomp-runtime', req),
+    AdminHostTelemetryClient.getResource('archive-coverage', req),
+    AdminHostTelemetryClient.getResource('seiscomp', req),
   ]);
 
   const observedAt = now.toISOString();
+  const runtime = runtimeEvidence(runtimeTelemetry, now.getTime());
+  const writers = runtime.modules.filter((module) => ['slarchive', 'slarchive2'].includes(module.id));
   const capacity = archiveCapacity(hostTelemetry.data);
   const operationalAvailability = hostTelemetry.status === 'available'
     && hostTelemetry.operational?.state === 'healthy'
@@ -119,8 +128,8 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
     window: { hours: windowHours, since: since.toISOString() },
     limitations: [
       'The private admin backend exposes mount availability and rounded capacity figures only; paths, files, remote mount details, and waveform contents remain hidden.',
-      'slarchive process state remains unavailable to both backends.',
-      'Gap diagnostics are based on persisted FDSN waveform verification for recent events, not a direct scan of the SDS archive.',
+      'Optional writer process observations do not prove successful archive writes.',
+      'Event recording diagnostics are separate from optional availability-index intervals. Index query time is not archive scan time.',
     ],
     summary: {
       activeStations,
@@ -140,7 +149,16 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
       archiveUsedPercent: capacity.usedPercent,
     },
     hostTelemetry,
+    writerRuntime: { ...runtime, modules: writers },
+    coverage: archiveCoverageEvidence(coverageTelemetry, now.getTime()),
+    fdsnTelemetry,
     checks: [
+      {
+        id: 'fdsnws-current-reachability', name: 'FDSNWS current reachability',
+        status: ['available', 'degraded'].includes(fdsnTelemetry.status) ? 'observed' : 'unobserved',
+        observation: fdsnTelemetry.data?.reachable === true ? 'The fixed endpoint is reachable.' : fdsnTelemetry.data?.reachable === false ? 'The fixed endpoint did not return a successful response.' : 'Current reachability is unknown.',
+        observedAt: fdsnTelemetry.observedAt,
+      },
       {
         id: 'fdsnws-recording-verification',
         name: 'FDSNWS waveform verification',
@@ -153,9 +171,9 @@ async function getSnapshot({ windowHours = 24, limit = 50 } = {}, req) {
       {
         id: 'slarchive',
         name: 'slarchive',
-        status: 'unobserved',
-        observation: 'Host-level archive writer status is not exported to the backend.',
-        observedAt: null,
+        status: writers.length && !runtime.stale ? 'observed' : 'unobserved',
+        observation: writers.length ? writers.map((module) => `${module.id}: ${module.state === 'running' ? 'running observed (not write health)' : module.state === 'not_running' ? 'referenced process not running' : 'unknown'}`).join('; ') : 'No archive writer runtime observation is available.',
+        observedAt: runtime.observedAt,
       },
       {
         id: 'storage-mount',

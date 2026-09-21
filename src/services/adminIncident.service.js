@@ -321,6 +321,11 @@ async function synchronizeOverview(snapshot) {
     }
   }
 
+  // Assign identity before persistence so notification retries identify the same occurrence.
+  for (const event of events) {
+    event._id = new mongoose.Types.ObjectId();
+    event.createdAt = new Date();
+  }
   if (events.length) await AdminIncidentEvent.insertMany(events, { ordered: false });
 
   const active = await AdminIncident.find({ status: { $in: ACTIVE_STATUSES } }).lean();
@@ -334,6 +339,9 @@ async function synchronizeOverview(snapshot) {
       investigating: incidents.filter((item) => item.status === 'investigating').length,
       critical: incidents.filter((item) => item.severity === 'critical').length,
     },
+    // This is internal handoff data for the Overview orchestrator. Persisting
+    // incidents never depends on rule lookup, recipients, or SMTP delivery.
+    notificationEvents: events,
   };
 }
 

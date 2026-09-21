@@ -69,3 +69,14 @@ describe('Admin community report service', () => {
     });
   });
 });
+
+for (const direction of ['asc', 'desc']) {
+  test(`orders reports ${direction} before pagination`, async () => {
+    const chain = queueChain();
+    Comment.find.mockReturnValue(chain);
+    Comment.countDocuments.mockResolvedValue(0);
+    await CommentsService.getAdminModerationQueue({ sortBy: 'createdAt', sortDirection: direction, offset: 25 });
+    expect(chain.sort).toHaveBeenCalledWith({ createdAt: direction === 'desc' ? -1 : 1, _id: 1 });
+    expect(chain.sort.mock.invocationCallOrder[0]).toBeLessThan(chain.skip.mock.invocationCallOrder[0]);
+  });
+}

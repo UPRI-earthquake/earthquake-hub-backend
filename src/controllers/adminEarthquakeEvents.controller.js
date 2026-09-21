@@ -24,7 +24,19 @@ const queueSchema = Joi.object({
   search: Joi.string().trim().max(100).allow('').optional(),
   limit: Joi.number().integer().min(1).max(100).default(25),
   offset: Joi.number().integer().min(0).default(0),
+  sortBy: Joi.string().valid('publicID', 'OT', 'magnitude_value').optional(),
+  sortDirection: Joi.string().valid('asc', 'desc').optional(),
 });
+
+const calendarSchema = Joi.object({
+  timezone: Joi.string().valid('Asia/Manila', 'UTC').default('Asia/Manila'),
+  startTime: Joi.date().iso().required(),
+  endTime: Joi.date().iso().min(Joi.ref('startTime')).required(),
+}).custom((value, helpers) => (
+  value.endTime.getTime() - value.startTime.getTime() > 93 * 24 * 60 * 60 * 1000
+    ? helpers.error('date.range')
+    : value
+)).messages({ 'date.range': 'Calendar ranges cannot exceed 93 days.' });
 
 const summarySchema = Joi.object({
   publicID: Joi.string().trim().min(1).max(256).required(),
@@ -62,6 +74,22 @@ exports.listEvents = async (req, res, next) => {
       summary: result.summary,
     });
     res.message = 'Earthquake events retrieved successfully.';
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getCalendar = async (req, res, next) => {
+  try {
+    const { error, value } = calendarSchema.validate(req.query, { stripUnknown: true });
+    if (error) throw error;
+    const calendar = await EQEventsService.getAdminEventCalendar(value);
+    res.status(200).json({
+      status: responseCodes.GENERIC_SUCCESS,
+      message: 'Earthquake event calendar retrieved successfully.',
+      payload: calendar,
+    });
+    res.message = 'Earthquake event calendar retrieved successfully.';
   } catch (error) {
     next(error);
   }

@@ -4,6 +4,7 @@ const AdminConfigurationDiagnosticsService = require('./adminConfigurationDiagno
 const AdminDevicesStationsService = require('./adminDevicesStations.service');
 const AdminDeploymentHealthService = require('./adminDeploymentHealth.service');
 const AdminIncidentService = require('./adminIncident.service');
+const AdminNotificationsService = require('./adminNotifications.service');
 const AdminRingserverService = require('./adminRingserver.service');
 const AdminSeiscompService = require('./adminSeiscomp.service');
 const { buildOperationalState, freshness } = require('./adminOperationalState.service');
@@ -337,6 +338,12 @@ async function buildSnapshot(req) {
   };
   try {
     const incidentState = await AdminIncidentService.synchronizeOverview(snapshot);
+    // Delivery is intentionally best-effort relative to the snapshot. The
+    // notification service keeps its own outcome history and failures must not
+    // hide newly persisted operational incidents.
+    void AdminNotificationsService.notifyIncidentEvents(incidentState.notificationEvents || []).catch((error) => {
+      console.error('Unable to evaluate admin notifications:', error?.message || error);
+    });
     return {
       ...snapshot,
       incidents: incidentState.incidents,

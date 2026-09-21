@@ -1,4 +1,5 @@
 jest.mock('../src/models/events.model', () => ({
+  aggregate: jest.fn(),
   countDocuments: jest.fn(),
   distinct: jest.fn(),
   find: jest.fn(),
@@ -56,6 +57,20 @@ describe('Admin earthquake event service', () => {
     expect(EQEvents.find).toHaveBeenCalledWith({
       recordingAvailabilityStatus: { $in: ['pending', 'partial', 'unavailable'] },
     });
+  });
+
+  it('aggregates complete UTC calendar days without loading the event queue', async () => {
+    EQEvents.aggregate.mockResolvedValue([{ _id: '2026-09-01', count: 2, maxMagnitude: 4.2, recordingAttention: 1, pendingEnrichment: 1 }]);
+    await expect(EQEventsService.getAdminEventCalendar({
+      startTime: new Date('2026-09-01T00:00:00.000Z'),
+      endTime: new Date('2026-09-30T23:59:59.999Z'),
+    })).resolves.toEqual(expect.objectContaining({
+      timezone: 'Asia/Manila',
+      days: [{ date: '2026-09-01', count: 2, maxMagnitude: 4.2, recordingAttention: 1, pendingEnrichment: 1 }],
+    }));
+    expect(EQEvents.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ $match: { OT: { $gte: new Date('2026-09-01T00:00:00.000Z'), $lte: new Date('2026-09-30T23:59:59.999Z') } } }),
+    ]));
   });
 
   it('adds event-specific community-report and pending-review counts', async () => {
@@ -142,4 +157,22 @@ describe('Admin earthquake event service', () => {
       ],
     });
   });
+});
+
+for (const direction of ['asc', 'desc']) {
+  test(`orders event queries ${direction} before pagination`, async () => {
+    const chain = { sort: jest.fn().mockReturnThis(), skip: jest.fn().mockReturnThis(), limit: jest.fn().mockReturnThis(), select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([]) };
+    EQEvents.find.mockReturnValue(chain);
+    EQEvents.countDocuments.mockResolvedValue(0);
+    await EQEventsService.getAdminEventQueue({ sortBy: 'magnitude_value', sortDirection: direction, offset: 25 });
+    expect(chain.sort).toHaveBeenCalledWith({ magnitude_value: direction === 'desc' ? -1 : 1, _id: 1 });
+    expect(chain.sort.mock.invocationCallOrder[0]).toBeLessThan(chain.skip.mock.invocationCallOrder[0]);
+  });
+}
+
+test.each(['Asia/Manila', 'UTC'])('calendar groups in %s', async (timezone) => {
+  EQEvents.aggregate.mockResolvedValue([]);
+  await EQEventsService.getAdminEventCalendar({ startTime: new Date('2026-09-01'), endTime: new Date('2026-09-30'), timezone });
+  const pipeline = EQEvents.aggregate.mock.calls.at(-1)[0];
+  expect(pipeline[1].$project.day.$dateToString.timezone).toBe(timezone);
 });

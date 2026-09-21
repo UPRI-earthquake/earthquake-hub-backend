@@ -59,3 +59,14 @@ describe('Audit log route', () => {
     }));
   });
 });
+
+for (const preset of ['important', 'failures', 'security', 'all']) {
+  test(`applies ${preset} without losing explicit audit scope`, async () => {
+    AuditLogService.list.mockClear();
+    AuditLogService.list.mockResolvedValue({ logs: [], total: 0, limit: 25, offset: 0, nextCursor: null, summary: {} });
+    const response = await request(app).get(`/admin/audit-logs?preset=${preset}&correlationId=trace-1`).set('Cookie', [`accessToken=${signAdminToken()}`]);
+    expect(response.statusCode).toBe(200);
+    const condition = require('../src/services/adminAuditPresets').presetCondition(preset);
+    expect(AuditLogService.list).toHaveBeenCalledWith({ correlationId: 'trace-1', ...(condition ? { $and: [condition] } : {}) }, expect.objectContaining({ preset }));
+  });
+}

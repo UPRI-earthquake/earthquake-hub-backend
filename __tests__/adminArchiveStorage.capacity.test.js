@@ -18,6 +18,8 @@ describe('admin archive capacity normalization', () => {
   });
 
   it('rejects incomplete or impossible capacity data', () => {
+    expect(archiveCapacity({ totalBytes: null, availableBytes: null, usedBytes: null, usedPercent: null }))
+      .toEqual({ totalBytes: null, availableBytes: null, usedBytes: null, usedPercent: null });
     expect(archiveCapacity({ totalBytes: 100, availableBytes: 101, usedBytes: 0, usedPercent: 0 }))
       .toEqual({ totalBytes: null, availableBytes: null, usedBytes: null, usedPercent: null });
     expect(archiveCapacity({ totalBytes: 100, availableBytes: 20, usedBytes: 80, usedPercent: 120 }))

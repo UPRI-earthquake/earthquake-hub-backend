@@ -1,4 +1,6 @@
 const Device = require('../models/device.model');
+const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const { reconcileInventory } = require('./adminInventoryReconciliation.service');
 const {
   RUNBOOKS,
   UNAVAILABILITY_KINDS,
@@ -23,13 +25,18 @@ function stationLabel(device) {
   return `${network}.${station}`;
 }
 
-async function getWorkflow() {
-  const devices = await Device.find({ network: { $exists: true }, station: { $exists: true } })
+async function getWorkflow(req) {
+  const [results, telemetry] = await Promise.all([Device.find({ network: { $exists: true }, station: { $exists: true } })
     .sort({ network: 1, station: 1 })
-    .select('network station description activity streamId')
-    .lean();
+    .limit(2001)
+    .select('network station description activity streamId latitude longitude elevation')
+    .lean(), AdminHostTelemetryClient.getResource('seiscomp-inventory', req)]);
+  const devices = results.slice(0, 2000);
 
   return {
+    stationLimit: 2000,
+    stationsTruncated: results.length > 2000,
+    reconciliation: reconcileInventory(devices, telemetry),
     capabilities: {
       schemaVersion: '1.0',
       hostExecutorConfigured: false,

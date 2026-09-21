@@ -2,7 +2,10 @@ const Joi = require('joi');
 const AuditLogService = require('../services/auditLog.service');
 const { responseCodes } = require('./responseCodes');
 
+const { presetCondition } = require('../services/adminAuditPresets');
+
 const listSchema = Joi.object({
+  preset: Joi.string().valid('important', 'failures', 'security', 'all').optional(),
   correlationId: Joi.string().trim().max(128).optional(),
   eventType: Joi.string().trim().max(128).optional(),
   targetId: Joi.string().trim().max(512).optional(),
@@ -21,6 +24,8 @@ exports.listAuditLogs = async (req, res, next) => {
     const { error, value } = listSchema.validate(req.query, { stripUnknown: true });
     if (error) throw error;
     const filters = {};
+    const preset = presetCondition(value.preset);
+    if (preset) filters.$and = [preset];
     if (value.correlationId) filters.correlationId = value.correlationId;
     if (value.eventType) filters.eventType = value.eventType;
     if (value.targetId) filters['target.id'] = value.targetId;

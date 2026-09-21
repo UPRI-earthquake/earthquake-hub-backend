@@ -1,10 +1,12 @@
 jest.mock('../src/models/device.model', () => ({ find: jest.fn() }));
 jest.mock('../src/services/tunnelEnrollment.service', () => ({ listActiveMappings: jest.fn() }));
 jest.mock('../src/services/adminHostTelemetry.client', () => ({ getResource: jest.fn() }));
+jest.mock('../src/services/senderTunnelObservation.service', () => ({ getForDevice: jest.fn() }));
 
 const Device = require('../src/models/device.model');
 const TunnelEnrollmentService = require('../src/services/tunnelEnrollment.service');
 const AdminHostTelemetryClient = require('../src/services/adminHostTelemetry.client');
+const SenderTunnelObservationService = require('../src/services/senderTunnelObservation.service');
 const AdminDevicesStationsService = require('../src/services/adminDevicesStations.service');
 
 function findChain(devices) {
@@ -16,7 +18,7 @@ function findChain(devices) {
 }
 
 describe('Admin devices and stations service', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => { jest.clearAllMocks(); SenderTunnelObservationService.getForDevice.mockResolvedValue({ state: 'not_reported', connected: null }); });
 
   it('uses the combined attention activities for the evidence-card filter', async () => {
     Device.find.mockReturnValue(findChain([]));
@@ -60,6 +62,19 @@ describe('Admin devices and stations service', () => {
 
     expect(result.total).toBe(1);
     expect(result.summary).toMatchObject({ total: 2, active: 1, unlinked: 1, tunneled: 1 });
+  });
+
+  it('sorts the complete mapping-joined result before pagination with a stable station tie-breaker', async () => {
+    const devices = [
+      { network: 'AM', station: 'SECOND', activity: 'inactive' },
+      { network: 'AM', station: 'FIRST', activity: 'inactive' },
+      { network: 'PH', station: 'THIRD', activity: 'active' },
+    ];
+    Device.find.mockReturnValue(findChain(devices));
+    TunnelEnrollmentService.listActiveMappings.mockResolvedValue([{ deviceId: 'AM_SECOND', remotePort: 22020 }, { deviceId: 'AM_FIRST', remotePort: 22010 }]);
+    const result = await AdminDevicesStationsService.listDevices({ sortBy: 'remotePort', sortDirection: 'desc', limit: 1, offset: 0 });
+    expect(result.total).toBe(3);
+    expect(result.devices[0].deviceId).toBe('AM_SECOND');
   });
 
   it('joins a registry-selected port to bounded host listener evidence', async () => {

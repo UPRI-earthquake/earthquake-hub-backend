@@ -8,6 +8,9 @@ const { buildOperationalState } = require('./adminOperationalState.service');
 const RESOURCE_PATHS = Object.freeze({
   deployment: 'deployment',
   seiscomp: 'seiscomp',
+  'seiscomp-runtime': 'seiscomp-runtime',
+  'seiscomp-inventory': 'seiscomp-inventory',
+  'archive-coverage': 'archive-coverage',
   archive: 'archive',
   system: 'system',
   wstunnel: 'wstunnel',

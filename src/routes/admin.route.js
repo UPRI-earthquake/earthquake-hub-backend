@@ -1,5 +1,8 @@
 const express = require('express');
 const AdminController = require('../controllers/admin.controller');
+const AdminPreferencesController = require('../controllers/adminPreferences.controller');
+const { getTokenFromCookie, verifyTokenWithRole } = require('../middlewares/token.middleware');
+const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
 const AdminAuthAuditService = require('../services/adminAuthAudit.service');
 const {
   getTokenFromCookieIfPresent,
@@ -11,6 +14,8 @@ const {
 } = require('../middlewares/rateLimit.middleware');
 
 const router = express.Router();
+router.get('/preferences', getTokenFromCookie, verifyTokenWithRole('admin'), AdminPreferencesController.get);
+router.put('/preferences', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, AdminPreferencesController.save);
 
 const adminAuthRateLimitWindowMs = positiveIntegerEnv(
   'ADMIN_AUTH_RATE_LIMIT_WINDOW_MS',

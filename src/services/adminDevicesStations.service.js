@@ -1,6 +1,7 @@
 const Device = require('../models/device.model');
 const TunnelEnrollmentService = require('./tunnelEnrollment.service');
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
+const SenderTunnelObservationService = require('./senderTunnelObservation.service');
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -8,6 +9,26 @@ function escapeRegex(value) {
 
 function deviceId(device) {
   return `${String(device.network || '').toUpperCase()}_${String(device.station || '').toUpperCase()}`;
+}
+
+const SORT_FIELDS = new Set(['deviceId', 'network', 'activity', 'activityToggleTime', 'remotePort']);
+function compareValues(left, right, direction) {
+  if (left === null || left === undefined || left === '') return right === null || right === undefined || right === '' ? 0 : 1;
+  if (right === null || right === undefined || right === '') return -1;
+  const order = direction === 'desc' ? -1 : 1;
+  if (typeof left === 'number' && typeof right === 'number') return order * (left - right);
+  return order * String(left).localeCompare(String(right), undefined, { numeric: true });
+}
+function sortRows(rows, sortBy = 'deviceId', sortDirection = 'asc') {
+  const key = SORT_FIELDS.has(sortBy) ? sortBy : 'deviceId';
+  const direction = sortDirection === 'desc' ? 'desc' : 'asc';
+  return [...rows].sort((left, right) => {
+    const value = key === 'remotePort' ? Number(left.tunnel?.remotePort) || null : left[key];
+    const other = key === 'remotePort' ? Number(right.tunnel?.remotePort) || null : right[key];
+    const result = compareValues(value, other, direction);
+    if (result) return result;
+    return String(left.deviceId).localeCompare(String(right.deviceId));
+  });
 }
 
 function summarizeDevices(devices, mappingByDeviceId) {
@@ -23,7 +44,7 @@ function summarizeDevices(devices, mappingByDeviceId) {
   };
 }
 
-async function listDevices({ activity, attention, hasTunnel, includeSummary = false, isActive, network, search, limit = 25, offset = 0 } = {}) {
+async function listDevices({ activity, attention, hasTunnel, includeSummary = false, isActive, network, search, sortBy = 'deviceId', sortDirection = 'asc', limit = 25, offset = 0 } = {}) {
   const query = {};
   if (network) query.network = network;
   if (attention === true) query.activity = { $in: ['inactive', 'internal_error', 'INTERNAL_ERROR'] };
@@ -45,10 +66,10 @@ async function listDevices({ activity, attention, hasTunnel, includeSummary = fa
       : Promise.resolve([]),
   ]);
   const mappingByDeviceId = new Map((mappings || []).map((mapping) => [String(mapping.deviceId || '').toUpperCase(), mapping]));
-  const rows = devices.map((device) => {
+  const rows = sortRows(devices.map((device) => {
     const id = deviceId(device);
     return { ...device, deviceId: id, tunnel: mappingByDeviceId.get(id) || null };
-  }).filter((device) => hasTunnel === undefined || Boolean(device.tunnel) === hasTunnel);
+  }).filter((device) => hasTunnel === undefined || Boolean(device.tunnel) === hasTunnel), sortBy, sortDirection);
 
   return {
     devices: rows.slice(offset, offset + limit),
@@ -61,7 +82,10 @@ async function listDevices({ activity, attention, hasTunnel, includeSummary = fa
 
 async function getTunnelObservation({ deviceId: requestedDeviceId, req } = {}) {
   const requested = String(requestedDeviceId || '').toUpperCase();
-  const mappings = await TunnelEnrollmentService.listActiveMappings();
+  const [mappings, senderReport] = await Promise.all([
+    TunnelEnrollmentService.listActiveMappings(),
+    SenderTunnelObservationService.getForDevice(requested),
+  ]);
   const mapping = (mappings || []).find((entry) => String(entry.deviceId || '').toUpperCase() === requested);
   if (!mapping) {
     return {
@@ -75,6 +99,7 @@ async function getTunnelObservation({ deviceId: requestedDeviceId, req } = {}) {
         message: 'No active WSTunnel registry mapping exists for this station.',
       },
       operational: null,
+      senderReport,
     };
   }
 
@@ -93,6 +118,7 @@ async function getTunnelObservation({ deviceId: requestedDeviceId, req } = {}) {
         message: 'The registry mapping exists, but deployment-host listener evidence is unavailable.',
       },
       operational: telemetry.operational,
+      senderReport,
     };
   }
 
@@ -112,6 +138,7 @@ async function getTunnelObservation({ deviceId: requestedDeviceId, req } = {}) {
         message: 'The mapped port is outside the collector’s configured WSTunnel range.',
       },
       operational: telemetry.operational,
+      senderReport,
     };
   }
 
@@ -131,7 +158,8 @@ async function getTunnelObservation({ deviceId: requestedDeviceId, req } = {}) {
       limitations: telemetry.data.limitations || 'Listener presence does not prove tunnel latency, packet delivery, uptime, or sender health.',
     },
     operational: telemetry.operational,
+    senderReport,
   };
 }
 
-module.exports = { getTunnelObservation, listDevices, summarizeDevices };
+module.exports = { getTunnelObservation, listDevices, SORT_FIELDS, sortRows, summarizeDevices };

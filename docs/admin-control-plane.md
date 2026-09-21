@@ -259,3 +259,27 @@ review steps.
 - [Node.js TLS](https://nodejs.org/api/tls.html)
 - [OWASP SSRF Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html) — rationale for fixed server-owned probes rather than browser-provided URLs.
 
+
+
+### Notification refinement (2026-09-19)
+
+Rule GET includes a fixed `key`; PUT accepts only `version`, `enabled` and
+`cooldownMinutes`. Initial creation increments version atomically without competing
+update operators; concurrent/stale writes return 409. The super-admin gate is
+unchanged. Recipient preferences remain account-scoped and opt-in.
+
+Notification deduplication uses the persisted incident-event ObjectId and
+recipient, so later reopening events remain eligible after cooldown. Replaying
+the same occurrence cannot send twice. Suppressed and failed deliveries remain
+visible in history. No migration of existing delivery keys is required; new
+occurrences use the new identity format.
+
+Overview schedules notification evaluation without awaiting SMTP. This is a
+best-effort in-process delivery path, not a durable job queue: process termination
+can interrupt pending work; failed sends are recorded, not automatically retried.
+This limitation must remain explicit. No recovery email is promised: supported
+triggers are detection and reopening of directly unavailable source evidence.
+
+Use `RUN_MONGO_INTEGRATION=1 node_modules/.bin/jest --runInBand
+__tests__/adminNotifications.mongodb.integration.test.js` for disposable MongoDB
+persistence checks. Email is mocked; this does not establish SMTP deliverability.

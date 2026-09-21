@@ -8,6 +8,7 @@ const { ACTIONS } = require('../services/adminCapabilities.service');
 const router = express.Router();
 
 router.get('/', getTokenFromCookie, verifyTokenWithRole('admin'), AdminEarthquakeEventsController.listEvents);
+router.get('/calendar', getTokenFromCookie, verifyTokenWithRole('admin'), AdminEarthquakeEventsController.getCalendar);
 router.patch(
   '/:publicID/summary',
   getTokenFromCookie,

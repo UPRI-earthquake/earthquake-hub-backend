@@ -1,3 +1,4 @@
+jest.mock('../src/services/adminNotifications.service', () => ({ notifyIncidentEvents: jest.fn().mockResolvedValue() }));
 jest.mock('../src/services/adminAccounts.service', () => ({ listAccounts: jest.fn() }));
 jest.mock('../src/services/adminArchiveStorage.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/adminConfigurationDiagnostics.service', () => ({ getSnapshot: jest.fn() }));
@@ -8,7 +9,7 @@ jest.mock('../src/services/adminRingserver.service', () => ({ getSnapshot: jest.
 jest.mock('../src/services/adminSeiscomp.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/auditLog.service', () => ({ list: jest.fn() }));
 jest.mock('../src/services/comments.service', () => ({ getAdminModerationQueue: jest.fn() }));
-jest.mock('../src/services/EQevents.service', () => ({ getAdminEventQueue: jest.fn() }));
+jest.mock('../src/services/EQevents.service', () => ({ getAdminEventQueue: jest.fn(), getAdminEventCalendar: jest.fn() }));
 
 const AdminAccountsService = require('../src/services/adminAccounts.service');
 const AdminArchiveStorageService = require('../src/services/adminArchiveStorage.service');
@@ -40,6 +41,7 @@ describe('admin overview aggregation', () => {
     AdminAccountsService.listAccounts.mockResolvedValue({ total: 3 });
     CommentsService.getAdminModerationQueue.mockResolvedValue({ total: 2 });
     EQEventsService.getAdminEventQueue.mockResolvedValue({ total: 4, events: [{ publicID: 'event-1', OT: '2026-07-13T00:00:00.000Z', magnitude_value: 4.2, text: 'Test location' }] });
+    EQEventsService.getAdminEventCalendar.mockResolvedValue({ timezone: 'UTC', days: [{ date: '2026-07-13', count: 1 }] });
     AdminSeiscompService.getSnapshot.mockResolvedValue({ summary: { activeStations: 6, inactiveStations: 2, deliveredEvents: 4 } });
     AdminArchiveStorageService.getSnapshot.mockResolvedValue({ summary: { verifiedEvents: 5, partialEvents: 1, unavailableEvents: 0, pendingEvents: 2, archiveMounted: true, archiveFreeSpaceBand: 'healthy', latestFdsnVerificationAt: '2026-07-13T00:00:00.000Z', latestFdsnVerificationStatus: 'verified' } });
     AdminDeploymentHealthService.getSnapshot.mockReturnValue({
@@ -76,6 +78,8 @@ describe('admin overview aggregation', () => {
     }));
     expect(snapshot.sources.find((source) => source.id === 'ringserver')).toMatchObject({ status: 'unavailable', message: 'Ringserver unavailable' });
     expect(snapshot.recentEvents[0]).toMatchObject({ publicID: 'event-1', magnitude: 4.2 });
+    expect(EQEventsService.getAdminEventCalendar).not.toHaveBeenCalled();
+    expect(snapshot).not.toHaveProperty('eventCalendar');
     expect(snapshot.recentAudit[0]).toMatchObject({ eventType: 'admin.test', outcome: 'succeeded' });
   });
 
@@ -194,6 +198,17 @@ describe('admin overview aggregation', () => {
     expect(ringserver).toMatchObject({ status: 'unavailable', failureSince: snapshot.observedAt });
     expect(ringserver.message).toMatch(/timed out/i);
     expect(snapshot.summary.availableSources).toBe(9);
+  });
+
+  it('returns the snapshot without waiting for notification delivery', async () => {
+    const notifications = require('../src/services/adminNotifications.service');
+    let release;
+    notifications.notifyIncidentEvents.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    try {
+      const snapshot = await getSnapshot();
+      expect(snapshot.observedAt).toBeTruthy();
+      expect(notifications.notifyIncidentEvents).toHaveBeenCalled();
+    } finally { release?.(); }
   });
 
   it('reuses the short-lived aggregate snapshot instead of reloading every subsystem', async () => {

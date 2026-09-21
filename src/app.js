@@ -140,6 +140,7 @@ app.use('/accounts', require('./routes/accounts.route'));
 app.use('/admin', require('./routes/admin.route'));
 app.use('/admin/overview', require('./routes/adminOverview.route'));
 app.use('/admin/incidents', require('./routes/adminIncident.route'));
+app.use('/admin/notifications', require('./routes/adminNotifications.route'));
 app.use('/admin/jobs', require('./routes/adminJob.route'));
 app.use('/admin/audit-logs', require('./routes/auditLog.route'));
 app.use('/admin/community-reports', require('./routes/adminCommunityReports.route'));

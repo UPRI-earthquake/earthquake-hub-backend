@@ -64,3 +64,20 @@ describe('AdminAccountsService', () => {
     expect(Account.countDocuments).toHaveBeenCalledTimes(1);
   });
 });
+
+for (const direction of ['asc', 'desc']) {
+  test(`sorts the entire account query ${direction} before pagination`, async () => {
+    const query = mockFindResult([]);
+    Account.countDocuments.mockResolvedValue(0);
+    await listAccounts({ sortBy: 'username', sortDirection: direction, offset: 25 });
+    expect(query.sort).toHaveBeenCalledWith({ username: direction === 'desc' ? -1 : 1, _id: 1 });
+    expect(query.skip).toHaveBeenCalledWith(25);
+    expect(query.sort.mock.invocationCallOrder.at(-1)).toBeLessThan(query.skip.mock.invocationCallOrder.at(-1));
+  });
+}
+test('unrecognized sort fields cannot alter the account database query', async () => {
+  const query = mockFindResult([]);
+  Account.countDocuments.mockResolvedValue(0);
+  await listAccounts({ sortBy: '$where', sortDirection: 'desc' });
+  expect(query.sort).toHaveBeenCalledWith({ createdAt: -1, username: 1, _id: 1 });
+});

@@ -1,0 +1,11 @@
+const express = require('express');
+const Controller = require('../controllers/adminNotifications.controller');
+const { getTokenFromCookie, verifyTokenWithRole } = require('../middlewares/token.middleware');
+const { requireAdminCsrf } = require('../middlewares/adminCsrf.middleware');
+const router = express.Router();
+router.get('/rule', getTokenFromCookie, verifyTokenWithRole('admin'), Controller.getRule);
+router.put('/rule', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, Controller.saveRule);
+router.get('/preferences', getTokenFromCookie, verifyTokenWithRole('admin'), Controller.getPreferences);
+router.put('/preferences', getTokenFromCookie, verifyTokenWithRole('admin'), requireAdminCsrf, Controller.savePreferences);
+router.get('/deliveries', getTokenFromCookie, verifyTokenWithRole('admin'), Controller.listDeliveries);
+module.exports = router;

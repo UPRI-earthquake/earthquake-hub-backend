@@ -1,3 +1,4 @@
+const { runtimeEvidence } = require('./adminRuntimeEvidence.service');
 const Device = require('../models/device.model');
 const Event = require('../models/events.model');
 const AdminHostTelemetryClient = require('./adminHostTelemetry.client');
@@ -14,7 +15,7 @@ function ageMs(value, now) {
 async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
   const now = new Date();
   const since = new Date(now.getTime() - (windowHours * 60 * 60 * 1000));
-  const [recentEvents, eventCount, pendingRecordingCount, activeStations, inactiveStations, hostTelemetry] = await Promise.all([
+  const [recentEvents, eventCount, pendingRecordingCount, activeStations, inactiveStations, hostTelemetry, runtimeTelemetry] = await Promise.all([
     Event.find({ createdAt: { $gte: since } })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -25,6 +26,7 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
     Device.countDocuments({ activity: { $in: ['active', 'streaming'] } }),
     Device.countDocuments({ activity: { $nin: ['active', 'streaming'] } }),
     AdminHostTelemetryClient.getResource('seiscomp', req),
+    AdminHostTelemetryClient.getResource('seiscomp-runtime', req),
   ]);
 
   const latestEvent = recentEvents[0] || null;
@@ -42,45 +44,10 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
     },
     {
       id: 'seedlink',
-      name: 'SeedLink input',
+      name: 'Registered station activity',
       status: 'observed',
       observation: `${activeStations} station${activeStations === 1 ? '' : 's'} currently marked active or streaming in the station registry.`,
       observedAt: null,
-    },
-    {
-      id: 'scautopick',
-      name: 'scautopick',
-      status: 'unobserved',
-      observation: 'Pick delivery is streamed to clients but is not persisted, so no reliable module freshness metric is available.',
-      observedAt: null,
-    },
-    {
-      id: 'scamp',
-      name: 'scamp',
-      status: 'unobserved',
-      observation: 'Amplitude processing has no backend-facing heartbeat or persisted operational metric.',
-      observedAt: null,
-    },
-    {
-      id: 'scautoloc',
-      name: 'scautoloc',
-      status: latestEvent ? 'observed' : 'unobserved',
-      observation: latestEvent ? `Latest delivered event: ${latestEvent.publicID}.` : 'No SeisComP event delivery has been observed in this window.',
-      observedAt: toDate(latestEventObservedAt),
-    },
-    {
-      id: 'scevent',
-      name: 'scevent',
-      status: latestEvent ? 'observed' : 'unobserved',
-      observation: latestEvent ? `${eventCount} event${eventCount === 1 ? '' : 's'} delivered to the backend in the selected window.` : 'No event delivery has been observed in this window.',
-      observedAt: toDate(latestEventObservedAt),
-    },
-    {
-      id: 'scmag',
-      name: 'scmag',
-      status: latestEvent?.magnitude_value !== undefined && latestEvent?.magnitude_value !== null ? 'observed' : 'unobserved',
-      observation: latestEvent?.magnitude_value !== undefined && latestEvent?.magnitude_value !== null ? `Latest delivered magnitude: M${latestEvent.magnitude_value}.` : 'No delivered magnitude is available in this window.',
-      observedAt: toDate(latestEventObservedAt),
     },
     {
       id: 'event-messaging-proxy',
@@ -108,7 +75,7 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
     window: { hours: windowHours, since: since.toISOString() },
     limitations: [
       'SeisComP runs on the deployment host, outside the Docker backend.',
-      'The private admin backend checks only a fixed FDSNWS endpoint; it does not claim SeisComP module or process status.',
+      'FDSNWS reachability, persisted event delivery and optional runtime process observations are separate evidence sources.',
       'This snapshot also reports backend-observed delivery and Ringserver-derived station input.',
     ],
     summary: {
@@ -121,6 +88,7 @@ async function getSnapshot({ windowHours = 24, limit = 20 } = {}, req) {
       fdsnwsReachable: hostTelemetry.data?.reachable ?? null,
     },
     hostTelemetry,
+    runtime: runtimeEvidence(runtimeTelemetry, now.getTime()),
     modules,
     recentEvents: recentEvents.map((event) => ({
       publicID: event.publicID,

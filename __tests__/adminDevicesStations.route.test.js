@@ -5,6 +5,7 @@ process.env.NODE_ENV = 'test';
 process.env.ACCESS_TOKEN_PRIVATE_KEY_WEB = 'test-web-secret';
 process.env.REFRESH_TOKEN_PRIVATE_KEY_WEB = 'test-refresh-secret';
 
+jest.mock('../src/services/adminStationMap.service', () => ({ getSnapshot: jest.fn() }));
 jest.mock('../src/services/adminDevicesStations.service', () => ({ getTunnelObservation: jest.fn(), listDevices: jest.fn() }));
 jest.mock('../src/services/tunnelEnrollment.service', () => ({ revokeDeviceTunnel: jest.fn() }));
 jest.mock('../src/services/stationOperationalHistory.service', () => ({
@@ -168,5 +169,26 @@ describe('Admin devices and stations routes', () => {
     }));
     expect(AuditLogService.execute).not.toHaveBeenCalled();
     expect(TunnelEnrollmentService.revokeDeviceTunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe('bounded station map boundary', () => {
+  const StationMap = require('../src/services/adminStationMap.service');
+  beforeEach(() => jest.clearAllMocks());
+  it('requires an administrator session', async () => {
+    const response = await request(app).get('/admin/devices-stations/map');
+    expect(response.statusCode).toBe(403);
+    expect(StationMap.getSnapshot).not.toHaveBeenCalled();
+  });
+  it('serves the fixed map snapshot to an authenticated administrator', async () => {
+    StationMap.getSnapshot.mockResolvedValue({ stations: [], truncated: false, limit: 2000 });
+    const response = await request(app).get('/admin/devices-stations/map').set('Cookie', [`accessToken=${signAdminToken()}`]);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.payload.limit).toBe(2000);
+  });
+  it('does not accept caller-defined query or path scope', async () => {
+    const response = await request(app).get('/admin/devices-stations/map?limit=999999').set('Cookie', [`accessToken=${signAdminToken()}`]);
+    expect(response.statusCode).toBe(400);
+    expect(StationMap.getSnapshot).not.toHaveBeenCalled();
   });
 });

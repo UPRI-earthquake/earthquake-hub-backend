@@ -1,4 +1,5 @@
 jest.mock('../src/models/device.model', () => ({ find: jest.fn() }));
+jest.mock('../src/services/adminHostTelemetry.client', () => ({ getResource: jest.fn().mockResolvedValue({ status: 'unavailable', errorCode: 'not_configured' }) }));
 
 const Device = require('../src/models/device.model');
 const AdminInventoryImportService = require('../src/services/adminInventoryImport.service');
@@ -7,7 +8,8 @@ describe('admin inventory import service', () => {
   it('publishes explicit future-integration metadata without enabling host execution', async () => {
     const lean = jest.fn().mockResolvedValue([]);
     const select = jest.fn(() => ({ lean }));
-    const sort = jest.fn(() => ({ select }));
+    const limit = jest.fn(() => ({ select }));
+    const sort = jest.fn(() => ({ limit }));
     Device.find.mockReturnValue({ sort });
 
     const workflow = await AdminInventoryImportService.getWorkflow();

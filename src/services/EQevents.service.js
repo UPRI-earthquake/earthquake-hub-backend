@@ -191,7 +191,7 @@ async function getAdminEventSummary() {
   };
 }
 
-async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false, minMagnitude, pendingEnrichment, recordingAttention, recordingStatus, search, sourceCatalog, startTime, summaryReviewStatus, limit = 25, offset = 0 } = {}) {
+async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false, minMagnitude, pendingEnrichment, recordingAttention, recordingStatus, search, sourceCatalog, startTime, summaryReviewStatus, sortBy, sortDirection, limit = 25, offset = 0 } = {}) {
   const query = {};
   if (startTime || endTime) {
     query.OT = {};
@@ -226,9 +226,12 @@ async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false,
     else query.$or = searchTerms;
   }
 
+  const ordering = ['publicID', 'OT', 'magnitude_value'].includes(sortBy)
+    ? { [sortBy]: sortDirection === 'desc' ? -1 : 1, _id: 1 }
+    : { OT: -1, publicID: -1, _id: 1 };
   const [events, total, summary] = await Promise.all([
     EQEvents.find(query)
-      .sort({ OT: -1, publicID: -1 })
+      .sort(ordering)
       .skip(offset)
       .limit(limit)
       .select('publicID sourceCatalog sourceServer OT latitude_value longitude_value magnitude_value depth_value type text place onlineStations candidateStations recordingStations recordingAvailabilityStatus recordingAvailabilityCheckedAt summaryOverride additionalInformation pendingCatalogSources catalogEnrichmentAttempts catalogEnrichmentStatus last_modification createdAt updatedAt')
@@ -260,6 +263,42 @@ async function getAdminEventQueue({ endTime, hasSummary, includeSummary = false,
   }));
 
   return { events: enrichedEvents, total, limit, offset, summary };
+}
+
+async function getAdminEventCalendar({ startTime, endTime, timezone = 'Asia/Manila' }) {
+  const days = await EQEvents.aggregate([
+    { $match: { OT: { $gte: startTime, $lte: endTime } } },
+    {
+      $project: {
+        day: { $dateToString: { date: '$OT', format: '%Y-%m-%d', timezone } },
+        magnitude: '$magnitude_value',
+        recordingAttention: { $in: ['$recordingAvailabilityStatus', ['pending', 'partial', 'unavailable']] },
+        pendingEnrichment: { $gt: [{ $size: { $ifNull: ['$pendingCatalogSources', []] } }, 0] },
+      },
+    },
+    {
+      $group: {
+        _id: '$day',
+        count: { $sum: 1 },
+        maxMagnitude: { $max: '$magnitude' },
+        recordingAttention: { $sum: { $cond: ['$recordingAttention', 1, 0] } },
+        pendingEnrichment: { $sum: { $cond: ['$pendingEnrichment', 1, 0] } },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  return {
+    startTime: new Date(startTime).toISOString(),
+    endTime: new Date(endTime).toISOString(),
+    timezone,
+    days: days.map((day) => ({
+      date: day._id,
+      count: Number(day.count || 0),
+      maxMagnitude: Number.isFinite(day.maxMagnitude) ? day.maxMagnitude : null,
+      recordingAttention: Number(day.recordingAttention || 0),
+      pendingEnrichment: Number(day.pendingEnrichment || 0),
+    })),
+  };
 }
 
 /***************************************************************************
@@ -1760,6 +1799,7 @@ module.exports = {
   getEventsList,
   getEventByPublicID,
   getAdminEventQueue,
+  getAdminEventCalendar,
   getAdminEventSummary,
   addPlacesAttribute,
   addEQEvent,

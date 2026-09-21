@@ -16,6 +16,8 @@ const listSchema = Joi.object({
   isActive: Joi.boolean().truthy('true').falsy('false').optional(),
   hasTunnel: Joi.boolean().truthy('true').falsy('false').optional(),
   search: Joi.string().trim().max(100).allow('').optional(),
+  sortBy: Joi.string().valid('deviceId', 'network', 'activity', 'activityToggleTime', 'remotePort').default('deviceId'),
+  sortDirection: Joi.string().valid('asc', 'desc').default('asc'),
   limit: Joi.number().integer().min(1).max(100).default(25),
   offset: Joi.number().integer().min(0).default(0),
 });
@@ -162,4 +164,13 @@ exports.revokeTunnel = async (req, res, next) => {
     if (error?.name === 'TunnelEnrollmentError') return res.status(error.code === 'NOT_FOUND' ? 404 : 502).json({ status: responseCodes.GENERIC_ERROR, message: error.message || 'Failed to revoke device tunnel.' });
     next(error);
   }
+};
+
+exports.getMap = async (req, res, next) => {
+  try {
+    if (Object.keys(req.query).length) return res.status(400).json({ message: 'Map snapshot accepts no query parameters.' });
+    const payload = await require('../services/adminStationMap.service').getSnapshot();
+    res.status(200).json({ status: responseCodes.GENERIC_SUCCESS, payload });
+    res.message = 'Bounded station registry map retrieved.';
+  } catch (error) { next(error); }
 };

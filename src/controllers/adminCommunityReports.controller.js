@@ -13,6 +13,8 @@ const queueSchema = Joi.object({
   search: Joi.string().trim().max(100).allow('').optional(),
   limit: Joi.number().integer().min(1).max(100).default(25),
   offset: Joi.number().integer().min(0).default(0),
+  sortBy: Joi.string().valid('commentId', 'username', 'createdAt').optional(),
+  sortDirection: Joi.string().valid('asc', 'desc').optional(),
 });
 
 const moderationSchema = Joi.object({

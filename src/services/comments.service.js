@@ -654,7 +654,7 @@ async function getAdminModerationSummary() {
   return { total, pending, approved, rejected, withImages, withIssues, activeCases, escalatedCases };
 }
 
-async function getAdminModerationQueue({ status, caseStatus, hasImage, hasIssues, includeSummary = false, search, startTime, endTime, limit = 25, offset = 0 } = {}) {
+async function getAdminModerationQueue({ status, caseStatus, hasImage, hasIssues, includeSummary = false, search, startTime, endTime, sortBy, sortDirection, limit = 25, offset = 0 } = {}) {
   const query = {};
   const conditions = [];
   if (status) query.status = status;
@@ -675,9 +675,12 @@ async function getAdminModerationQueue({ status, caseStatus, hasImage, hasIssues
   }
   if (conditions.length) query.$and = conditions;
 
+  const ordering = ['commentId', 'username', 'createdAt'].includes(sortBy)
+    ? { [sortBy]: sortDirection === 'desc' ? -1 : 1, _id: 1 }
+    : { createdAt: -1, commentId: -1, _id: 1 };
   const [comments, total, summary] = await Promise.all([
     Comment.find(query)
-      .sort({ createdAt: -1, commentId: -1 })
+      .sort(ordering)
       .skip(offset)
       .limit(limit)
       .select('commentId eventPublicID username content imageURL status helpfulAccountIds issueReports createdAt updatedAt moderatedBy moderatedAt moderationCase.status moderationCase.version moderationCase.updatedAt moderationCase.updatedBy moderationCase.historyCount')
