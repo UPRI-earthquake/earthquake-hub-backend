@@ -26,7 +26,7 @@ services:
 
   mongodb:
     container_name: mongodb
-    image: "mongo:5.0"
+    image: "mongo:8.0.32"
     volumes:
       - earthquake-hub-mongodb-data:/data/db
     expose:

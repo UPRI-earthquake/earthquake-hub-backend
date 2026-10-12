@@ -19,11 +19,7 @@ const getConnectionUrl = () => {
 const connect = async (opts = {}) => {
   try {
     const dbUrl = getConnectionUrl();
-    await mongoose.connect(dbUrl, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      ...opts
-    });
+    await mongoose.connect(dbUrl, opts);
   } catch (err) {
     console.trace(`In MongoDB setup...\n ${err}`)
     //TODO: properly handle this scenario
