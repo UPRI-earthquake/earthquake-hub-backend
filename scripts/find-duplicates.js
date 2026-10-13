@@ -141,7 +141,11 @@ async function checkDuplicates(db) {
 async function connectOrThrow() {
   await mongodb.connect({ serverSelectionTimeoutMS: 10000 });
   if (mongoose.connection.readyState !== 1) {
-    throw new Error('Could not connect to MongoDB (check MONGO_* settings)');
+    throw new Error(
+      'Could not connect to MongoDB (check MONGO_* settings).\n'
+      + 'The "mongodb" host only resolves inside Docker, so run this inside the backend container, e.g.\n'
+      + `  docker exec -w /app earthquake-hub-backend-dev node scripts/${require('path').basename(process.argv[1])}`
+    );
   }
   return mongoose.connection.db;
 }

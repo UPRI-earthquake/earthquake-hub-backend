@@ -12,7 +12,12 @@
 //
 // Exit code: 0 = done (or dry run clean), 1 = blocked by duplicates or index check failed, 2 = error.
 const mongoose = require('mongoose');
+// Must be set before the models load, or Mongoose builds their indexes on connect (even in a dry run,
+// or before the duplicate check has run).
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);
 const { checkDuplicates, connectOrThrow } = require('./find-duplicates');
+const { planStages, usesIndex } = require('./lib/query-plan');
 const Account = require('../src/models/account.model');
 const Device = require('../src/models/device.model');
 
@@ -23,20 +28,6 @@ const emailNeedsNormalizing = {
   email: { $type: 'string' },
   $expr: { $ne: ['$email', { $toLower: { $trim: { input: '$email' } } }] },
 };
-
-// Returns the winning plan's stages, e.g. ['FETCH', 'IXSCAN'].
-async function planStages(collection, filter) {
-  const explained = await collection.find(filter).limit(1).explain('queryPlanner');
-  const stages = [];
-  let stage = explained.queryPlanner.winningPlan;
-  // MongoDB 8 may wrap the classic plan in queryPlan
-  if (stage.queryPlan) stage = stage.queryPlan;
-  while (stage) {
-    stages.push(stage.stage);
-    stage = stage.inputStage;
-  }
-  return stages;
-}
 
 async function main() {
   const db = await connectOrThrow();
@@ -100,7 +91,7 @@ async function main() {
   let failed = 0;
   for (const [label, collection, filter] of checks) {
     const stages = await planStages(collection, filter);
-    const ok = stages.includes('IXSCAN') || stages.includes('EXPRESS_IXSCAN') || stages.includes('IDHACK');
+    const ok = usesIndex(stages);
     if (!ok) failed += 1;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${label}: ${stages.join(' <- ')}`);
   }

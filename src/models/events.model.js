@@ -243,7 +243,7 @@ const summaryOverrideSchema = new mongoose.Schema(
 //   job can give up after a configurable number of persistent failures.
 const eventSchema = new mongoose.Schema(
   {
-    publicID:              { type: String, required: true, index: true, unique: true },
+    publicID:              { type: String, required: true, unique: true }, // unique implies an index
     sourceCatalog:         { type: String, default: 'upri-current', index: true },
     sourceServer:          String,
     sourceSeiscompVersion: String,
@@ -289,9 +289,10 @@ const eventSchema = new mongoose.Schema(
   },
 );
 
-// In case the collection already exists without the unique index, Mongoose
-// will attempt to create it on startup. If duplicates are present, index
-// creation will fail; clean duplicates first then re-create the index.
-eventSchema.index({ publicID: 1 }, { unique: true });
+// Origin-time index for the event list (OT range) and the enrichment job
+// (OT <= cutoff, sorted by OT). Descending, so "newest first" reads in index
+// order; MongoDB walks it backwards for ascending sorts.
+// Build on existing databases with scripts/migrate-event-indexes.js.
+eventSchema.index({ OT: -1 });
 
 module.exports = mongoose.model('Event', eventSchema);
