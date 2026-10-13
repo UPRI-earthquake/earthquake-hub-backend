@@ -37,6 +37,18 @@
  *             type: number
  *           longitude_value:
  *             type: number
+ *           location:
+ *             type: object
+ *             description: GeoJSON Point derived from latitude_value/longitude_value (absent when coordinates are invalid)
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [Point]
+ *               coordinates:
+ *                 type: array
+ *                 items:
+ *                   type: number
+ *                 description: "[longitude, latitude]"
  *           depth_value:
  *             type: number
  *           magnitude_value:
@@ -186,6 +198,7 @@
  */
 
 const mongoose = require('mongoose');
+const { pointSchema } = require('./geoPoint');
 
 const catalogSourceSchema = new mongoose.Schema(
   {
@@ -253,6 +266,8 @@ const eventSchema = new mongoose.Schema(
     OT:                    Date,
     latitude_value:        Number,
     longitude_value:       Number,
+    // Derived from latitude_value/longitude_value on write (see addEQEvent); unset if they're invalid.
+    location:              { type: pointSchema, default: undefined },
     depth_value:           Number,
     magnitude_value:       Number,
     type:                  String,   // upstream eventType
@@ -294,5 +309,7 @@ const eventSchema = new mongoose.Schema(
 // order; MongoDB walks it backwards for ascending sorts.
 // Build on existing databases with scripts/migrate-event-indexes.js.
 eventSchema.index({ OT: -1 });
+// Location queries ($near, $geoWithin). Events without a valid `location` are simply not indexed.
+eventSchema.index({ location: '2dsphere' });
 
 module.exports = mongoose.model('Event', eventSchema);

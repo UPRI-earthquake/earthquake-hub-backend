@@ -46,6 +46,7 @@
 
 const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
+const { pointSchema, toGeoPoint } = require('./geoPoint');
 
 const DeviceSchema = new Schema({
   description: {
@@ -74,6 +75,11 @@ const DeviceSchema = new Schema({
   elevation: {
     type: Number,
     required:true
+  },
+  // Derived from latitude/longitude on every save (hook below); used for nearest-station queries.
+  location: {
+    type: pointSchema,
+    default: undefined
   },
   macAddress: {
     type: String,
@@ -108,5 +114,14 @@ DeviceSchema.index({ network: 1, station: 1 }, { unique: true });
 DeviceSchema.index({ streamId: 1 }, { unique: true, partialFilterExpression: { streamId: { $gt: '' } } });
 DeviceSchema.index({ macAddress: 1 }, { unique: true, partialFilterExpression: { macAddress: { $gt: '' } } });
 DeviceSchema.index({ activity: 1 });
+DeviceSchema.index({ location: '2dsphere' });
+
+// Devices are only written through save(), so deriving `location` here keeps it in sync.
+// Invalid coordinates leave it unset rather than failing the 2dsphere index.
+DeviceSchema.pre('validate', function setLocation() {
+  if (this.isNew || this.isModified('latitude') || this.isModified('longitude') || !this.location) {
+    this.location = toGeoPoint(this.latitude, this.longitude) || undefined;
+  }
+});
 
 module.exports = model('Device', DeviceSchema);

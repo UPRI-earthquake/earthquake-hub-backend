@@ -235,6 +235,25 @@
           "longitude_value": {
             "type": "number"
           },
+          "location": {
+            "type": "object",
+            "description": "GeoJSON Point derived from latitude_value/longitude_value (absent when coordinates are invalid)",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Point"
+                ]
+              },
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "description": "[longitude, latitude]"
+              }
+            }
+          },
           "depth_value": {
             "type": "number"
           },

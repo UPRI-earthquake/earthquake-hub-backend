@@ -1,8 +1,12 @@
-// Migration for the `events` query indexes. Safe to run more than once.
+// Migration for the event/station query indexes. Safe to run more than once.
 //
-//   1. Builds the indexes defined in events.model.js (adds the OT index, and replaces any
-//      index whose options changed). Indexes not in the schema are listed before anything is dropped.
-//   2. Checks that the event list and the enrichment job queries use the OT index.
+//   1. Backfills the GeoJSON `location` point on events (from latitude_value/longitude_value)
+//      and devices (from latitude/longitude). Records with missing or out-of-range coordinates
+//      are left without a location, since a 2dsphere index can't hold an invalid point.
+//   2. Builds the indexes defined in events.model.js and device.model.js (OT, 2dsphere, ...),
+//      replacing any index whose options changed. Indexes not in the schema are listed before
+//      anything is dropped.
+//   3. Checks that the event list, enrichment job and location queries use those indexes.
 //
 //   dry run (no changes): docker exec -w /app earthquake-hub-backend-dev node scripts/migrate-event-indexes.js --dry-run
 //   apply:                docker exec -w /app earthquake-hub-backend-dev node scripts/migrate-event-indexes.js
@@ -16,43 +20,88 @@ mongoose.set('autoCreate', false);
 const { connectOrThrow } = require('./find-duplicates');
 const { planStages, usesIndex } = require('./lib/query-plan');
 const Event = require('../src/models/events.model');
+const Device = require('../src/models/device.model');
 
 const dryRun = process.argv.includes('--dry-run');
+
+// Same rules as toGeoPoint() in src/models/geoPoint.js, expressed as query filters.
+const validCoordinates = (latField, lonField) => ({
+  [latField]: { $type: 'number', $gte: -90, $lte: 90 },
+  [lonField]: { $type: 'number', $gte: -180, $lte: 180 },
+});
+
+// Sets `location` where it's missing or out of date, and removes it where the coordinates are invalid.
+async function backfillLocation(collection, latField, lonField) {
+  const valid = validCoordinates(latField, lonField);
+  const needsSet = {
+    ...valid,
+    $expr: { $ne: ['$location.coordinates', [`$${lonField}`, `$${latField}`]] },
+  };
+  const needsUnset = { location: { $exists: true }, $nor: [valid] };
+
+  const toSet = await collection.countDocuments(needsSet);
+  const toUnset = await collection.countDocuments(needsUnset);
+  const invalid = await collection.countDocuments({ $nor: [valid] });
+  console.log(`${collection.collectionName}: set location ${toSet}, remove invalid location ${toUnset}, `
+    + `records without valid coordinates ${invalid}`);
+
+  if (!dryRun) {
+    if (toSet) {
+      await collection.updateMany(needsSet, [
+        { $set: { location: { type: 'Point', coordinates: [`$${lonField}`, `$${latField}`] } } },
+      ]);
+    }
+    if (toUnset) await collection.updateMany(needsUnset, { $unset: { location: '' } });
+  }
+}
 
 async function main() {
   const db = await connectOrThrow();
   const events = db.collection('events');
-  console.log(`\n# Event index migration on "${db.databaseName}"${dryRun ? ' (DRY RUN: no changes)' : ''}`);
-  console.log(`events: ${await events.countDocuments()}`);
+  const devices = db.collection('devices');
+  console.log(`\n# Event/station index migration on "${db.databaseName}"${dryRun ? ' (DRY RUN: no changes)' : ''}`);
+  console.log(`events: ${await events.countDocuments()}  devices: ${await devices.countDocuments()}`);
 
-  // ---------- 1. indexes ----------
+  // ---------- 1. location backfill ----------
+  console.log('\n# Location backfill');
+  await backfillLocation(events, 'latitude_value', 'longitude_value');
+  await backfillLocation(devices, 'latitude', 'longitude');
+
+  // ---------- 2. indexes ----------
+  // Built after the backfill so the 2dsphere indexes only ever see valid points.
   console.log('\n# Indexes');
-  const diff = await Event.diffIndexes();
-  console.log(`create: ${diff.toCreate.length ? diff.toCreate.map((spec) => JSON.stringify(spec)).join(', ') : 'none'}`);
-  console.log(`drop:   ${diff.toDrop.length ? diff.toDrop.join(', ') : 'none'}`);
+  for (const Model of [Event, Device]) {
+    const diff = await Model.diffIndexes();
+    const toCreate = diff.toCreate.map((spec) => JSON.stringify(spec));
+    console.log(`${Model.collection.name}: create ${toCreate.length ? toCreate.join(', ') : 'none'}; `
+      + `drop ${diff.toDrop.length ? diff.toDrop.join(', ') : 'none'}`);
+    if (!dryRun && (diff.toCreate.length || diff.toDrop.length)) {
+      await Model.syncIndexes();
+    }
+  }
 
   if (dryRun) {
     console.log('\nDry run finished. Run without --dry-run to apply.');
     return 0;
   }
-  if (diff.toCreate.length || diff.toDrop.length) {
-    await Event.syncIndexes();
-    console.log('applied');
-  }
 
-  // ---------- 2. verify ----------
+  // ---------- 3. verify ----------
   console.log('\n# Index usage check');
   const now = new Date();
   const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const manila = { type: 'Point', coordinates: [121.0, 14.6] };
+  const near = { location: { $near: { $geometry: manila, $maxDistance: 200000 } } };
   const checks = [
-    ['event list (OT range, newest first)', { OT: { $gte: monthAgo, $lte: now } }, { OT: -1 }],
-    ['event list (OT range, unsorted)', { OT: { $gte: monthAgo, $lte: now } }, undefined],
-    ['enrichment job (OT <= cutoff, oldest first)', { OT: { $lte: now } }, { OT: 1 }],
-    ['event detail by publicID', { publicID: 'check' }, undefined],
+    ['event list (OT range, newest first)', events, { OT: { $gte: monthAgo, $lte: now } }, { OT: -1 }],
+    ['event list (OT range, unsorted)', events, { OT: { $gte: monthAgo, $lte: now } }, undefined],
+    ['enrichment job (OT <= cutoff, oldest first)', events, { OT: { $lte: now } }, { OT: 1 }],
+    ['event detail by publicID', events, { publicID: 'check' }, undefined],
+    ['events near a point', events, near, undefined],
+    ['nearest active stations', devices, { ...near, activity: 'active' }, undefined],
   ];
   let failed = 0;
-  for (const [label, filter, sort] of checks) {
-    const stages = await planStages(events, filter, { sort });
+  for (const [label, collection, filter, sort] of checks) {
+    const stages = await planStages(collection, filter, { sort });
     const ok = usesIndex(stages);
     if (!ok) failed += 1;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${label}: ${stages.join(' <- ')}`);

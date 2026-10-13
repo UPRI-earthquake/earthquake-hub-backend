@@ -2,6 +2,7 @@ const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
 const Device = require('../models/device.model');
+const { toGeoPoint } = require('../models/geoPoint');
 const puppeteer = require('puppeteer-core');
 
 const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.up.edu.ph/fdsnws/dataselect/1/query';
@@ -423,8 +424,21 @@ async function addEQEvent(
       catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
     },
   };
+  const unset = {};
   if (shouldRefreshPlace) {
-    update.$unset = { place: '' };
+    unset.place = '';
+  }
+  // Keep the indexed GeoJSON point in step with the coordinates. Out-of-range
+  // coordinates would make the 2dsphere index reject the whole write, so the
+  // point is dropped instead of stored.
+  const location = toGeoPoint(latitude_value, longitude_value);
+  if (location) {
+    update.$set.location = location;
+  } else {
+    unset.location = '';
+  }
+  if (Object.keys(unset).length > 0) {
+    update.$unset = unset;
   }
 
   await EQEvents.updateOne(filter, update, { upsert: true });

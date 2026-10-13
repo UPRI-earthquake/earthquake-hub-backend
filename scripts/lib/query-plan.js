@@ -18,7 +18,7 @@ async function planStages(collection, filter, { sort } = {}) {
 
 // An index is used and, if the query sorts, the sort comes from the index (no in-memory SORT stage).
 function usesIndex(stages) {
-  const indexed = stages.some((s) => ['IXSCAN', 'EXPRESS_IXSCAN', 'IDHACK'].includes(s));
+  const indexed = stages.some((s) => ['IXSCAN', 'EXPRESS_IXSCAN', 'IDHACK', 'GEO_NEAR_2DSPHERE'].includes(s));
   return indexed && !stages.includes('SORT');
 }
 
