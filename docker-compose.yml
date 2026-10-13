@@ -11,7 +11,8 @@ services:
       # NOTE: includes everything, including all those in .dockerignore, specifically .env
       - ./:/app
     depends_on:
-      - "mongodb"
+      mongodb:
+        condition: service_healthy # wait until the replica set has a primary
     expose:
       - "5000"
     ports:
@@ -27,16 +28,40 @@ services:
   mongodb:
     container_name: mongodb
     image: "mongo:8.0.32"
+    environment:
+      # Read from .env. Users are only created on the first start of an empty volume.
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD in .env}
+      MONGO_INITDB_DATABASE: ${MONGO_NAME:-latestEQs}
+      MONGO_USER: ${MONGO_USER:?set MONGO_USER in .env}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:?set MONGO_PASSWORD in .env}
     volumes:
       - earthquake-hub-mongodb-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
     expose:
       - "27017"
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017" # loopback only; use an SSH tunnel for remote access
     networks:
       app-network:
         ipv4_address: 172.22.0.4
-    command: --quiet # reduce logs
+    # Auth + replica set needs a keyfile, even with one node. It's generated inside the
+    # container on each start to avoid file-permission issues with Windows bind mounts.
+    entrypoint: >
+      bash -c "head -c 756 /dev/urandom | base64 > /tmp/mongo-keyfile &&
+      chmod 400 /tmp/mongo-keyfile && chown mongodb:mongodb /tmp/mongo-keyfile &&
+      exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/mongo-keyfile --bind_ip_all --quiet"
+    healthcheck:
+      # Initiates the single-node replica set on first run; healthy once this node is primary
+      test: >
+        mongosh --quiet -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD"
+        --authenticationDatabase admin --eval
+        "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongodb:27017' }] }) }
+        quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 volumes:
   earthquake-hub-mongodb-data:

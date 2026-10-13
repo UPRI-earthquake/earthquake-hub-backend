@@ -1,13 +1,25 @@
 const mongoose = require('mongoose');
 
-const { MONGO_CONNX_TYPE, MONGO_HOST, MONGO_PORT, MONGO_NAME } = process.env;
+const {
+  MONGO_CONNX_TYPE, MONGO_HOST, MONGO_PORT, MONGO_NAME,
+  MONGO_USER, MONGO_PASSWORD, MONGO_AUTH_SOURCE, MONGO_REPLICA_SET,
+} = process.env;
 
 const getConnectionUrl = () => {
   if (MONGO_CONNX_TYPE == 'docker') {
-    const host = `mongodb://${MONGO_HOST}:${MONGO_PORT}`
+    // Credentials are optional so older .env files without MONGO_USER still connect
+    const auth = MONGO_USER
+      ? `${encodeURIComponent(MONGO_USER)}:${encodeURIComponent(MONGO_PASSWORD || '')}@`
+      : '';
+    const host = `mongodb://${auth}${MONGO_HOST}:${MONGO_PORT}`
     .replace(/\/$/, '');
 
-  return `${host}/${MONGO_NAME}`
+    const params = new URLSearchParams();
+    if (MONGO_USER) params.set('authSource', MONGO_AUTH_SOURCE || 'admin');
+    if (MONGO_REPLICA_SET) params.set('replicaSet', MONGO_REPLICA_SET);
+    const query = params.toString();
+
+  return `${host}/${MONGO_NAME}${query ? `?${query}` : ''}`
   } else if (MONGO_CONNX_TYPE == 'cloud') {
     return `mongodb+srv://${MONGO_HOST}/${MONGO_NAME}`;
   } else {
