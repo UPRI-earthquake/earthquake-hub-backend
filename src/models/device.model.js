@@ -36,7 +36,8 @@
   *           pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
   *         activity:
   *           type: string
-  *           description: The activity status of the device (active, inactive, INTERNAL_ERROR)
+  *           enum: [active, inactive, unlinked]
+  *           description: The activity status of the device
   *         activityToggleTime:
   *           type: string
   *           format: date-time
@@ -52,7 +53,7 @@ const DeviceSchema = new Schema({
   },
   streamId: {
     type: String,
-    default: "TO_BE_LINKED"
+    default: null // null = not yet linked
   },
   network: {
     type: String,
@@ -76,10 +77,11 @@ const DeviceSchema = new Schema({
   },
   macAddress: {
     type: String,
-    default: "TO_BE_LINKED"
+    default: null // null = not yet linked
   },
   activity: {
     type: String,
+    enum: ['active', 'inactive', 'unlinked'],
     default: "inactive",
   },
   activityToggleTime: {
@@ -94,6 +96,17 @@ const DeviceSchema = new Schema({
     type: Date,
     default: null,
   }
-})
+}, { timestamps: true })
+
+// Device identity is enforced by the database. streamId/macAddress are only unique
+// when set, so any number of not-yet-linked (null) devices can exist.
+// The filter is `$gt: ''` (any non-empty string) rather than `$type: 'string'` because the
+// query planner only uses a partial index when the query implies its filter, and an
+// equality lookup like { macAddress: 'aa:bb:..' } implies `$gt: ''` but not `$type`.
+// Run scripts/find-duplicates.js before building these on an existing database.
+DeviceSchema.index({ network: 1, station: 1 }, { unique: true });
+DeviceSchema.index({ streamId: 1 }, { unique: true, partialFilterExpression: { streamId: { $gt: '' } } });
+DeviceSchema.index({ macAddress: 1 }, { unique: true, partialFilterExpression: { macAddress: { $gt: '' } } });
+DeviceSchema.index({ activity: 1 });
 
 module.exports = model('Device', DeviceSchema);

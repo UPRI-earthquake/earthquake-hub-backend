@@ -6,6 +6,7 @@ The backend uses **MongoDB 8.0** running in Docker, with **authentication** and 
 2. [Connecting with MongoDB Compass](#2-connecting-with-mongodb-compass)
 3. [Connecting to a shared server (dep-test / prod)](#3-connecting-to-a-shared-server-dep-test--prod)
 4. [Troubleshooting](#4-troubleshooting)
+5. [Uniqueness migration (accounts & devices)](#5-uniqueness-migration-accounts--devices)
 
 ---
 
@@ -155,3 +156,37 @@ Never copy production data into your local database. It contains personal data (
 | Compass hangs or says `getaddrinfo ENOTFOUND mongodb` | Missing `directConnection=true` | Add `&directConnection=true` to the URI |
 | `connect ECONNREFUSED 127.0.0.1:27017` | Container not running | `docker compose up -d`, then `docker compose ps` |
 | Backend logs `Error connecting to /sse-...` | Ringserver isn't running locally | Expected in local development; unrelated to MongoDB |
+
+---
+
+## 5. Uniqueness migration (accounts & devices)
+
+The database enforces unique account emails and usernames, and unique device `network` + `station`, `streamId` and `macAddress` (defined in `src/models/account.model.js` and `src/models/device.model.js`). Two scripts prepare an existing database for this:
+
+| Script | What it does | Changes data? |
+|---|---|---|
+| `scripts/find-duplicates.js` | Lists every record that would block the unique indexes, plus device `activity` values | No |
+| `scripts/migrate-unique-indexes.js` | Re-runs the duplicate check, lowercases/trims emails, turns `"TO_BE_LINKED"` placeholders into `null`, builds the indexes, then checks that lookups use them | Yes (safe to run more than once) |
+
+Run them inside the backend container, where the `mongodb` hostname resolves:
+
+```sh
+# local
+docker exec -w /app earthquake-hub-backend-dev node scripts/find-duplicates.js
+docker exec -w /app earthquake-hub-backend-dev node scripts/migrate-unique-indexes.js --dry-run
+docker exec -w /app earthquake-hub-backend-dev node scripts/migrate-unique-indexes.js
+
+# server (backend container is ehub-backend on prod)
+docker exec ehub-backend node scripts/find-duplicates.js
+docker exec ehub-backend node scripts/migrate-unique-indexes.js --dry-run
+docker exec ehub-backend node scripts/migrate-unique-indexes.js
+```
+
+Order on a server with data:
+
+1. Run `find-duplicates.js`. If it reports blockers, agree with the team which record to keep, delete or fix the others, and run it again until it's clean. The report contains emails; share it privately.
+2. Deploy the backend version that contains these scripts and model changes.
+3. Run the migration **right after deploying**: the new code looks up emails by exact lowercase match, so accounts whose stored email has capitals can't log in by email until step 2 of the migration has normalized them.
+4. The migration ends with `Migration complete.` and every lookup marked `OK`. Exit code `1` means it stopped (blockers, or a lookup not using an index); nothing after the failing step was applied.
+
+The dev backend runs under nodemon, but file changes on `/mnt/c` often don't reach it inside Docker. After pulling model or service changes, restart it: `docker restart earthquake-hub-backend-dev`.

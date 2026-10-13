@@ -175,7 +175,12 @@
           },
           "activity": {
             "type": "string",
-            "description": "The activity status of the device (active, inactive, INTERNAL_ERROR)"
+            "enum": [
+              "active",
+              "inactive",
+              "unlinked"
+            ],
+            "description": "The activity status of the device"
           },
           "activityToggleTime": {
             "type": "string",

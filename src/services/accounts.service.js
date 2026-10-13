@@ -16,9 +16,20 @@ const EmailService = require('./email.service');
 const PASSWORD_RESET_TOKEN_EXPIRY = process.env.PASSWORD_RESET_TOKEN_EXPIRY || '30m';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeEmail = (value = '') => String(value || '').trim().toLowerCase();
-const buildEmailQuery = (email) => ({ email: new RegExp(`^${escapeRegex(email)}$`, 'i') });
+// Emails are stored normalized (see account.model.js), so an exact match can use the unique index.
+const buildEmailQuery = (email) => ({ email: normalizeEmail(email) });
+
+// Maps a unique-index violation (E11000) to the matching "...Exists" result, or null if it isn't one.
+// The pre-save checks below give friendly errors in the common case; this covers two requests racing.
+const duplicateKeyResult = (err) => {
+  if (err?.code !== 11000) return null;
+  const fields = Object.keys(err.keyPattern || err.keyValue || {});
+  if (fields.includes('email')) return 'emailExists';
+  if (fields.includes('username')) return 'usernameExists';
+  if (fields.includes('ringserverUrl')) return 'ringserverUrlExists';
+  return null;
+};
 
 function hashTokenId(tokenId) {
   return crypto.createHash('sha256').update(String(tokenId || '')).digest('hex');
@@ -125,7 +136,13 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
       break;
   }
 
-  await newAccount.save();
+  try {
+    await newAccount.save();
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return duplicate;
+    throw err;
+  }
 
   return "success";
 }
@@ -550,7 +567,13 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
     account.passwordUpdatedAt = new Date();
   }
 
-  await account.save();
+  try {
+    await account.save();
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
+    throw err;
+  }
 
   return {
     str: 'success',
@@ -595,7 +618,13 @@ exports.updateAccountEmail = async (username, { email, currentPassword }) => {
   }
 
   account.email = normalizedEmail;
-  await account.save();
+  try {
+    await account.save();
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
+    throw err;
+  }
 
   return {
     str: 'success',
@@ -719,6 +748,8 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
     });
     usedTransaction = true;
   } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
     const message = String(err?.message || '').toLowerCase();
     const transactionUnsupported =
       message.includes('replica set') || message.includes('transactions are not supported');
@@ -739,6 +770,8 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
         { _id: account._id },
         { $set: { username: currentUsername } }
       ).catch(() => {});
+      const duplicate = duplicateKeyResult(err);
+      if (duplicate) return { str: duplicate };
       throw err;
     }
   }

@@ -56,7 +56,7 @@
 const mongoose = require('mongoose');
 
 const AccountSchema = new mongoose.Schema({
-  email: String,
+  email: { type: String, trim: true, lowercase: true }, // stored normalized so lookups can be exact matches
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
@@ -105,5 +105,10 @@ const AccountSchema = new mongoose.Schema({
     updatedAt: 'updatedAt',
   }
 });
+
+// Enforced by the database so concurrent sign-ups can't create duplicates.
+// Run scripts/find-duplicates.js before building these on an existing database.
+AccountSchema.index({ email: 1 }, { unique: true });
+AccountSchema.index({ username: 1 }, { unique: true });
 
 module.exports = mongoose.model('Account', AccountSchema);

@@ -2,6 +2,21 @@ const Device = require('../models/device.model');
 const Account = require('../models/account.model');
 const {generateAMStationCode} = require('../controllers/helpers')
 
+// A unique index (network+station, streamId or macAddress) rejected the write:
+// another device record already has this identity.
+const isDuplicateKeyError = (err) => err?.code === 11000;
+
+// Saves a device, returning false instead of throwing when it collides with another device's identity.
+async function saveDeviceIfUnique(device) {
+  try {
+    await device.save();
+    return true;
+  } catch (err) {
+    if (isDuplicateKeyError(err)) return false;
+    throw err;
+  }
+}
+
 async function clearReleasedEntries({ deviceId, streamId, macAddress }, session = null) {
   const pullConditions = [];
   if (deviceId) pullConditions.push({ deviceId });
@@ -109,7 +124,7 @@ exports.getAccountDevices = async (username) => {
       let status = '';
       let statusSince = 'Not Available';
       
-      if (device.macAddress === 'TO_BE_LINKED') {
+      if (!device.macAddress) {
         status = 'Not Yet Linked';
       } else if (device.activity === 'unlinked') {
         status = 'Unlinked';
@@ -191,7 +206,7 @@ exports.getAccountDevices = async (username) => {
   *     - If the specified device does not exist in the database, the function will return a status of "deviceNotFound."
   *     - If the device status is successfully retrieved, the function will return a status of "success"
   *       along with an object containing the device's status information (status, network, station, and statusSince).
-  *     - If the device is not yet linked (macAddress is 'TO_BE_LINKED'), the status will be "Not yet linked" with a null statusSince.
+  *     - If the device is not yet linked (macAddress is null), the status will be "Not yet linked" with a null statusSince.
  ***************************************************************************/
 exports.getDeviceStatus = async (network, station) => {
   const device = await Device.findOne({ network: network, station: station });
@@ -200,7 +215,7 @@ exports.getDeviceStatus = async (network, station) => {
   let status = '';
   let statusSince = null;
 
-  if (device.macAddress === 'TO_BE_LINKED') {
+  if (!device.macAddress) {
     status = 'Not Yet Linked';
   } else if (device.activity === 'unlinked') {
     status = 'Unlinked';
@@ -285,7 +300,9 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
       deviceOwned.streamId = streamId;
       deviceOwned.activity = 'inactive';
       deviceOwned.activityToggleTime = new Date();
-      await deviceOwned.save();
+      if (!(await saveDeviceIfUnique(deviceOwned))) {
+        return { str: 'alreadyLinkedToSomeone' };
+      }
       await clearReleasedEntries({
         deviceId: deviceOwned._id,
         streamId,
@@ -344,7 +361,9 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
       device.streamId = streamId;
       device.activity = 'inactive';
       device.activityToggleTime = new Date();
-      await device.save();
+      if (!(await saveDeviceIfUnique(device))) {
+        return { str: 'alreadyLinkedToSomeone' };
+      }
 
       // Backfill account association if legacy unlinking removed it.
       await currentAccount.updateOne({
@@ -392,7 +411,10 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     streamId: streamId,
     activityToggleTime: new Date(),
   });
-  await newDevice.save(); // save new entry to device collections
+  // save new entry to device collections; a collision means another record already has this station/stream/MAC
+  if (!(await saveDeviceIfUnique(newDevice))) {
+    return { str: 'alreadyLinkedToSomeone' };
+  }
 
   await currentAccount.updateOne({ // update devices array under accounts collection
     $push: { devices: newDevice._id }

@@ -10,7 +10,9 @@
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
     "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
-    "overlays:fetch": "node scripts/fetch-overlays.js"
+    "overlays:fetch": "node scripts/fetch-overlays.js",
+    "db:find-duplicates": "node scripts/find-duplicates.js",
+    "db:migrate-unique-indexes": "node scripts/migrate-unique-indexes.js"
   },
   "repository": {
     "type": "git",
