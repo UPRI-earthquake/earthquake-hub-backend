@@ -14,6 +14,7 @@ const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REF
 const RECORDING_AVAILABILITY_GRACE_PERIOD_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_GRACE_PERIOD_MS', 30 * 60 * 1000);
 const RECORDING_AVAILABILITY_RETRY_DELAY_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_RETRY_DELAY_MS', 5 * 60 * 1000);
 const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILABILITY_MAX_ATTEMPTS', 4);
+const ONLINE_STATIONS_BATCH_SIZE = _positiveNumberEnv('ONLINE_STATIONS_BATCH_SIZE', 50);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
 const GEOSERVE_PLACE_REFRESH_DISTANCE_KM = _positiveNumberEnv('GEOSERVE_PLACE_REFRESH_DISTANCE_KM', 1);
 const EVENT_SOURCE_CATALOG = process.env.EVENT_SOURCE_CATALOG || 'upri-current';
@@ -465,6 +466,29 @@ function formatFdsnTime(date) {
   return iso.slice(0, 19);
 }
 
+// Station lookups only need devices that can be placed on a map, and only these fields.
+const STATION_DEVICE_FILTER = {
+  station: { $nin: [null, ''] },
+  latitude: { $ne: null },
+  longitude: { $ne: null },
+};
+const STATION_DEVICE_FIELDS = { _id: 0, station: 1, latitude: 1, longitude: 1 };
+
+function findStationDevices(extraFilter = {}) {
+  return Device.find({ ...STATION_DEVICE_FILTER, ...extraFilter }, STATION_DEVICE_FIELDS).lean();
+}
+
+// Event fields read by the station refinement (getEventOnlineStationsResult + buildRecordingAvailabilityUpdate).
+const STATION_REFINEMENT_EVENT_FIELDS = {
+  OT: 1,
+  latitude_value: 1,
+  longitude_value: 1,
+  candidateStations: 1,
+  onlineStations: 1,
+  recordingAvailabilityAttempts: 1,
+  recordingAvailabilityStatus: 1,
+};
+
 function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
   const epicenter = turf.point([epicenterLng, epicenterLat]);
 
@@ -577,14 +601,10 @@ async function getNearestActiveStations(latitude_value, longitude_value) {
     return [];
   }
 
-  const activeDevices = await Device.find({ activity: 'active' }).lean();
-  if (activeDevices.length === 0) {
+  const usableDevices = await findStationDevices({ activity: 'active' });
+  if (usableDevices.length === 0) {
     return [];
   }
-
-  const usableDevices = activeDevices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
 
   const nearestStations = getNearestStations(
     usableDevices,
@@ -671,15 +691,12 @@ async function getEventOnlineStations(event, stationDevices, turf) {
 async function updateOnlineStationsForEvent(publicID) {
   const turf = await import('@turf/turf');
 
-  const event = await EQEvents.findOne({ publicID }).lean();
+  const event = await EQEvents.findOne({ publicID }, STATION_REFINEMENT_EVENT_FIELDS).lean();
   if (!event || event.longitude_value == null || event.latitude_value == null) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0, onlineStations: [] };
   }
 
-  const devices = await Device.find({}).lean();
-  const usableDevices = devices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
+  const usableDevices = await findStationDevices();
   const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
   if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
     const attempts = Number(event.recordingAvailabilityAttempts || 0) + 1;
@@ -741,62 +758,76 @@ async function updateOnlineStationsForEvent(publicID) {
 /***************************************************************************
   * updateOnlineStations:
   *     Updates all events with their closest online stations based on geographic distance.
-  * 
+  *     Events are read and written in batches (ONLINE_STATIONS_BATCH_SIZE), so memory stays
+  *     flat as the collection grows and finished batches are kept if the run stops midway.
+  *
   * Outputs:
   *     An object with matchedCount, modifiedCount, and usableDevicesCount.
-  * 
+  *
  ***************************************************************************/
 async function updateOnlineStations() {
   const turf = await import('@turf/turf');
+  const usableDevices = await findStationDevices();
+  const eventFilter = { latitude_value: { $ne: null }, longitude_value: { $ne: null } };
 
-  const [events, devices] = await Promise.all([
-    EQEvents.find({}).lean(),
-    Device.find({}).lean()
-  ]);
+  let processedCount = 0;
+  let skippedCount = 0;
+  let matchedCount = 0;
+  let modifiedCount = 0;
+  let lastId = null;
 
-  const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+  // Keyset pagination by _id rather than one long-lived cursor: each event waits on FDSN
+  // requests, and a cursor left idle that long is closed by the server.
+  for (;;) {
+    const events = await EQEvents.find(
+      lastId ? { ...eventFilter, _id: { $gt: lastId } } : eventFilter,
+      STATION_REFINEMENT_EVENT_FIELDS,
+    )
+      .sort({ _id: 1 })
+      .limit(ONLINE_STATIONS_BATCH_SIZE)
+      .lean();
+    if (events.length === 0) break;
+    lastId = events[events.length - 1]._id;
+    processedCount += events.length;
 
-  if (eventsWithCoords.length === 0) {
+    const operations = [];
+    for (const event of events) {
+      const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
+      if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const availability = buildRecordingAvailabilityUpdate(event, refinement);
+      operations.push({
+        updateOne: {
+          filter: { _id: event._id },
+          update: {
+            $set: {
+              candidateStations: availability.candidateStations,
+              recordingStations: availability.recordingStations,
+              recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+              recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+              recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+              onlineStations: availability.onlineStations,
+            },
+          },
+        },
+      });
+    }
+
+    if (operations.length > 0) {
+      const result = await EQEvents.bulkWrite(operations);
+      matchedCount += result.matchedCount;
+      modifiedCount += result.modifiedCount;
+    }
+  }
+
+  if (processedCount === 0) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
   }
 
-  const usableDevices = devices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
-
-  const eventStationPairs = [];
-  let skippedCount = 0;
-  for (let index = 0; index < eventsWithCoords.length; index += 1) {
-    const event = eventsWithCoords[index];
-    const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
-    if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
-      skippedCount += 1;
-      continue;
-    }
-
-    eventStationPairs.push({
-      eventId: event._id,
-      availability: buildRecordingAvailabilityUpdate(event, refinement),
-    });
-  }
-
-  const operations = eventStationPairs.map(({ eventId, availability }) => ({
-    updateOne: {
-      filter: { _id: eventId },
-      update: {
-        $set: {
-          candidateStations: availability.candidateStations,
-          recordingStations: availability.recordingStations,
-          recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-          recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-          recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-          onlineStations: availability.onlineStations,
-        },
-      },
-    },
-  }));
-
-  if (operations.length === 0) {
+  if (matchedCount === 0 && modifiedCount === 0) {
     return {
       matchedCount: 0,
       modifiedCount: 0,
@@ -806,13 +837,11 @@ async function updateOnlineStations() {
     };
   }
 
-  const result = await EQEvents.bulkWrite(operations);
-
-  const sampleEvent = await EQEvents.findOne({}).lean();
+  const sampleEvent = await EQEvents.findOne({}, { onlineStations: 1 }).lean();
 
   return {
-    matchedCount: result.matchedCount,
-    modifiedCount: result.modifiedCount,
+    matchedCount,
+    modifiedCount,
     usableDevicesCount: usableDevices.length,
     skippedCount,
     sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null

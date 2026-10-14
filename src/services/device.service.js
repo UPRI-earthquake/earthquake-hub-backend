@@ -61,7 +61,11 @@ async function clearReleasedEntries({ deviceId, streamId, macAddress }, session 
   *       along with an empty array of devices.
  ***************************************************************************/
 exports.getAllDeviceLocations = async () => {
-  const allDevices = await Device.find();
+  // The station map needs every device, but only these fields.
+  const allDevices = await Device.find(
+    {},
+    { _id: 0, network: 1, station: 1, latitude: 1, longitude: 1, activity: 1, description: 1 },
+  ).lean();
 
   if( ! allDevices){
     return {str: 'noDevicesFound'};

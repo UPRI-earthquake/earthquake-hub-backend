@@ -202,7 +202,12 @@ const sseStreamsEventListener = async() => {
       return accumulated;
     }, {});
 
-    const devices = await Devices.find();
+    // Only devices whose stream is in this update can change status. Not lean(): the
+    // activityToggleTime default (epoch) must still apply to older records without it.
+    const devices = await Devices.find(
+      { streamId: { $in: Object.keys(latestStreamTimes) } },
+      { streamId: 1, activity: 1, activityToggleTime: 1 },
+    );
 
     devices.forEach( async (device) => {
         if (!latestStreamTimes[device.streamId]) {
