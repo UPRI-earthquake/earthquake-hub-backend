@@ -3,9 +3,9 @@
 //   1. Backfills the GeoJSON `location` point on events (from latitude_value/longitude_value)
 //      and devices (from latitude/longitude). Records with missing or out-of-range coordinates
 //      are left without a location, since a 2dsphere index can't hold an invalid point.
-//   2. Builds the indexes defined in events.model.js and device.model.js (OT, 2dsphere, ...),
-//      replacing any index whose options changed. Indexes not in the schema are listed before
-//      anything is dropped.
+//   2. Builds the indexes defined in events.model.js and device.model.js (OT, 2dsphere, ...)
+//      and jobLock.model.js (TTL on expiresAt), replacing any index whose options changed.
+//      Indexes not in the schema are listed before anything is dropped.
 //   3. Checks that the event list, enrichment job and location queries use those indexes.
 //
 //   dry run (no changes): docker exec -w /app earthquake-hub-backend-dev node scripts/migrate-event-indexes.js --dry-run
@@ -21,6 +21,8 @@ const { connectOrThrow } = require('./find-duplicates');
 const { planStages, usesIndex } = require('./lib/query-plan');
 const Event = require('../src/models/events.model');
 const Device = require('../src/models/device.model');
+// joblocks: an older plain expiresAt_1 index blocked the TTL index of the same name.
+const JobLock = require('../src/models/jobLock.model');
 
 const dryRun = process.argv.includes('--dry-run');
 
@@ -70,7 +72,7 @@ async function main() {
   // ---------- 2. indexes ----------
   // Built after the backfill so the 2dsphere indexes only ever see valid points.
   console.log('\n# Indexes');
-  for (const Model of [Event, Device]) {
+  for (const Model of [Event, Device, JobLock]) {
     const diff = await Model.diffIndexes();
     const toCreate = diff.toCreate.map((spec) => JSON.stringify(spec));
     console.log(`${Model.collection.name}: create ${toCreate.length ? toCreate.join(', ') : 'none'}; `

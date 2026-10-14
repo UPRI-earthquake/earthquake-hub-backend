@@ -389,7 +389,9 @@ A tiny mutex so only one backend instance runs a background job at a time.
 | `expiresAt` | Date, **Req** | Lock expiry. A job can take over an expired lock. |
 | `createdAt`, `updatedAt` | Date | auto |
 
-**Indexes:** `name_1` (unique), `expiresAt_1`. The model also declares a TTL index on `expiresAt`, but it is **not actually created** (see [section 8](#8-known-issues-and-tech-debt)). Locking still works because acquisition checks `expiresAt` itself.
+**Indexes:** `name_1` (unique), `expiresAt_1` (**TTL**, `expireAfterSeconds: 0`): MongoDB deletes a lock shortly after it expires (the TTL monitor runs about every 60 s). Acquisition also treats an expired lock as free, so locking doesn't depend on the deletion timing.
+
+Don't add `index: true` to `expiresAt` in the model: a plain index would take the name `expiresAt_1` first and the TTL index would silently fail to build. That was a real bug until Oct 2026; databases created before then are fixed by `migrate-event-indexes.js`.
 
 ---
 
@@ -500,7 +502,7 @@ docker exec -w /app earthquake-hub-backend-dev node scripts/<script>.js [--dry-r
 |---|---|---|---|
 | `find-duplicates.js` | `db:find-duplicates` | Lists records that would block the account/device unique indexes, plus device `activity` values. Exit 1 if there are blockers. | No |
 | `migrate-unique-indexes.js` | `db:migrate-unique-indexes` | Duplicate check (stops if blocked) → lowercase emails → `TO_BE_LINKED` → `null` → builds account/device indexes → verifies they're used. | Yes, re-runnable |
-| `migrate-event-indexes.js` | `db:migrate-event-indexes` | Backfills `location` on events and devices → builds event/device indexes (`OT`, 2dsphere) → verifies queries use them. | Yes, re-runnable |
+| `migrate-event-indexes.js` | `db:migrate-event-indexes` | Backfills `location` on events and devices → builds event/device indexes (`OT`, 2dsphere) and the `joblocks` TTL index → verifies queries use them. | Yes, re-runnable |
 | `migrate-catalog-info-to-array.js` | — | One-off: converted old object-shaped `additionalInformation` to the array format. Historical. | Yes |
 | `queue-catalog-source.js` | — | Re-queues a catalog source for enrichment on existing events. | Yes |
 
@@ -512,7 +514,6 @@ A **fresh, empty database needs none of these**: the app builds the indexes on s
 
 | Issue | Impact | Fix |
 |---|---|---|
-| `joblocks.expiresAt` is declared as a normal index **and** a TTL index; the TTL one is never created | Expired lock documents are never deleted. Harmless (one document) but untidy. | Remove `index: true` from the `expiresAt` path, then drop `expiresAt_1` so the TTL version can be built. |
 | Duplicate index declarations on `comments.accountId` (and redundant single-field indexes that are prefixes of compound ones) | "Duplicate schema index" warnings at startup; slightly slower writes | Remove `index: true` where `unique: true` or a `schema.index()` already covers the field, and drop single-field indexes that are the first key of a compound index. |
 | Legacy enrichment fields `upForEnrichment` / `enrichmentAttempts` | Two ways of tracking enrichment | Refactor the enrichment eligibility check, backfill events missing `pendingCatalogSources` (2 in current data), then drop them. Deliberately kept for now. |
 | Device ownership only on `accounts.devices[]` | "Who owns this device?" needs a scan of `accounts` (no index on `devices`) | Add `ownerAccountId` on `devices`, or at least an index on `accounts.devices`. |
