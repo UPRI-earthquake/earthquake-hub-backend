@@ -4,7 +4,7 @@ earthquake-hub-backend program is the server-side component of the EarthquakeHub
 ## Development Setup
 To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
-For the MongoDB setup (auth, replica set) and how to browse the database with MongoDB Compass, see [MONGODB.md](MONGODB.md).
+For the MongoDB setup (auth, replica set) and how to browse the database with MongoDB Compass, see [MONGODB.md](MONGODB.md). For what's in the database (every collection, field, index and how they relate), see [DB_SCHEMA.md](DB_SCHEMA.md).
 
 ## Email Branding
 Outgoing HTML emails (device alerts and password-reset emails) support logo branding through environment variables:
