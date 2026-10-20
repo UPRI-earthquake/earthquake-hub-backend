@@ -16,12 +16,13 @@ const port = process.env.NODE_ENV === 'production'
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
 const mongodb = require('./services/mongodb.service');
 mongodb.connect(); // Required by notifs router
+const postgres = require('./db/knex');
+postgres.connect(); // Alongside MongoDB during the PostgreSQL migration; no feature uses it yet
 
 // start cron enrichment
 startEnrichmentScheduler();
 
 SubscriptionCleanupService.startSubscriptionCleanupScheduler();
-console.log('mongodb-host: ' + process.env.MONGO_HOST);
 
 // Run Server
 if (process.env.NODE_ENV === 'production'){

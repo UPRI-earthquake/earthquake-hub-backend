@@ -32,6 +32,9 @@ const connect = async (opts = {}) => {
   try {
     const dbUrl = getConnectionUrl();
     await mongoose.connect(dbUrl, opts);
+    // Host/port/name come from the parsed connection, so credentials in MONGO_HOST never reach the logs
+    const { host, port, name } = mongoose.connection;
+    console.log(`Connected to MongoDB at ${host}:${port}/${name}`);
   } catch (err) {
     console.trace(`In MongoDB setup...\n ${err}`)
     //TODO: properly handle this scenario

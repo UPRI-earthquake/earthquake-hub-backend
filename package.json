@@ -10,10 +10,16 @@
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
     "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
+    "test:integration": "jest --config jest.integration.config.js --setupFiles dotenv/config",
+    "test:integration:help": "echo 'Runs *.integration.test.js against throwaway Testcontainers databases. Requires Docker on the machine running it.'",
     "overlays:fetch": "node scripts/fetch-overlays.js",
     "db:find-duplicates": "node scripts/find-duplicates.js",
     "db:migrate-unique-indexes": "node scripts/migrate-unique-indexes.js",
-    "db:migrate-event-indexes": "node scripts/migrate-event-indexes.js"
+    "db:migrate-event-indexes": "node scripts/migrate-event-indexes.js",
+    "db:pg:migrate": "knex --knexfile src/db/knexfile.js migrate:latest",
+    "db:pg:rollback": "knex --knexfile src/db/knexfile.js migrate:rollback",
+    "db:pg:status": "knex --knexfile src/db/knexfile.js migrate:status",
+    "db:pg:make": "knex --knexfile src/db/knexfile.js migrate:make"
   },
   "repository": {
     "type": "git",
@@ -38,10 +44,12 @@
     "express": "^4.17.1",
     "joi": "^17.9.1",
     "jsonwebtoken": "^9.0.0",
+    "knex": "^3.3.0",
     "mongoose": "^8.24.5",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.3",
+    "pg": "^8.23.1",
     "puppeteer-core": "^24.40.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
@@ -49,17 +57,23 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.1",
     "dotenv": "^16.0.0",
     "jest": "^29.5.0",
     "nodemon": "^3.1.14",
     "redis": "^4.6.14",
     "supertest": "^6.3.3",
-    "testcontainers": "^12.0.4"
+    "testcontainers": "^12.2.1"
   },
   "jest": {
     "testEnvironment": "node",
     "coveragePathIgnorePatterns": [
       "/node_modules/"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/__tests__/fixtures/",
+      "\\.integration\\.test\\.js$"
     ]
   }
 }
