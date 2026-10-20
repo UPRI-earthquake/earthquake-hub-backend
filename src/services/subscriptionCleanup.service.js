@@ -1,5 +1,4 @@
-const mongoose = require('mongoose');
-const Subscription = require('../models/subscription.model');
+const PushSubscriptionsRepo = require('../repositories/pushSubscriptions.repo');
 
 const parsePositiveInt = (raw, fallback) => {
   const n = Number.parseInt(raw, 10);
@@ -21,57 +20,30 @@ const daysFromNow = (days, now = new Date()) => {
 };
 
 async function runSubscriptionCleanup() {
-  if (mongoose.connection.readyState !== 1) {
+  if (!PushSubscriptionsRepo.isAvailable()) {
     return { skipped: true, reason: 'dbNotAccessible' };
   }
 
   const now = new Date();
   const staleCutoff = new Date(now.getTime() - config.staleDays * 24 * 60 * 60 * 1000);
   const invalidCleanupAfter = daysFromNow(config.invalidTtlDays, now);
-  const nowEpoch = now.getTime();
 
   const [invalidatedExpired, invalidatedStale, removedDue] = await Promise.all([
-    Subscription.updateMany(
-      {
-        status: { $ne: 'invalid' },
-        expirationTime: { $type: 'number', $lte: nowEpoch },
-      },
-      {
-        $set: {
-          status: 'invalid',
-          invalidatedAt: now,
-          cleanupAfter: invalidCleanupAfter,
-          lastFailureAt: now,
-          lastFailureCode: 410,
-        },
-      },
-    ),
-    Subscription.updateMany(
-      {
-        status: 'active',
-        lastSeenAt: { $lte: staleCutoff },
-        consecutiveFailures: { $gte: config.failureThreshold },
-      },
-      {
-        $set: {
-          status: 'invalid',
-          invalidatedAt: now,
-          cleanupAfter: invalidCleanupAfter,
-        },
-      },
-    ),
-    // TTL handles this eventually, but explicit delete keeps collection tidy quickly.
-    Subscription.deleteMany({
-      status: 'invalid',
-      cleanupAfter: { $type: 'date', $lte: now },
+    PushSubscriptionsRepo.markExpiredInvalid({ cleanupAfter: invalidCleanupAfter, now }),
+    PushSubscriptionsRepo.markStaleInvalid({
+      staleCutoff,
+      failureThreshold: config.failureThreshold,
+      cleanupAfter: invalidCleanupAfter,
+      now,
     }),
+    PushSubscriptionsRepo.deleteExpired(now),
   ]);
 
   return {
     skipped: false,
-    invalidatedExpired: invalidatedExpired.modifiedCount || 0,
-    invalidatedStale: invalidatedStale.modifiedCount || 0,
-    removedDue: removedDue.deletedCount || 0,
+    invalidatedExpired,
+    invalidatedStale,
+    removedDue,
     staleCutoff,
     intervalMin: config.intervalMin,
   };

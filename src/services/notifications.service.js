@@ -1,7 +1,6 @@
-const Subscription = require('../models/subscription.model');
+const PushSubscriptionsRepo = require('../repositories/pushSubscriptions.repo');
 const EQEventsService = require('../services/EQevents.service')
 
-const mongoose = require('mongoose');
 const webpush = require('web-push')
 webpush.setVapidDetails(
   process.env.WEB_PUSH_CONTACT,
@@ -46,7 +45,7 @@ const normalizeOptionalDate = (raw) => {
   * 
   * Outputs:
   *     "success":            if notifications were successfully sent to all subscribers.
-  *     "dbNotAccessible":    if the function can't access subscriptions due to MongoDB not being connected.
+  *     "dbNotAccessible":    if the function can't access subscriptions because the database isn't connected.
   * 
   * Note:
   *     - If the magnitude is greater than the minimum threshold, the function calls EQEventsService.addPlacesAttribute to
@@ -88,53 +87,29 @@ const notifySubscribersEQ = async (message) =>{
     },
   })
 
-  if(mongoose.connection.readyState === 1) { // connected to MongoDB
-    const subscribers = await Subscription.find({ status: { $ne: 'invalid' } });
+  if(PushSubscriptionsRepo.isAvailable()) {
+    const subscribers = await PushSubscriptionsRepo.listActive();
     const sendTasks = subscribers.map((subscriber) => {
       return webpush
         .sendNotification(subscriber, payload)
         .then(async () => {
-          console.log(`Sent notif to ${subscriber._id}`)
-          const now = new Date();
-          await Subscription.updateOne(
-            { _id: subscriber._id },
-            {
-              $set: {
-                status: 'active',
-                lastDeliveredAt: now,
-                consecutiveFailures: 0,
-              },
-              $unset: {
-                lastFailureAt: '',
-                lastFailureCode: '',
-                invalidatedAt: '',
-                cleanupAfter: '',
-              },
-            },
-          );
+          console.log(`Sent notif to ${subscriber.id}`)
+          await PushSubscriptionsRepo.recordDelivery(subscriber.id, new Date());
         })
         .catch(async (err) => {
           const status = err && err.statusCode
           const now = new Date();
           if (INVALID_SUBSCRIPTION_CODES.has(status)) {
-            console.log(`Subscription gone for ${subscriber._id}`)
+            console.log(`Subscription gone for ${subscriber.id}`)
             try {
-              await Subscription.updateOne(
-                { _id: subscriber._id },
-                {
-                  $set: {
-                    status: 'invalid',
-                    invalidatedAt: now,
-                    cleanupAfter: daysFromNow(invalidCleanupDays, now),
-                    lastFailureAt: now,
-                    lastFailureCode: Number.isFinite(status) ? status : 410,
-                  },
-                  $inc: { consecutiveFailures: 1 },
-                },
-              );
+              await PushSubscriptionsRepo.markInvalid(subscriber.id, {
+                code: Number.isFinite(status) ? status : 410,
+                cleanupAfter: daysFromNow(invalidCleanupDays, now),
+                now,
+              });
             } catch (updateErr) {
               console.error(
-                `Failed to mark ${subscriber._id} invalid:`,
+                `Failed to mark ${subscriber.id} invalid:`,
                 updateErr?.message || updateErr,
               );
             }
@@ -146,19 +121,14 @@ const notifySubscribersEQ = async (message) =>{
             err?.message || err
           )
           try {
-            await Subscription.updateOne(
-              { _id: subscriber._id },
-              {
-                $set: {
-                  lastFailureAt: now,
-                  lastFailureCode: Number.isFinite(status) ? status : null,
-                },
-                $inc: { consecutiveFailures: 1 },
-              },
+            await PushSubscriptionsRepo.recordFailure(
+              subscriber.id,
+              Number.isFinite(status) ? status : null,
+              now,
             );
           } catch (updateErr) {
             console.error(
-              `Failed to track failure for ${subscriber._id}:`,
+              `Failed to track failure for ${subscriber.id}:`,
               updateErr?.message || updateErr,
             );
           }
@@ -167,7 +137,7 @@ const notifySubscribersEQ = async (message) =>{
     await Promise.allSettled(sendTasks);
     return 'success'
   }else{
-    console.warn("Can't access subscriptions, MongoDB not connected");
+    console.warn("Can't access subscriptions, database not connected");
     return 'dbNotAccessible';
   }
 }
@@ -186,52 +156,29 @@ const notifySubscribersEQ = async (message) =>{
   * Outputs:
   *     "success":                   if a new subscription entry was successfully created in the database.
   *     "subscriptionExists":        if a subscription entry with the same endpoint already exists in the database.
-  *     "dbNotAccessible":           if the function can't create a new subscription due to MongoDB not being connected.
+  *     "dbNotAccessible":           if the function can't create a new subscription because the database isn't connected.
   * 
  ***************************************************************************/
 const createSubscription = async (subscriptionRequest) =>{
-  if(mongoose.connection.readyState === 1) { // connected to MongoDB
-    const now = new Date();
-    const expirationTime = normalizeExpirationTime(subscriptionRequest.expirationTime);
+  if(PushSubscriptionsRepo.isAvailable()) {
     const clientMeta = subscriptionRequest.clientMeta || {};
-    const setDoc = {
-      expirationTime,
-      keys: subscriptionRequest.keys,
-      status: 'active',
-      lastSeenAt: now,
-      consecutiveFailures: 0,
-      clientMeta: {
-        userAgent: clientMeta.userAgent || null,
-        appVersion: clientMeta.appVersion || null,
-        clientTime: normalizeOptionalDate(clientMeta.time),
-      },
-    };
-    if (typeof clientMeta.swScriptUrl === 'string' && clientMeta.swScriptUrl.trim()) {
-      setDoc.sourceSwScript = clientMeta.swScriptUrl.trim();
-    }
+    const swScriptUrl = typeof clientMeta.swScriptUrl === 'string' ? clientMeta.swScriptUrl.trim() : '';
 
-    const writeResult = await Subscription.findOneAndUpdate(
-      { endpoint: subscriptionRequest.endpoint },
+    const { created } = await PushSubscriptionsRepo.upsert(
       {
-        $set: setDoc,
-        $unset: {
-          invalidatedAt: '',
-          cleanupAfter: '',
-          lastFailureAt: '',
-          lastFailureCode: '',
+        endpoint: subscriptionRequest.endpoint,
+        expirationTime: normalizeExpirationTime(subscriptionRequest.expirationTime),
+        keys: subscriptionRequest.keys,
+        clientMeta: {
+          userAgent: clientMeta.userAgent || null,
+          appVersion: clientMeta.appVersion || null,
+          clientTime: normalizeOptionalDate(clientMeta.time),
         },
+        sourceSwScript: swScriptUrl || undefined,
       },
-      {
-        upsert: true,
-        new: true,
-        rawResult: true,
-        setDefaultsOnInsert: true,
-      },
+      new Date(),
     );
-    const wasCreated = Boolean(
-      writeResult && writeResult.lastErrorObject && writeResult.lastErrorObject.upserted,
-    );
-    if(!wasCreated){
+    if(!created){
       console.log('Old subscription found');
       return 'subscriptionExists';
     }
@@ -240,7 +187,7 @@ const createSubscription = async (subscriptionRequest) =>{
     return 'success'
 
   }else{
-    console.warn("Can't create new subscription, MongoDB not connected");
+    console.warn("Can't create new subscription, database not connected");
     return 'dbNotAccessible'
   }
 }

@@ -1,8 +1,7 @@
-const { Types } = require('mongoose');
-const SignificantEQs = require('../models/significantEQ.model');
+const SignificantEqsRepo = require('../repositories/significantEqs.repo');
 
 exports.getAllSignificantEQs = async () => {
-    const allSignificantEQs = await SignificantEQs.find({}).lean();
+    const allSignificantEQs = await SignificantEqsRepo.findAll();
     // console.log('EQs:' + allSignificantEQs)
     // console.log(allSignificantEQs.length)
 
@@ -17,11 +16,11 @@ exports.getAllSignificantEQs = async () => {
 }
 
 exports.getEarthquakeInfo = async (id) => {
-    if (!Types.ObjectId.isValid(id)) {
+    if (!SignificantEqsRepo.isValidId(id)) {
         return { str: 'invalidId' };
     }
 
-    const earthquakeInfo = await SignificantEQs.findById(id).lean();
+    const earthquakeInfo = await SignificantEqsRepo.findById(id);
     // console.log('EQ Info:' + earthquakeInfo)
 
     if (!earthquakeInfo) {

@@ -1,6 +1,6 @@
 const os = require('os');
 const process = require('process');
-const JobLock = require('../models/jobLock.model');
+const JobLocksRepo = require('../repositories/jobLocks.repo');
 
 const DEFAULT_LOCK_TTL_MS = 60 * 60 * 1000;
 
@@ -9,28 +9,8 @@ function getLockOwner() {
 }
 
 async function acquireJobLock(name, ttlMs = DEFAULT_LOCK_TTL_MS) {
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + ttlMs);
   const owner = getLockOwner();
-
-  let lock = null;
-  try {
-    lock = await JobLock.findOneAndUpdate(
-      {
-        name,
-        $or: [
-          { expiresAt: { $lte: now } },
-          { owner },
-        ],
-      },
-      { $set: { name, owner, expiresAt } },
-      { upsert: true, new: true },
-    );
-  } catch (err) {
-    if (err.code !== 11000) throw err;
-  }
-
-  const acquired = Boolean(lock && lock.owner === owner);
+  const { acquired, expiresAt } = await JobLocksRepo.acquire(name, owner, ttlMs);
 
   return {
     acquired,
@@ -38,7 +18,7 @@ async function acquireJobLock(name, ttlMs = DEFAULT_LOCK_TTL_MS) {
     owner,
     expiresAt,
     async release() {
-      await JobLock.deleteOne({ name, owner });
+      await JobLocksRepo.release(name, owner);
     },
   };
 }
