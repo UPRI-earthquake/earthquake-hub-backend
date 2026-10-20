@@ -8,7 +8,8 @@ Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.j
 2. [Running migrations](#2-running-migrations)
 3. [Connecting with a GUI client](#3-connecting-with-a-gui-client)
 4. [Integration tests](#4-integration-tests)
-5. [Troubleshooting](#5-troubleshooting)
+5. [Repositories and golden files](#5-repositories-and-golden-files)
+6. [Troubleshooting](#6-troubleshooting)
 
 ---
 
@@ -197,9 +198,35 @@ npm run test:integration
 
 The first run pulls the `postgis/postgis` image, which takes a minute. They can't run inside the backend container, which has no access to Docker.
 
+A MongoDB fixture, [`__tests__/fixtures/mongo.fixture.js`](__tests__/fixtures/mongo.fixture.js), does the same for areas still on MongoDB.
+
 ---
 
-## 5. Troubleshooting
+## 5. Repositories and golden files
+
+Each area moves to PostgreSQL behind a **repository**: a module in `src/repositories/` that holds all of that area's database calls. Services call the repository, never a Mongoose model or Knex directly, so moving an area means rewriting its repository and nothing above it.
+
+| Area | Repository | Database |
+|---|---|---|
+| Job locks | `src/repositories/jobLocks.repo.js` | MongoDB |
+| Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | MongoDB |
+| Significant earthquakes | `src/repositories/significantEqs.repo.js` | MongoDB |
+
+Two kinds of integration tests check that a move changes nothing:
+
+- **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. The PostgreSQL version of a repository must pass the same tests.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers and body. [`pilotAreas.golden.integration.test.js`](__tests__/pilotAreas.golden.integration.test.js) runs the real app against seeded data and compares each response with its recording.
+
+Re-record golden files only when a response is meant to change, and review the diff in the PR:
+
+```sh
+UPDATE_GOLDEN=1 npm run test:integration
+# PowerShell: $env:UPDATE_GOLDEN=1; npm run test:integration; Remove-Item Env:UPDATE_GOLDEN
+```
+
+---
+
+## 6. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|

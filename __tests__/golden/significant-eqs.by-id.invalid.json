@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/significant-eqs",
+    "body": {
+      "id": "not-an-id"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Invalid earthquake id"
+    }
+  }
+}

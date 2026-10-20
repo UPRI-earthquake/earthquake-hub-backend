@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/notifications/subscribe",
+    "body": {
+      "endpoint": "https://push.example.org/wpush/v2/golden-subscriber",
+      "expirationTime": null,
+      "keys": {
+        "p256dh": "BLuuTRceHGlpTdepbGlthyMlQM_I1WvqcLLONsg-zQ7aaAlRFO6DfmSSMGU",
+        "auth": "qIwUJpYMw1E2Xa9vXOH-_Q"
+      },
+      "clientMeta": {
+        "swScriptUrl": "https://earthquake.up.edu.ph/sw.js",
+        "userAgent": "Mozilla/5.0 (golden test)",
+        "appVersion": "1.0.0",
+        "time": "2026-01-01T00:00:00.000Z"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Subscription already exists"
+    }
+  }
+}

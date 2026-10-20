@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/significant-eqs",
+    "body": {
+      "id": "650000000000000000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Earthquake Information found",
+      "payload": {
+        "_id": "650000000000000000000001",
+        "title": "Magnitude 6.9 Earthquake, Davao del Sur",
+        "magnitude": 6.9,
+        "longitude": 125.18,
+        "latitude": 6.71,
+        "depth": 22,
+        "location": "Matanao, Davao del Sur",
+        "eventTime": "2019-12-15T06:11:51.000Z",
+        "instrumentRecordings": [
+          "R3B2D",
+          "RE722"
+        ],
+        "eventSummary": "<p>Strong shaking was felt across Mindanao.</p>",
+        "references": [
+          "https://example.org/reports/davao-del-sur-2019"
+        ]
+      }
+    }
+  }
+}

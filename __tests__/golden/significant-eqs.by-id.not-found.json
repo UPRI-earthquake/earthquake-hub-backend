@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/significant-eqs",
+    "body": {
+      "id": "650000000000000000000099"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "No Earthquake Information found in DB!"
+    }
+  }
+}
