@@ -57,7 +57,8 @@ async function upsert(subscription, now) {
     {
       upsert: true,
       new: true,
-      rawResult: true,
+      // Mongoose 8 replaced `rawResult` with this (and ignores the old name)
+      includeResultMetadata: true,
       setDefaultsOnInsert: true,
     },
   );
