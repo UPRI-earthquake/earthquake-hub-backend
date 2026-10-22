@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
+const { copySignificantEqs } = require('../../scripts/copy-significant-eqs-to-postgres');
 
 // Inserted as raw documents, the way curated records are added (no Mongoose defaults such as __v)
 const SIGNIFICANT_EQS = [
@@ -87,7 +88,15 @@ const describePilotAreasGolden = (settings) => describe(`Pilot areas: recorded A
     await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
   });
 
-  const seedSignificantEqs = () => mongoose.connection.collection('significant-eqs').insertMany(SIGNIFICANT_EQS);
+  // Seeds MongoDB; when the area is on PostgreSQL, copies them over with the real copy script, the way
+  // dev moves its data, so these responses also check what the copy produces
+  const seedSignificantEqs = async () => {
+    await mongoose.connection.collection('significant-eqs').insertMany(SIGNIFICANT_EQS);
+    if (settings.SIGNIFICANT_EQS_DB === 'postgres') {
+      const { ok } = await copySignificantEqs({ db: pg.db, log: () => {} });
+      if (!ok) throw new Error('Copying significant earthquakes to PostgreSQL failed');
+    }
+  };
 
   describe('GET /significant-eqs/all', () => {
     test('lists every significant earthquake', async () => {
