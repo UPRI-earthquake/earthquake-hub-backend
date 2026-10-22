@@ -1,6 +1,7 @@
-// Data access for background-job locks. Services use these functions instead of the Mongoose model,
-// so the storage (MongoDB today, PostgreSQL later) can change without touching them.
-const JobLock = require('../models/jobLock.model');
+// Job locks in MongoDB (`joblocks` collection): the implementation used when JOB_LOCKS_DB=mongodb.
+// Keep it behaving like postgres/jobLocks.repo.js: both must pass
+// __tests__/jobLocks.repo.integration.test.js.
+const JobLock = require('../../models/jobLock.model');
 
 /***************************************************************************
   * acquire:
@@ -43,7 +44,15 @@ async function release(name, owner) {
   await JobLock.deleteOne({ name, owner });
 }
 
+// Deletes locks that expired at or before `now`. Resolves to the count. (The TTL index does this too;
+// the explicit delete keeps both implementations alike for the cleanup scheduler.)
+async function deleteExpired(now) {
+  const result = await JobLock.deleteMany({ expiresAt: { $lte: now } });
+  return result.deletedCount || 0;
+}
+
 module.exports = {
   acquire,
   release,
+  deleteExpired,
 };

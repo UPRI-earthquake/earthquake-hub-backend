@@ -12,7 +12,7 @@ const connect = async () => {
     const { rows: [server] } = await db.raw(
       "SELECT current_database() AS database, current_setting('server_version') AS version",
     );
-    const { host, port } = config.connection;
+    const { host, port } = config.connection();
     console.log(`Connected to PostgreSQL ${server.version} at ${host}:${port}/${server.database}`);
   } catch (err) {
     console.trace(`In PostgreSQL setup...\n ${err}`);

@@ -87,7 +87,7 @@ const notifySubscribersEQ = async (message) =>{
     },
   })
 
-  if(PushSubscriptionsRepo.isAvailable()) {
+  if(await PushSubscriptionsRepo.isAvailable()) {
     const subscribers = await PushSubscriptionsRepo.listActive();
     const sendTasks = subscribers.map((subscriber) => {
       return webpush
@@ -160,7 +160,7 @@ const notifySubscribersEQ = async (message) =>{
   * 
  ***************************************************************************/
 const createSubscription = async (subscriptionRequest) =>{
-  if(PushSubscriptionsRepo.isAvailable()) {
+  if(await PushSubscriptionsRepo.isAvailable()) {
     const clientMeta = subscriptionRequest.clientMeta || {};
     const swScriptUrl = typeof clientMeta.swScriptUrl === 'string' ? clientMeta.swScriptUrl.trim() : '';
 

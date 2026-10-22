@@ -5,17 +5,19 @@ const path = require('path');
 // The Knex CLI changes into this file's directory, so point dotenv at the repo root's .env explicitly
 try { require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') }); } catch (_) { /* prod images don't ship dotenv; env comes from compose */ }
 
-const { PG_HOST, PG_PORT, PG_DATABASE, PG_USER, PG_PASSWORD } = process.env;
+// Read when a connection opens, not when this file loads, so whoever sets PG_* last wins
+// (integration tests point them at a throwaway container after this file is already loaded)
+const connectionSettings = () => ({
+  host: process.env.PG_HOST,
+  port: Number(process.env.PG_PORT) || 5432,
+  database: process.env.PG_DATABASE,
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
+});
 
 module.exports = {
   client: 'pg',
-  connection: {
-    host: PG_HOST,
-    port: Number(PG_PORT) || 5432,
-    database: PG_DATABASE,
-    user: PG_USER,
-    password: PG_PASSWORD,
-  },
+  connection: connectionSettings,
   // min 0 lets idle connections close instead of holding them open forever
   pool: { min: 0, max: 10 },
   migrations: {

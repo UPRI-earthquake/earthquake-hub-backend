@@ -35,7 +35,7 @@ describe('notifications.service', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    PushSubscriptionsRepo.isAvailable.mockReturnValue(true);
+    PushSubscriptionsRepo.isAvailable.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -111,7 +111,7 @@ describe('notifications.service', () => {
     });
 
     test('reports an unavailable database without writing', async () => {
-      PushSubscriptionsRepo.isAvailable.mockReturnValue(false);
+      PushSubscriptionsRepo.isAvailable.mockResolvedValue(false);
 
       await expect(NotificationsService.createSubscription(request)).resolves.toBe('dbNotAccessible');
       expect(PushSubscriptionsRepo.upsert).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe('notifications.service', () => {
     });
 
     test('reports an unavailable database without sending', async () => {
-      PushSubscriptionsRepo.isAvailable.mockReturnValue(false);
+      PushSubscriptionsRepo.isAvailable.mockResolvedValue(false);
 
       await expect(NotificationsService.notifySubscribersEQ(message)).resolves.toBe('dbNotAccessible');
       expect(webpush.sendNotification).not.toHaveBeenCalled();

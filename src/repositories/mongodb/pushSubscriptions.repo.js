@@ -1,20 +1,21 @@
-// Data access for web-push subscriptions. Services use these functions instead of the Mongoose model,
-// so the storage (MongoDB today, PostgreSQL later) can change without touching them.
+// Push subscriptions in MongoDB (`subscriptions` collection): the implementation used when
+// PUSH_SUBSCRIPTIONS_DB=mongodb. Keep it behaving like postgres/pushSubscriptions.repo.js: both must
+// pass __tests__/pushSubscriptions.repo.integration.test.js.
 //
 // Write functions take `now` from the caller, so one operation uses a single timestamp throughout.
 const mongoose = require('mongoose');
-const Subscription = require('../models/subscription.model');
+const Subscription = require('../../models/subscription.model');
 
 const toSubscriber = (doc) => ({
   id: String(doc._id),
   endpoint: doc.endpoint,
-  expirationTime: doc.expirationTime,
+  expirationTime: doc.expirationTime ?? null,
   // Optional chaining: a malformed record should fail its own delivery, not the whole list
   keys: { p256dh: doc.keys?.p256dh, auth: doc.keys?.auth },
 });
 
-// Whether the database can be queried right now (callers skip their work instead of waiting)
-const isAvailable = () => mongoose.connection.readyState === 1;
+// Resolves to whether the database can be queried right now (callers skip their work instead of waiting)
+const isAvailable = async () => mongoose.connection.readyState === 1;
 
 /***************************************************************************
   * upsert:

@@ -1,4 +1,5 @@
 const PushSubscriptionsRepo = require('../repositories/pushSubscriptions.repo');
+const JobLocksRepo = require('../repositories/jobLocks.repo');
 
 const parsePositiveInt = (raw, fallback) => {
   const n = Number.parseInt(raw, 10);
@@ -19,8 +20,10 @@ const daysFromNow = (days, now = new Date()) => {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 };
 
+// Also deletes expired job locks: in PostgreSQL there's no TTL index to do it, so this scheduled run
+// replaces it for both push subscriptions and locks.
 async function runSubscriptionCleanup() {
-  if (!PushSubscriptionsRepo.isAvailable()) {
+  if (!(await PushSubscriptionsRepo.isAvailable())) {
     return { skipped: true, reason: 'dbNotAccessible' };
   }
 
@@ -28,7 +31,7 @@ async function runSubscriptionCleanup() {
   const staleCutoff = new Date(now.getTime() - config.staleDays * 24 * 60 * 60 * 1000);
   const invalidCleanupAfter = daysFromNow(config.invalidTtlDays, now);
 
-  const [invalidatedExpired, invalidatedStale, removedDue] = await Promise.all([
+  const [invalidatedExpired, invalidatedStale, removedDue, removedLocks] = await Promise.all([
     PushSubscriptionsRepo.markExpiredInvalid({ cleanupAfter: invalidCleanupAfter, now }),
     PushSubscriptionsRepo.markStaleInvalid({
       staleCutoff,
@@ -37,6 +40,7 @@ async function runSubscriptionCleanup() {
       now,
     }),
     PushSubscriptionsRepo.deleteExpired(now),
+    JobLocksRepo.deleteExpired(now),
   ]);
 
   return {
@@ -44,6 +48,7 @@ async function runSubscriptionCleanup() {
     invalidatedExpired,
     invalidatedStale,
     removedDue,
+    removedLocks,
     staleCutoff,
     intervalMin: config.intervalMin,
   };
@@ -61,7 +66,7 @@ function startSubscriptionCleanupScheduler() {
       const result = await runSubscriptionCleanup();
       if (!result.skipped) {
         console.log(
-          `[notif-cleanup] expired=${result.invalidatedExpired} stale=${result.invalidatedStale} removed=${result.removedDue}`,
+          `[notif-cleanup] expired=${result.invalidatedExpired} stale=${result.invalidatedStale} removed=${result.removedDue} expiredLocks=${result.removedLocks}`,
         );
       }
     } catch (err) {
