@@ -3,6 +3,7 @@
 //
 //   let pg;
 //   beforeAll(async () => { pg = await startPostgres(); }, PG_STARTUP_TIMEOUT_MS);
+//   afterEach(() => pg.clear());
 //   afterAll(() => pg && pg.stop());
 //   test('...', async () => { await pg.db('job_locks').insert({ ... }); });
 const knex = require('knex');
@@ -34,12 +35,30 @@ const startPostgres = async ({ migrate = true } = {}) => {
 
   if (migrate) await db.migrate.latest();
 
+  // Empties every table except Knex's own migration bookkeeping
+  const clear = async () => {
+    const { rows } = await db.raw(
+      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'knex_migrations%'",
+    );
+    if (rows.length === 0) return;
+    await db.raw(`TRUNCATE ${rows.map(() => '??').join(', ')}`, rows.map((row) => row.tablename));
+  };
+
+  // PG_* settings pointing at this container, for code that reads them (e.g. src/db/knex.js)
+  const env = {
+    PG_HOST: container.getHost(),
+    PG_PORT: String(container.getPort()),
+    PG_DATABASE: container.getDatabase(),
+    PG_USER: container.getUsername(),
+    PG_PASSWORD: container.getPassword(),
+  };
+
   const stop = async () => {
     await db.destroy();
     await container.stop();
   };
 
-  return { container, db, stop };
+  return { container, db, env, clear, stop };
 };
 
 module.exports = {

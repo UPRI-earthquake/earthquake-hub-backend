@@ -1,11 +1,12 @@
 // Golden-file tests for the Pilot areas of the PostgreSQL migration (significant earthquakes, push
-// subscriptions). They run the real app against a seeded database and compare each response with its
-// recording in __tests__/golden/, so moving these areas to PostgreSQL must keep the responses identical.
+// subscriptions). They run the real app against seeded databases and compare each response with its
+// recording in __tests__/golden/. Each pilotAreas.golden.*.integration.test.js runs these cases with
+// one combination of area settings, so every setting must give identical responses.
 const request = require('supertest');
 const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
-const { expectGolden } = require('./fixtures/golden');
-const app = require('../src/app');
+const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
+const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
+const { expectGolden } = require('./golden');
 
 // Inserted as raw documents, the way curated records are added (no Mongoose defaults such as __v)
 const SIGNIFICANT_EQS = [
@@ -50,21 +51,31 @@ const SUBSCRIPTION = {
   },
 };
 
+let app;
+
 const send = (req) => {
   const call = request(app)[req.method.toLowerCase()](req.path);
   return req.body === undefined ? call : call.send(req.body).set('Content-Type', 'application/json');
 };
 
-describe('Pilot areas: recorded API responses', () => {
+// settings: the area settings to run the app with, e.g. { PUSH_SUBSCRIPTIONS_DB: 'postgres' }
+const describePilotAreasGolden = (settings) => describe(`Pilot areas: recorded API responses (${
+  Object.entries(settings).map(([key, value]) => `${key}=${value}`).join(', ')
+})`, () => {
   let mongo;
+  let pg;
 
   beforeAll(async () => {
-    mongo = await startMongo();
-  }, MONGO_STARTUP_TIMEOUT_MS);
+    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
+    // Before the app loads: repositories pick their database, and src/db/knex.js its connection, on load
+    Object.assign(process.env, pg.env, settings);
+    app = require('../../src/app');
+    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
+  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
-    await mongo.clear();
+    await Promise.all([mongo.clear(), pg.clear()]);
   });
 
   afterEach(() => {
@@ -72,7 +83,8 @@ describe('Pilot areas: recorded API responses', () => {
   });
 
   afterAll(async () => {
-    if (mongo) await mongo.stop();
+    await require('../../src/db/knex').db.destroy();
+    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
   });
 
   const seedSignificantEqs = () => mongoose.connection.collection('significant-eqs').insertMany(SIGNIFICANT_EQS);
@@ -127,3 +139,5 @@ describe('Pilot areas: recorded API responses', () => {
     });
   });
 });
+
+module.exports = { describePilotAreasGolden };
