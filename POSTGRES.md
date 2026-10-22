@@ -1,6 +1,6 @@
 # PostgreSQL: Local Setup, Migrations & GUI Clients
 
-The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. No data lives in PostgreSQL yet: this setup is the base for the later migration steps.
+The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). On PostgreSQL so far: **job locks** and **push subscriptions** ([section 7](#7-tables)).
 
 Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.js` holds the connection pool, `src/db/migrations/` the versioned schema changes.
 
@@ -9,7 +9,9 @@ Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.j
 3. [Connecting with a GUI client](#3-connecting-with-a-gui-client)
 4. [Integration tests](#4-integration-tests)
 5. [Repositories and golden files](#5-repositories-and-golden-files)
-6. [Troubleshooting](#6-troubleshooting)
+6. [Moving an area: the per-area switch](#6-moving-an-area-the-per-area-switch)
+7. [Tables](#7-tables)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
@@ -204,18 +206,20 @@ A MongoDB fixture, [`__tests__/fixtures/mongo.fixture.js`](__tests__/fixtures/mo
 
 ## 5. Repositories and golden files
 
-Each area moves to PostgreSQL behind a **repository**: a module in `src/repositories/` that holds all of that area's database calls. Services call the repository, never a Mongoose model or Knex directly, so moving an area means rewriting its repository and nothing above it.
+Each area moves to PostgreSQL behind a **repository**: a module in `src/repositories/` that holds all of that area's database calls. Services call the repository, never a Mongoose model or Knex directly, so moving an area means writing a PostgreSQL version of its repository and nothing above it.
 
-| Area | Repository | Database |
-|---|---|---|
-| Job locks | `src/repositories/jobLocks.repo.js` | MongoDB |
-| Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | MongoDB |
-| Significant earthquakes | `src/repositories/significantEqs.repo.js` | MongoDB |
+An area that has moved has both versions, in `src/repositories/mongodb/` and `src/repositories/postgres/`. `src/repositories/<area>.repo.js` loads the one its setting picks ([section 6](#6-moving-an-area-the-per-area-switch)).
+
+| Area | Repository | Setting | Database in dev |
+|---|---|---|---|
+| Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
+| Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
+| Significant earthquakes | `src/repositories/significantEqs.repo.js` | | MongoDB |
 
 Two kinds of integration tests check that a move changes nothing:
 
-- **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. The PostgreSQL version of a repository must pass the same tests.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers and body. [`pilotAreas.golden.integration.test.js`](__tests__/pilotAreas.golden.integration.test.js) runs the real app against seeded data and compares each response with its recording.
+- **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers and body. The `pilotAreas.golden.*.integration.test.js` files run the real app against seeded data, once with the areas on PostgreSQL and once on MongoDB, and compare each response with the same recording.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
@@ -226,7 +230,125 @@ UPDATE_GOLDEN=1 npm run test:integration
 
 ---
 
-## 6. Troubleshooting
+## 6. Moving an area: the per-area switch
+
+Each moved area has a setting in `.env` that picks its database:
+
+```env
+JOB_LOCKS_DB=postgres            # mongodb | postgres
+PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
+```
+
+Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup. The backend reads these on startup and logs its choice:
+
+```
+[db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
+[db] job locks: postgres (JOB_LOCKS_DB)
+```
+
+While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
+
+### Switching an area to PostgreSQL
+
+1. Apply the migrations: `npm run db:pg:migrate`.
+2. Copy the area's data, if it has a copy script (see below). Do a dry run first.
+3. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
+4. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
+
+### Rolling an area back
+
+Set its setting to `mongodb` and restart the backend. MongoDB still has the data as it was at the switch. Anything written to PostgreSQL since then stays there and isn't copied back.
+
+### Copying push subscriptions
+
+[`scripts/copy-subscriptions-to-postgres.js`](scripts/copy-subscriptions-to-postgres.js) copies MongoDB `subscriptions` into `push_subscriptions`. It reaches MongoDB as `mongodb`, so run it inside the backend container:
+
+```sh
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-subscriptions -- --dry-run
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-subscriptions
+```
+
+What it does:
+
+- Rows are matched by `legacy_mongo_id` (the MongoDB `_id`), so it's **safe to run again**: nothing is duplicated, and MongoDB changes since the last run are copied.
+- A row changed in PostgreSQL since it was copied (newer `updated_at`) is **kept**, so a re-run after the switch never overwrites newer data.
+- Skipped and listed by `_id`: documents that can't be stored (no endpoint, missing keys, unknown status), and endpoints PostgreSQL already has under another row (the browser subscribed again after the switch).
+- Ends by checking that every copyable subscription has its row and the counts add up. Exit code `0` = done, `1` = validation failed, `2` = error.
+
+Example output:
+
+```
+MongoDB subscriptions: 42
+  inserted: 40
+  updated: 0
+  kept (changed in PostgreSQL since copied): 0
+  skipped, endpoint already in PostgreSQL under another row: 0
+  skipped, can't be stored: 2
+    6512...: missing keys
+    6513...: no endpoint
+Validation passed: all 40 copyable subscriptions are in PostgreSQL.
+```
+
+Job locks aren't copied: a lock only lives as long as a job run, so a fresh table is fine.
+
+---
+
+## 7. Tables
+
+| Table | Replaces (MongoDB) | Migration | Copy script |
+|---|---|---|---|
+| `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` | none (temporary data) |
+| `push_subscriptions` | `subscriptions` | `20261022000200_create_push_subscriptions.js` | `db:pg:copy-subscriptions` |
+
+Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger (migration `20261022000000`). An update that sets `updated_at` itself keeps that value; the copy scripts rely on this to preserve MongoDB's timestamps.
+
+### `job_locks`
+
+A mutex for background jobs (e.g. the nightly catalog enrichment), so only one backend instance runs a job at a time.
+
+| Column | Type | Notes |
+|---|---|---|
+| `name` | `text`, primary key | e.g. `additional-information-enrichment` |
+| `owner` | `text` | `hostname:pid` of the process holding it |
+| `expires_at` | `timestamptz`, indexed | the lock counts as free after this |
+| `updated_at` | `timestamptz` | |
+
+Taking a lock is one atomic statement: `INSERT … ON CONFLICT (name) DO UPDATE … WHERE` the lock has expired or already belongs to the caller. If two processes race, one gets the row and the other gets nothing back, so only one runs the job.
+
+### `push_subscriptions`
+
+One browser subscribed to web-push earthquake notifications.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row; null for rows created in PostgreSQL |
+| `account_id` | `uuid` | optional; foreign key added when accounts move (Step 2) |
+| `endpoint` | `text`, unique | subscribing again with the same endpoint updates the row |
+| `expiration_time` | `bigint` | epoch ms, from the browser |
+| `key_auth`, `key_p256dh` | `text` | push encryption keys |
+| `status` | `subscription_status` enum | `active` or `invalid` |
+| `last_seen_at` | `timestamptz` | last (re-)subscribe |
+| `last_delivered_at` | `timestamptz` | |
+| `last_failure_at`, `last_failure_code` | `timestamptz`, `int` | last failed push and its HTTP status |
+| `consecutive_failures` | `int` | reset by a successful push or re-subscribe |
+| `invalidated_at`, `cleanup_after` | `timestamptz` | when it went invalid; deleted after `cleanup_after` |
+| `source_sw_script`, `client_user_agent`, `client_app_version`, `client_time` | | what the browser reported |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Indexes: `(status, last_seen_at)` and `cleanup_after`.
+
+### Scheduled deletes (instead of TTL indexes)
+
+PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/subscriptionCleanup.service.js`, every `NOTIF_CLEANUP_INTERVAL_MIN`, default 60 minutes) deletes expired job locks and invalid push subscriptions past `cleanup_after`, and logs the counts:
+
+```
+[notif-cleanup] expired=0 stale=0 removed=1 expiredLocks=0
+```
+
+---
+
+## 8. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -240,3 +362,6 @@ UPDATE_GOLDEN=1 npm run test:integration
 | `permission denied to create extension "postgis"` | Migrations run as a non-superuser | Run them as the `PG_USER` the container created (a superuser) |
 | `npm run test:integration` fails with `Could not find a working container runtime strategy` | Docker isn't running (or you ran it inside a container) | Start Docker Desktop and run it on your machine |
 | `earthquake-hub-postgres` never becomes healthy | Usually an init error on first start | `docker logs earthquake-hub-postgres`; if the volume is half-initialized, [start over](#starting-over) |
+| `relation "push_subscriptions" does not exist` (or `job_locks`) | The area is switched to PostgreSQL but the migrations haven't run | `npm run db:pg:migrate`, or set the area back to `mongodb` |
+| Backend exits with `JOB_LOCKS_DB must be "mongodb" or "postgres"` | Typo in an area setting | Fix the value in `.env` |
+| Subscriptions missing after switching to PostgreSQL | The copy script wasn't run | Run [the copy](#copying-push-subscriptions); it skips anything already there |

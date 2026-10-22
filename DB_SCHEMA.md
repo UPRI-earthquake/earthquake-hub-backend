@@ -335,6 +335,8 @@ Anonymous reports and marking your own report helpful earn nothing. Points live 
 
 ### 4.6 `subscriptions`
 
+> **Moved to PostgreSQL in dev** (`push_subscriptions`) when `PUSH_SUBSCRIPTIONS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#push_subscriptions).
+
 One browser that opted in to **web push** earthquake notifications. Not linked to accounts (anyone can subscribe).
 
 | Field | Type | Req / default | Notes |
@@ -379,6 +381,8 @@ No validation, no timestamps, no indexes beyond `_id`. Check existing documents 
 ---
 
 ### 4.8 `joblocks`
+
+> **Moved to PostgreSQL in dev** (`job_locks`) when `JOB_LOCKS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#job_locks).
 
 A tiny mutex so only one backend instance runs a background job at a time.
 
