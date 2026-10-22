@@ -16,8 +16,8 @@
 // Exit code: 0 = done (or dry run), 1 = validation failed, 2 = error.
 try { require('dotenv/config'); } catch (_) { /* prod images don't ship dotenv; env comes from compose */ }
 const mongoose = require('mongoose');
+const { chunk, toDate, upsertByLegacyId, missingLegacyIds } = require('./lib/pgCopy');
 
-const BATCH_SIZE = 500;
 const STATUSES = new Set(['active', 'invalid']);
 
 // Columns overwritten when a copied row is refreshed (everything but the ids)
@@ -26,12 +26,6 @@ const COPIED_COLUMNS = [
   'last_failure_at', 'last_failure_code', 'consecutive_failures', 'invalidated_at', 'cleanup_after',
   'source_sw_script', 'client_user_agent', 'client_app_version', 'client_time', 'created_at', 'updated_at',
 ];
-
-const toDate = (value) => {
-  if (value === null || value === undefined) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
-};
 
 const toEpochMs = (value) => {
   if (value === null || value === undefined) return null;
@@ -77,11 +71,6 @@ const toRow = (doc) => {
   };
 };
 
-const chunk = (items, size) => Array.from(
-  { length: Math.ceil(items.length / size) },
-  (_, i) => items.slice(i * size, (i + 1) * size),
-);
-
 /***************************************************************************
   * copySubscriptions:
   *     Copies MongoDB subscriptions to PostgreSQL (see the steps at the top of this file).
@@ -109,16 +98,11 @@ async function copySubscriptions({ db, dryRun = false, log = console.log }) {
 
   // Endpoints PostgreSQL already has under another (or no) legacy id
   const existingByEndpoint = new Map();
-  const existingByLegacyId = new Map();
-  for (const batch of chunk(candidates, BATCH_SIZE)) {
+  for (const batch of chunk(candidates)) {
     const existing = await db('push_subscriptions')
-      .select('endpoint', 'legacy_mongo_id', 'updated_at')
-      .whereIn('endpoint', batch.map((row) => row.endpoint))
-      .orWhereIn('legacy_mongo_id', batch.map((row) => row.legacy_mongo_id));
-    existing.forEach((row) => {
-      existingByEndpoint.set(row.endpoint, row);
-      if (row.legacy_mongo_id) existingByLegacyId.set(row.legacy_mongo_id.trim(), row);
-    });
+      .select('endpoint', 'legacy_mongo_id')
+      .whereIn('endpoint', batch.map((row) => row.endpoint));
+    existing.forEach((row) => existingByEndpoint.set(row.endpoint, row));
   }
   const conflicts = [];
   const rows = candidates.filter((row) => {
@@ -128,48 +112,14 @@ async function copySubscriptions({ db, dryRun = false, log = console.log }) {
     return !conflict;
   });
 
-  let inserted = 0;
-  let updated = 0;
-  let keptNewer = 0;
-
-  if (dryRun) {
-    rows.forEach((row) => {
-      const existing = existingByLegacyId.get(row.legacy_mongo_id);
-      if (!existing) inserted += 1;
-      else if (existing.updated_at <= row.updated_at) updated += 1;
-      else keptNewer += 1;
-    });
-  } else {
-    await db.transaction(async (trx) => {
-      for (const batch of chunk(rows, BATCH_SIZE)) {
-        // The WHERE skips rows PostgreSQL changed after they were copied; RETURNING gives only the
-        // rows actually written. updated_at is copied as-is (the trigger keeps an explicit value).
-        const written = await trx('push_subscriptions')
-          .insert(batch)
-          .onConflict('legacy_mongo_id')
-          .merge(COPIED_COLUMNS)
-          .where('push_subscriptions.updated_at', '<=', trx.ref('excluded.updated_at'))
-          .returning([trx.raw('(xmax = 0) AS inserted')]);
-        const insertedHere = written.filter((row) => row.inserted).length;
-        inserted += insertedHere;
-        updated += written.length - insertedHere;
-        keptNewer += batch.length - written.length;
-      }
-    });
-  }
+  const { inserted, updated, keptNewer } = await upsertByLegacyId({
+    db, table: 'push_subscriptions', rows, columns: COPIED_COLUMNS, dryRun,
+  });
 
   // Validation: every copyable subscription has its row, and the counts add up
-  let missing = [];
-  if (!dryRun) {
-    const present = new Set();
-    for (const batch of chunk(rows, BATCH_SIZE)) {
-      const found = await db('push_subscriptions')
-        .select('legacy_mongo_id')
-        .whereIn('legacy_mongo_id', batch.map((row) => row.legacy_mongo_id));
-      found.forEach((row) => present.add(row.legacy_mongo_id.trim()));
-    }
-    missing = rows.map((row) => row.legacy_mongo_id).filter((id) => !present.has(id));
-  }
+  const missing = dryRun
+    ? []
+    : await missingLegacyIds(db, 'push_subscriptions', rows.map((row) => row.legacy_mongo_id));
   const countsAddUp = docs.length === problems.length + conflicts.length + rows.length
     && rows.length === inserted + updated + keptNewer;
   const ok = missing.length === 0 && countsAddUp;
