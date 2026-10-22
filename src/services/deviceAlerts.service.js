@@ -1,5 +1,4 @@
-const Account = require('../models/account.model');
-const Device = require('../models/device.model');
+const DevicesRepo = require('../repositories/devices.repo');
 const EmailService = require('./email.service');
 
 const DEFAULT_ADMIN_MONITOR_EMAIL = 'earthquake@science.upd.edu.ph';
@@ -191,20 +190,20 @@ function buildEventDetails(payload, resolvedDevice = null) {
 async function resolveDevice(payload = {}) {
   const streamId = normalizeText(payload.device?.streamId);
   if (streamId) {
-    const byStream = await Device.findOne({ streamId });
+    const byStream = await DevicesRepo.findByStreamId(streamId);
     if (byStream) return byStream;
   }
 
   const macAddress = normalizeText(payload.device?.macAddress);
   if (macAddress) {
-    const byMac = await Device.findOne({ macAddress });
+    const byMac = await DevicesRepo.findByMacAddress(macAddress);
     if (byMac) return byMac;
   }
 
   const network = normalizeText(payload.device?.network).toUpperCase();
   const station = normalizeText(payload.device?.station).toUpperCase();
   if (network && station) {
-    return Device.findOne({ network, station });
+    return DevicesRepo.findByNetworkStation(network, station);
   }
 
   return null;
@@ -213,10 +212,7 @@ async function resolveDevice(payload = {}) {
 async function getOptedInRecipients(deviceId) {
   if (!deviceId) return [];
 
-  const accounts = await Account.find({
-    devices: deviceId,
-    'alertPreferences.rshakeEmailEnabled': true,
-  }).select('email');
+  const accounts = await DevicesRepo.findAccountsListing(deviceId, { alertsEnabled: true });
 
   return dedupeEmails(
     (accounts || [])
@@ -385,7 +381,7 @@ async function sendDeviceAlertEmails(payload = {}) {
     };
   }
 
-  const optedInRecipients = await getOptedInRecipients(resolvedDevice?._id);
+  const optedInRecipients = await getOptedInRecipients(resolvedDevice?.id);
   const adminRecipients = dedupeEmails(getAdminRecipients());
   const adminSet = new Set(adminRecipients.map((email) => email.toLowerCase()));
   const userRecipients = adminOnly

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
-const Account = require('../models/account.model');
-const Device = require('../models/device.model');
+const AccountsRepo = require('../repositories/accounts.repo');
+const DevicesRepo = require('../repositories/devices.repo');
 
 const DEFAULT_SECRET_BYTES = 32;
 
@@ -51,13 +51,13 @@ async function resolveCandidateDevices(identifiers = {}) {
   const lookups = [];
 
   if (normalized.streamId) {
-    lookups.push(Device.findOne({ streamId: normalized.streamId }));
+    lookups.push(DevicesRepo.findByStreamId(normalized.streamId));
   }
   if (normalized.macAddress) {
-    lookups.push(Device.findOne({ macAddress: normalized.macAddress }));
+    lookups.push(DevicesRepo.findByMacAddress(normalized.macAddress));
   }
   if (normalized.network && normalized.station) {
-    lookups.push(Device.findOne({ network: normalized.network, station: normalized.station }));
+    lookups.push(DevicesRepo.findByNetworkStation(normalized.network, normalized.station));
   }
 
   if (lookups.length === 0) {
@@ -67,13 +67,13 @@ async function resolveCandidateDevices(identifiers = {}) {
   const results = await Promise.all(lookups);
   const unique = new Map();
   (results || []).filter(Boolean).forEach((device) => {
-    unique.set(String(device._id), device);
+    unique.set(device.id, device);
   });
   return Array.from(unique.values());
 }
 
 async function findOwnedDevice(username, identifiers = {}) {
-  const account = await Account.findOne({ username }).select('devices');
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'usernameNotFound' };
   }
@@ -87,8 +87,7 @@ async function findOwnedDevice(username, identifiers = {}) {
   }
 
   const [device] = devices;
-  const ownedDeviceIds = new Set((account.devices || []).map((value) => String(value)));
-  if (!ownedDeviceIds.has(String(device._id))) {
+  if (!(await DevicesRepo.accountHasDevice(account.id, device.id))) {
     return { str: 'deviceNotOwned' };
   }
 
@@ -104,18 +103,19 @@ async function issueAlertCredentialForOwnedDevice({ username, identifiers = {} }
   const sharedSecret = buildSecretValue();
   const issuedAt = new Date();
 
-  lookup.device.rshakeAlertCredentialHash = hashCredential(sharedSecret);
-  lookup.device.rshakeAlertCredentialIssuedAt = issuedAt;
-  await lookup.device.save();
+  const device = await DevicesRepo.update(lookup.device.id, {
+    rshakeAlertCredentialHash: hashCredential(sharedSecret),
+    rshakeAlertCredentialIssuedAt: issuedAt,
+  });
 
   return {
     str: 'success',
     payload: {
-      deviceId: String(lookup.device._id),
+      deviceId: device.id,
       issuedAt: issuedAt.toISOString(),
       authHeader: 'X-RShake-Alert-Secret',
       sharedSecret,
-      deviceInfo: deviceInfoPayload(lookup.device),
+      deviceInfo: deviceInfoPayload(device),
     },
   };
 }
@@ -142,7 +142,7 @@ async function verifyDeviceAlertCredential({ providedSecret, device }) {
     return {
       matched: false,
       required: false,
-      deviceId: String(candidate._id),
+      deviceId: candidate.id,
     };
   }
 
@@ -150,14 +150,14 @@ async function verifyDeviceAlertCredential({ providedSecret, device }) {
     return {
       matched: false,
       required: true,
-      deviceId: String(candidate._id),
+      deviceId: candidate.id,
     };
   }
 
   return {
     matched: hashesMatch(normalizedSecret, expectedHash),
     required: true,
-    deviceId: String(candidate._id),
+    deviceId: candidate.id,
   };
 }
 

@@ -1,17 +1,15 @@
-jest.mock('../src/models/account.model', () => ({
-  find: jest.fn(),
-}));
-
-jest.mock('../src/models/device.model', () => ({
-  findOne: jest.fn(),
+jest.mock('../src/repositories/devices.repo', () => ({
+  findByStreamId: jest.fn(),
+  findByMacAddress: jest.fn(),
+  findByNetworkStation: jest.fn(),
+  findAccountsListing: jest.fn(),
 }));
 
 jest.mock('../src/services/email.service', () => ({
   sendMail: jest.fn().mockResolvedValue({ messageId: 'mock-id' }),
 }));
 
-const Account = require('../src/models/account.model');
-const Device = require('../src/models/device.model');
+const DevicesRepo = require('../src/repositories/devices.repo');
 const EmailService = require('../src/services/email.service');
 const DeviceAlertsService = require('../src/services/deviceAlerts.service');
 
@@ -25,8 +23,8 @@ describe('deviceAlerts.service admin-only routing', () => {
       EMAIL_FROM: 'earthquake@science.upd.edu.ph',
     };
 
-    Device.findOne.mockResolvedValue({
-      _id: 'device-1',
+    DevicesRepo.findByStreamId.mockResolvedValue({
+      id: 'device-1',
       network: 'AM',
       station: 'TEST1',
       streamId: 'AM_TEST1_.*/MSEED',
@@ -42,9 +40,7 @@ describe('deviceAlerts.service admin-only routing', () => {
   });
 
   function mockAccounts(emails) {
-    Account.find.mockReturnValue({
-      select: jest.fn().mockResolvedValue((emails || []).map((email) => ({ email }))),
-    });
+    DevicesRepo.findAccountsListing.mockResolvedValue((emails || []).map((email) => ({ email })));
   }
 
   function basePayload(alertCode = 'STREAM_ERROR') {

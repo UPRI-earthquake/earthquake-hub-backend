@@ -1,15 +1,15 @@
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 
-jest.mock('../src/models/account.model', () => ({
-  findOne: jest.fn(),
+jest.mock('../src/repositories/accounts.repo', () => ({
+  findByUsername: jest.fn(),
 }));
 
 jest.mock('../src/services/device.service', () => ({
   getAccountDevices: jest.fn(),
 }));
 
-const Account = require('../src/models/account.model');
+const AccountsRepo = require('../src/repositories/accounts.repo');
 const DeviceService = require('../src/services/device.service');
 
 function signRefreshToken(payload = {}, scope = 'device') {
@@ -44,7 +44,7 @@ describe('Device refresh token route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Account.findOne.mockResolvedValue({
+    AccountsRepo.findByUsername.mockResolvedValue({
       username: 'sensor-user',
       roles: ['sensor'],
       isApproved: true,
@@ -74,7 +74,7 @@ describe('Device refresh token route', () => {
       network: 'AM',
       station: 'TEST1',
     });
-    expect(Account.findOne).toHaveBeenCalledWith({ username: 'sensor-user' });
+    expect(AccountsRepo.findByUsername).toHaveBeenCalledWith('sensor-user');
     expect(DeviceService.getAccountDevices).toHaveBeenCalledWith('sensor-user');
   });
 
@@ -86,7 +86,7 @@ describe('Device refresh token route', () => {
       });
 
     expect(response.statusCode).toBe(401);
-    expect(Account.findOne).not.toHaveBeenCalled();
+    expect(AccountsRepo.findByUsername).not.toHaveBeenCalled();
     expect(DeviceService.getAccountDevices).not.toHaveBeenCalled();
   });
 
@@ -103,7 +103,7 @@ describe('Device refresh token route', () => {
   });
 
   it('rejects refresh tokens for deleted accounts', async () => {
-    Account.findOne.mockResolvedValue(null);
+    AccountsRepo.findByUsername.mockResolvedValue(null);
 
     const response = await request(app)
       .post('/device/refresh-token')
@@ -117,7 +117,7 @@ describe('Device refresh token route', () => {
   });
 
   it('rejects refresh tokens for unapproved brgy accounts', async () => {
-    Account.findOne.mockResolvedValue({
+    AccountsRepo.findByUsername.mockResolvedValue({
       username: 'brgy-user',
       roles: ['brgy'],
       isApproved: false,

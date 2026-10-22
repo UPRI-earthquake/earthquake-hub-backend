@@ -1,37 +1,18 @@
-const Device = require('../models/device.model');
-const Account = require('../models/account.model');
+const AccountsRepo = require('../repositories/accounts.repo');
+const DevicesRepo = require('../repositories/devices.repo');
+const { DuplicateKeyError } = require('../repositories/errors');
+const { withTransaction, isTransactionUnsupported } = require('../repositories/transactions');
 const {generateAMStationCode} = require('../controllers/helpers')
 
-// A unique index (network+station, streamId or macAddress) rejected the write:
-// another device record already has this identity.
-const isDuplicateKeyError = (err) => err?.code === 11000;
-
-// Saves a device, returning false instead of throwing when it collides with another device's identity.
-async function saveDeviceIfUnique(device) {
+// Writes a device (create or update), resolving to null instead of throwing when it collides with
+// another device's identity (network+station, streamId or macAddress).
+async function writeDeviceIfUnique(write) {
   try {
-    await device.save();
-    return true;
+    return await write();
   } catch (err) {
-    if (isDuplicateKeyError(err)) return false;
+    if (err instanceof DuplicateKeyError) return null;
     throw err;
   }
-}
-
-async function clearReleasedEntries({ deviceId, streamId, macAddress }, session = null) {
-  const pullConditions = [];
-  if (deviceId) pullConditions.push({ deviceId });
-  if (streamId) pullConditions.push({ streamId });
-  if (macAddress) pullConditions.push({ macAddress });
-
-  if (!pullConditions.length) return 0;
-
-  const pullQuery = pullConditions.length === 1 ? pullConditions[0] : { $or: pullConditions };
-  const filter = { releasedDevices: { $elemMatch: pullQuery } };
-  const update = { $pull: { releasedDevices: pullQuery } };
-  const options = session ? { session } : undefined;
-
-  const result = await Account.updateMany(filter, update, options);
-  return result?.modifiedCount || result?.nModified || 0;
 }
 
 /***************************************************************************
@@ -62,10 +43,7 @@ async function clearReleasedEntries({ deviceId, streamId, macAddress }, session 
  ***************************************************************************/
 exports.getAllDeviceLocations = async () => {
   // The station map needs every device, but only these fields.
-  const allDevices = await Device.find(
-    {},
-    { _id: 0, network: 1, station: 1, latitude: 1, longitude: 1, activity: 1, description: 1 },
-  ).lean();
+  const allDevices = await DevicesRepo.listLocations();
 
   if( ! allDevices){
     return {str: 'noDevicesFound'};
@@ -117,10 +95,10 @@ exports.getAllDeviceLocations = async () => {
   *       an empty array of devices.
  ***************************************************************************/
 exports.getAccountDevices = async (username) => {
-  const citizen = await Account.findOne({ 'username': username }).populate('devices');
+  const citizen = await AccountsRepo.findByUsername(username);
   if( ! citizen) { return {str: 'usernameNotFound'} }
 
-  const linkedDevices = (citizen.devices || []).filter(Boolean);
+  const linkedDevices = await DevicesRepo.listAccountDevices(citizen.id);
   let devicePayload = [];
 
   if (linkedDevices.length > 0) {
@@ -164,19 +142,7 @@ exports.getAccountDevices = async (username) => {
   return {
     str: 'success',
     devices: devicePayload,
-    releasedDevices: (citizen.releasedDevices || []).filter(Boolean).map((entry) => ({
-      deviceId: entry.deviceId || entry.device || null,
-      network: entry.network,
-      station: entry.station,
-      description: entry.description,
-      streamId: entry.streamId,
-      macAddress: entry.macAddress,
-      longitude: entry.longitude,
-      latitude: entry.latitude,
-      elevation: entry.elevation,
-      releasedAt: entry.releasedAt,
-      reason: entry.reason,
-    })),
+    releasedDevices: await DevicesRepo.listReleases(citizen.id),
   };
 }
 
@@ -213,7 +179,7 @@ exports.getAccountDevices = async (username) => {
   *     - If the device is not yet linked (macAddress is null), the status will be "Not yet linked" with a null statusSince.
  ***************************************************************************/
 exports.getDeviceStatus = async (network, station) => {
-  const device = await Device.findOne({ network: network, station: station });
+  const device = await DevicesRepo.findByNetworkStation(network, station);
   if( ! device) { return {str: 'deviceNotFound'} }
 
   let status = '';
@@ -282,7 +248,7 @@ exports.getDeviceStatus = async (network, station) => {
  ***************************************************************************/
 exports.linkDevice = async(username, elevation, longitude, latitude, macAddress, streamId) => {
   // check if user exists
-  const currentAccount = await Account.findOne({ 'username' : username }).populate('devices');
+  const currentAccount = await AccountsRepo.findByUsername(username);
   if(!currentAccount){
     return {str:'usernameNotFound'};
   }
@@ -291,36 +257,39 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   const [network, station] = streamId.split(",")[0].split("_")
 
   // check if user already has the device in their record
-  const deviceOwned = currentAccount.devices.find(device => device.macAddress === macAddress);
+  const accountDevices = await DevicesRepo.listAccountDevices(currentAccount.id);
+  const deviceOwned = accountDevices.find(device => device.macAddress === macAddress);
   if(deviceOwned){
     // If the device is marked unlinked, treat this as a relink that restores activity only.
     if (deviceOwned.activity === 'unlinked') {
-      deviceOwned.description = `${username}'s device`;
-      deviceOwned.network = (network || deviceOwned.network || '').toUpperCase();
-      deviceOwned.station = (station || deviceOwned.station || '').toUpperCase();
-      deviceOwned.elevation = elevation;
-      deviceOwned.longitude = longitude;
-      deviceOwned.latitude = latitude;
-      deviceOwned.streamId = streamId;
-      deviceOwned.activity = 'inactive';
-      deviceOwned.activityToggleTime = new Date();
-      if (!(await saveDeviceIfUnique(deviceOwned))) {
+      const relinked = await writeDeviceIfUnique(() => DevicesRepo.update(deviceOwned.id, {
+        description: `${username}'s device`,
+        network: (network || deviceOwned.network || '').toUpperCase(),
+        station: (station || deviceOwned.station || '').toUpperCase(),
+        elevation: elevation,
+        longitude: longitude,
+        latitude: latitude,
+        streamId: streamId,
+        activity: 'inactive',
+        activityToggleTime: new Date(),
+      }));
+      if (!relinked) {
         return { str: 'alreadyLinkedToSomeone' };
       }
-      await clearReleasedEntries({
-        deviceId: deviceOwned._id,
+      await DevicesRepo.clearReleases({
+        deviceId: relinked.id,
         streamId,
         macAddress,
       });
 
       const payload = {
         deviceInfo: {
-          network: deviceOwned.network,
-          station: deviceOwned.station,
-          longitude: deviceOwned.longitude,
-          latitude: deviceOwned.latitude,
-          elevation: deviceOwned.elevation,
-          streamId: deviceOwned.streamId
+          network: relinked.network,
+          station: relinked.station,
+          longitude: relinked.longitude,
+          latitude: relinked.latitude,
+          elevation: relinked.elevation,
+          streamId: relinked.streamId
         }
       };
       return { str: 'success', payload };
@@ -336,8 +305,8 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
         streamId: deviceOwned.streamId
       }
     }
-    await clearReleasedEntries({
-      deviceId: deviceOwned._id,
+    await DevicesRepo.clearReleases({
+      deviceId: deviceOwned.id,
       streamId,
       macAddress,
     });
@@ -345,9 +314,9 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   }
 
   // check if device's mac address already exists in the database
-  const device = await Device.findOne({macAddress: macAddress})
+  const device = await DevicesRepo.findByMacAddress(macAddress)
   if (device) { // device is already saved to db
-    const existingOwner = await Account.findOne({ devices: device._id }).select('username');
+    const [existingOwner] = await DevicesRepo.findAccountsListing(device.id);
 
     // Preserve ownership history: only the last linked account may relink.
     if (existingOwner && existingOwner.username !== username) {
@@ -356,37 +325,37 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
 
     if (device.activity === 'unlinked') {
       // Relink existing record and refresh description/ownership.
-      device.description = `${username}'s device`;
-      device.network = (network || device.network || '').toUpperCase();
-      device.station = (station || device.station || '').toUpperCase();
-      device.elevation = elevation;
-      device.longitude = longitude;
-      device.latitude = latitude;
-      device.streamId = streamId;
-      device.activity = 'inactive';
-      device.activityToggleTime = new Date();
-      if (!(await saveDeviceIfUnique(device))) {
+      const relinked = await writeDeviceIfUnique(() => DevicesRepo.update(device.id, {
+        description: `${username}'s device`,
+        network: (network || device.network || '').toUpperCase(),
+        station: (station || device.station || '').toUpperCase(),
+        elevation: elevation,
+        longitude: longitude,
+        latitude: latitude,
+        streamId: streamId,
+        activity: 'inactive',
+        activityToggleTime: new Date(),
+      }));
+      if (!relinked) {
         return { str: 'alreadyLinkedToSomeone' };
       }
 
       // Backfill account association if legacy unlinking removed it.
-      await currentAccount.updateOne({
-        $addToSet: { devices: device._id }
-      });
-      await clearReleasedEntries({
-        deviceId: device._id,
+      await DevicesRepo.addToAccount(currentAccount.id, [relinked.id]);
+      await DevicesRepo.clearReleases({
+        deviceId: relinked.id,
         streamId,
         macAddress,
       });
 
       const payload = {
         deviceInfo: {
-          network: device.network,
-          station: device.station,
-          longitude: device.longitude,
-          latitude: device.latitude,
-          elevation: device.elevation,
-          streamId: device.streamId
+          network: relinked.network,
+          station: relinked.station,
+          longitude: relinked.longitude,
+          latitude: relinked.latitude,
+          elevation: relinked.elevation,
+          streamId: relinked.streamId
         }
       };
       return {str:'success', payload};
@@ -403,8 +372,8 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     }
   }
 
-  // Create new device with provided info
-  const newDevice = new Device({
+  // Create new device with provided info; a collision means another record already has this station/stream/MAC
+  const newDevice = await writeDeviceIfUnique(() => DevicesRepo.create({
     description: `${username}'s device`,
     network: network.toUpperCase(),
     station: station.toUpperCase(),
@@ -414,23 +383,20 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     macAddress: macAddress,
     streamId: streamId,
     activityToggleTime: new Date(),
-  });
-  // save new entry to device collections; a collision means another record already has this station/stream/MAC
-  if (!(await saveDeviceIfUnique(newDevice))) {
+  }));
+  if (!newDevice) {
     return { str: 'alreadyLinkedToSomeone' };
   }
 
-  await currentAccount.updateOne({ // update devices array under accounts collection
-    $push: { devices: newDevice._id }
-  });
-  await clearReleasedEntries({
-    deviceId: newDevice._id,
+  await DevicesRepo.addToAccount(currentAccount.id, [newDevice.id]); // add to the account's device list
+  await DevicesRepo.clearReleases({
+    deviceId: newDevice.id,
     streamId,
     macAddress,
   });
 
   // Query updated device information
-  const updatedDevice = await Device.findOne({ _id: newDevice._id })
+  const updatedDevice = await DevicesRepo.findById(newDevice.id)
 
   const payload = {
     deviceInfo: {
@@ -473,7 +439,7 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   *       "success".
  ***************************************************************************/
 exports.unlinkDevice = async(username, macAddress, streamId) => {
-  const user = await Account.findOne({ 'username': username }).populate('devices')
+  const user = await AccountsRepo.findByUsername(username)
   if(!user){
     return {str:'usernameNotFound'};
   }
@@ -481,14 +447,15 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
   // Must be an existing user account to accept device unlinking request - update db.
   // get device with same Network and Station
   const [network, station] = streamId.split(",")[0].split("_")
-  const device = await Device.findOne({ network:network, station:station })
+  const device = await DevicesRepo.findByNetworkStation(network, station)
 
   if(!device){
     return {str:'deviceNotFound'};
   }
 
-  // find the index of the device in the user.devices array
-  const index = user.devices.findIndex(dev => dev.id === device.id);
+  // find the index of the device in the account's device list
+  const userDevices = await DevicesRepo.listAccountDevices(user.id);
+  const index = userDevices.findIndex(dev => dev.id === device.id);
 
   if (index === -1) {
     // device not found in the account.devices array, handle error or return null
@@ -497,7 +464,7 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
 
   const releaseTimestamp = new Date();
   const releaseSnapshot = {
-    deviceId: device._id,
+    deviceId: device.id,
     streamId: device.streamId,
     macAddress: device.macAddress,
     network: device.network,
@@ -510,48 +477,23 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
     reason: 'unlink',
   };
 
-  const applyRelease = async (session = null) => {
-    const deviceUpdate = {
-      $set: {
-        activity: 'unlinked',
-        activityToggleTime: releaseTimestamp,
-        rshakeAlertCredentialHash: null,
-        rshakeAlertCredentialIssuedAt: null,
-      },
-    };
-    const accountUpdate = {
-      $pull: { devices: device._id },
-      $push: { releasedDevices: releaseSnapshot },
-    };
-
-    if (session) {
-      await Device.updateOne({ _id: device._id }, deviceUpdate, { session });
-      await Account.updateOne({ _id: user._id }, accountUpdate, { session });
-      return;
-    }
-
-    await Device.updateOne({ _id: device._id }, deviceUpdate);
-    await Account.updateOne({ _id: user._id }, accountUpdate);
+  const applyRelease = async (tx = null) => {
+    await DevicesRepo.update(device.id, {
+      activity: 'unlinked',
+      activityToggleTime: releaseTimestamp,
+      rshakeAlertCredentialHash: null,
+      rshakeAlertCredentialIssuedAt: null,
+    }, { tx });
+    await DevicesRepo.recordRelease(user.id, device.id, releaseSnapshot, { tx });
   };
 
-  let session = null;
   try {
-    session = await Account.startSession();
-    await session.withTransaction(async () => {
-      await applyRelease(session);
-    });
+    await withTransaction((tx) => applyRelease(tx));
   } catch (err) {
-    const message = String(err?.message || '').toLowerCase();
-    const transactionUnsupported =
-      message.includes('replica set') || message.includes('transactions are not supported');
-    if (!transactionUnsupported) {
+    if (!isTransactionUnsupported(err)) {
       throw err;
     }
     await applyRelease();
-  } finally {
-    if (session) {
-      await session.endSession();
-    }
   }
 
   return {str:'success'}
@@ -574,15 +516,11 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
   *     "deviceOwnedElsewhere":when the device is linked to another account
   ***************************************************************************/
 exports.resetDeviceLink = async (username, macAddress, streamId) => {
-  const lookupConditions = [];
-  if (macAddress) lookupConditions.push({ macAddress });
-  if (streamId) lookupConditions.push({ streamId });
-
-  if (lookupConditions.length === 0) {
+  if (!macAddress && !streamId) {
     return { str: 'missingIdentifiers' };
   }
 
-  const candidates = await Device.find({ $or: lookupConditions });
+  const candidates = await DevicesRepo.findByMacAddressOrStreamId({ macAddress, streamId });
   if (!candidates || candidates.length === 0) {
     return { str: 'deviceNotFound' };
   }
@@ -593,7 +531,7 @@ exports.resetDeviceLink = async (username, macAddress, streamId) => {
   }
 
   const device = candidates[0];
-  const linkedAccounts = await Account.find({ devices: device._id });
+  const linkedAccounts = await DevicesRepo.findAccountsListing(device.id);
   const linkedUsernames = linkedAccounts.map((acc) => acc.username);
   const ownedByRequester = username && linkedUsernames.includes(username);
 
@@ -607,17 +545,14 @@ exports.resetDeviceLink = async (username, macAddress, streamId) => {
     return { str: 'deviceOwnedElsewhere', linkedUsernames };
   }
 
-  await Account.updateMany(
-    { devices: device._id },
-    { $pull: { devices: device._id } },
-  );
-  await clearReleasedEntries({
-    deviceId: device._id,
+  await DevicesRepo.removeFromAllAccounts(device.id);
+  await DevicesRepo.clearReleases({
+    deviceId: device.id,
     streamId: device.streamId || streamId,
     macAddress: device.macAddress || macAddress,
   });
 
-  await Device.deleteOne({ _id: device._id });
+  await DevicesRepo.remove(device.id);
 
   return {
     str: 'success',

@@ -1,7 +1,7 @@
 const axios = require('axios');
 const Joi = require('joi');
 const EQEvents = require('../models/events.model');
-const Device = require('../models/device.model');
+const DevicesRepo = require('../repositories/devices.repo');
 const { toGeoPoint } = require('../models/geoPoint');
 const puppeteer = require('puppeteer-core');
 
@@ -466,16 +466,9 @@ function formatFdsnTime(date) {
   return iso.slice(0, 19);
 }
 
-// Station lookups only need devices that can be placed on a map, and only these fields.
-const STATION_DEVICE_FILTER = {
-  station: { $nin: [null, ''] },
-  latitude: { $ne: null },
-  longitude: { $ne: null },
-};
-const STATION_DEVICE_FIELDS = { _id: 0, station: 1, latitude: 1, longitude: 1 };
-
-function findStationDevices(extraFilter = {}) {
-  return Device.find({ ...STATION_DEVICE_FILTER, ...extraFilter }, STATION_DEVICE_FIELDS).lean();
+// Station lookups only need devices that can be placed on a map: [{ station, latitude, longitude }]
+function findStationDevices({ activity } = {}) {
+  return DevicesRepo.listStationLocations({ activity });
 }
 
 // Event fields read by the station refinement (getEventOnlineStationsResult + buildRecordingAvailabilityUpdate).

@@ -5,7 +5,7 @@ const NotificationsService = require('../services/notifications.service')
 const DeviceAlertsService = require('../services/deviceAlerts.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
-const Device = require('../models/device.model');
+const DevicesRepo = require('../repositories/devices.repo');
 
 const rshakeAlertDeviceSchema = Joi.object({
   network: Joi.string().trim().uppercase().min(2).max(4),
@@ -289,11 +289,9 @@ exports.newStationStatus = async (req, res, next) => {
 
     // Best-effort DB sync (optional)
     try {
-      const dev = await Device.findOne({ network, station });
+      const dev = await DevicesRepo.findByNetworkStation(network, station);
       if (dev) {
-        dev.activity = activity;
-        dev.activityToggleTime = since;
-        await dev.save();
+        await DevicesRepo.update(dev.id, { activity, activityToggleTime: since });
       }
     } catch (_) {}
 
