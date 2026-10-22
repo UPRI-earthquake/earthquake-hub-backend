@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/accounts/ringserver-hosts"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Get active ringserver hosts successful",
+      "payload": [
+        {
+          "username": "golden_brgy",
+          "ringserverUrl": "ringserver.golden.example.org",
+          "ringserverPort": 18000
+        }
+      ]
+    }
+  }
+}

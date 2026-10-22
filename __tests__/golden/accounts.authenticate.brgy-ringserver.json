@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/authenticate",
+    "body": {
+      "username": "golden_brgy",
+      "password": "Golden-Password-2026!",
+      "role": "brgy"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 22,
+      "message": "Authentication successful",
+      "username": "golden_brgy",
+      "accessToken": {
+        "jwt": {
+          "username": "golden_brgy",
+          "role": "brgy",
+          "iat": "<now>",
+          "exp": "<now + 31536000s>"
+        }
+      },
+      "refreshToken": {
+        "jwt": {
+          "username": "golden_brgy",
+          "role": "brgy",
+          "iat": "<now>",
+          "exp": "<now + 31536000s>"
+        }
+      },
+      "passwordStatus": "current",
+      "passwordPolicyVersion": 2,
+      "alertPreferences": {
+        "rshakeEmailEnabled": false
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/accounts"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "set-cookie": [
+        "accessToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax",
+        "refreshToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": 0,
+      "message": "Account deleted."
+    }
+  }
+}

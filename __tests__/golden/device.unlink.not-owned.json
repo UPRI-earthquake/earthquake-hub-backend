@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/unlink",
+    "body": {
+      "macAddress": "B8:27:EB:00:00:01",
+      "streamId": "AM_R0001_.*/MSEED"
+    },
+    "headers": {
+      "Authorization": "<bearer token>"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Device does not belong to you"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/verify-sensor-token",
+    "body": {
+      "token": {
+        "jwt": {
+          "username": "other_citizen",
+          "role": "sensor",
+          "iat": "<now>",
+          "exp": "<now + 2592000s>"
+        }
+      }
+    },
+    "headers": {
+      "Authorization": "<bearer token>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 40,
+      "message": "Sensor is a valid streamer",
+      "sensorInfo": {
+        "username": "other_citizen",
+        "role": "sensor",
+        "streamIds": [
+          "AM_R0001_.*/MSEED"
+        ],
+        "tokenExp": "<token expiry>"
+      }
+    }
+  }
+}

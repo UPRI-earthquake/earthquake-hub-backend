@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/reset-link",
+    "body": {
+      "macAddress": "B8:27:EB:00:3B:2D",
+      "streamId": "AM_R3B2D_.*/MSEED"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 162,
+      "message": "Authentication required to reset this linked device. Sign in and retry from the linked account."
+    }
+  }
+}

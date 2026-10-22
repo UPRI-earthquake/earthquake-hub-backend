@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/register",
+    "body": {
+      "role": "brgy",
+      "username": "new_brgy",
+      "email": "new.brgy@example.org",
+      "password": "Golden-Password-2026!",
+      "confirmPassword": "Golden-Password-2026!",
+      "ringserverUrl": "ringserver.golden.example.org",
+      "ringserverPort": 18000
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 113,
+      "message": "Ringserver Url already in use"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/register",
+    "body": {
+      "role": "brgy",
+      "username": "new_brgy",
+      "email": "new.brgy@example.org",
+      "password": "Golden-Password-2026!",
+      "confirmPassword": "Golden-Password-2026!",
+      "ringserverUrl": "new.golden.example.org",
+      "ringserverPort": 18000
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 10,
+      "message": "Succesfully created account"
+    }
+  }
+}

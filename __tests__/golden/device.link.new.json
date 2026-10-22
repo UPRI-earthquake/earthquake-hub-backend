@@ -1,0 +1,64 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/link",
+    "body": {
+      "username": "golden_citizen",
+      "password": "Golden-Password-2026!",
+      "role": "sensor",
+      "elevation": "55",
+      "latitude": "14.64",
+      "longitude": "121.06",
+      "macAddress": "B8:27:EB:12:AB:CD",
+      "streamId": "AM_RABCD_.*/MSEED"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 60,
+      "message": "Device-Account Linking Successful",
+      "payload": {
+        "deviceInfo": {
+          "network": "AM",
+          "station": "RABCD",
+          "longitude": 121.06,
+          "latitude": 14.64,
+          "elevation": 55,
+          "streamId": "AM_RABCD_.*/MSEED"
+        },
+        "rshakeAlertCredential": {
+          "deviceId": "<new device id>",
+          "issuedAt": "<now>",
+          "authHeader": "X-RShake-Alert-Secret",
+          "sharedSecret": "<secret>",
+          "deviceInfo": {
+            "network": "AM",
+            "station": "RABCD",
+            "streamId": "AM_RABCD_.*/MSEED",
+            "macAddress": "B8:27:EB:12:AB:CD"
+          }
+        },
+        "accessToken": {
+          "jwt": {
+            "username": "golden_citizen",
+            "role": "sensor",
+            "iat": "<now>",
+            "exp": "<now + 2592000s>"
+          }
+        },
+        "refreshToken": {
+          "jwt": {
+            "username": "golden_citizen",
+            "role": "sensor",
+            "iat": "<now>",
+            "exp": "<now + 7776000s>"
+          }
+        }
+      }
+    }
+  }
+}

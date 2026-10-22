@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/my-devices"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Get owned devices success",
+      "devices": [
+        {
+          "network": "AM",
+          "station": "R3B2D",
+          "description": "renamed_citizen's device",
+          "activity": "active",
+          "status": "Streaming",
+          "statusSince": "Fri, 01 May 2026 08:00:00 GMT",
+          "activityToggleTime": "2026-05-01T08:00:00.000Z",
+          "longitude": 121.07,
+          "latitude": 14.65,
+          "elevation": 70
+        }
+      ],
+      "releasedDevices": [
+        {
+          "deviceId": "69000000000000000000d009",
+          "network": "AM",
+          "station": "R9999",
+          "description": "golden_citizen's device",
+          "streamId": "AM_R9999_.*/MSEED",
+          "macAddress": "B8:27:EB:00:99:99",
+          "longitude": 121.05,
+          "latitude": 14.6,
+          "elevation": 60,
+          "releasedAt": "2026-03-01T00:00:00.000Z",
+          "reason": "unlink"
+        }
+      ]
+    }
+  }
+}

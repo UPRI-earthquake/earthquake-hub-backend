@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/reset-link",
+    "body": {
+      "macAddress": "B8:27:EB:00:3B:2D",
+      "streamId": "AM_R3B2D_.*/MSEED"
+    },
+    "headers": {
+      "Authorization": "<bearer token>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 62,
+      "message": "Device link reset. Re-register to link again.",
+      "payload": {
+        "removedAccounts": [
+          "golden_citizen",
+          "golden_brgy"
+        ],
+        "ownershipConfirmed": true
+      }
+    }
+  }
+}

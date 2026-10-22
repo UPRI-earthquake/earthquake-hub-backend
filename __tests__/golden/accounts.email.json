@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/accounts/email",
+    "body": {
+      "email": "golden.changed@example.org",
+      "currentPassword": "Golden-Password-2026!"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Email updated.",
+      "updated": {
+        "email": true
+      }
+    }
+  }
+}

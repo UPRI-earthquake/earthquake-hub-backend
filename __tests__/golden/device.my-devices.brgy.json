@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/my-devices"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Get owned devices success",
+      "devices": [
+        {
+          "network": "AM",
+          "station": "R3B2D",
+          "description": "golden_citizen's device",
+          "activity": "active",
+          "status": "Streaming",
+          "statusSince": "Fri, 01 May 2026 08:00:00 GMT",
+          "activityToggleTime": "2026-05-01T08:00:00.000Z",
+          "longitude": 121.07,
+          "latitude": 14.65,
+          "elevation": 70
+        }
+      ],
+      "releasedDevices": []
+    }
+  }
+}
