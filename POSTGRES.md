@@ -215,11 +215,20 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
 | Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
+| Accounts | `src/repositories/accounts.repo.js` | (Step 2) | MongoDB |
+| Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | (Step 2) | MongoDB |
+
+Repositories return plain objects with an `id`, never database documents, and services change data only through repository functions, so a PostgreSQL version can stand in unchanged. Two shared helpers keep the rest database-neutral:
+
+- `src/repositories/errors.js`: a write that breaks a unique rule throws `DuplicateKeyError` (with the colliding `fields`), whichever database rejected it.
+- `src/repositories/transactions.js`: `withTransaction(async (tx) => { ... })` runs writes together; repository functions join it when passed `{ tx }`.
 
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers and body. The `pilotAreas.golden.*.integration.test.js` files run the real app against seeded data, once with the areas on PostgreSQL and once on MongoDB, and compare each response with the same recording.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` once with the areas on PostgreSQL and once on MongoDB, `peopleAndSensors` (accounts and devices) on MongoDB until Step 2 moves them.
+
+Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
