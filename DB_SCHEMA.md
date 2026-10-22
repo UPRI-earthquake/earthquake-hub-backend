@@ -363,6 +363,8 @@ One browser that opted in to **web push** earthquake notifications. Not linked t
 
 ### 4.7 `significant-eqs`
 
+> **Moved to PostgreSQL in dev** (`significant_eqs`) when `SIGNIFICANT_EQS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#significant_eqs).
+
 Hand-curated notable earthquakes for the "Significant Earthquakes" page. **The app only reads this collection**; records are added directly in the database by the team.
 
 | Field | Type | Notes |
