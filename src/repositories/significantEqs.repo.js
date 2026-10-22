@@ -1,21 +1,12 @@
-// Data access for hand-curated significant earthquakes. Services use these functions instead of the
-// Mongoose model, so the storage (MongoDB today, PostgreSQL later) can change without touching them.
+// Data access for hand-curated significant earthquakes. Services use this module instead of a database
+// client, so the area can switch databases with SIGNIFICANT_EQS_DB (mongodb | postgres) and no other change.
 //
-// Records are returned in the shape the API sends (`_id`, field names as stored), so a later storage
-// switch has to map back to this shape. __tests__/golden/ holds the recorded responses to check against.
-const { Types } = require('mongoose');
-const SignificantEQs = require('../models/significantEQ.model');
+//   isValidId(id) -> boolean   Whether `id` looks like a record id (lets the API tell "invalid" from "not found")
+//   findAll()                  Every record, in the order they were added, in the shape the API sends (`_id`, ...)
+//   findById(id)               One record in that shape, or null
+const { selectRepository } = require('../db/areaDatabase');
 
-// Whether `id` has the format of a record id (lets the API tell "invalid id" from "not found")
-const isValidId = (id) => Types.ObjectId.isValid(id);
-
-const findAll = async () => SignificantEQs.find({}).lean();
-
-// Resolves to null when no record has this id
-const findById = async (id) => SignificantEQs.findById(id).lean();
-
-module.exports = {
-  isValidId,
-  findAll,
-  findById,
-};
+module.exports = selectRepository('significant earthquakes', 'SIGNIFICANT_EQS_DB', {
+  mongodb: () => require('./mongodb/significantEqs.repo'),
+  postgres: () => require('./postgres/significantEqs.repo').createSignificantEqsRepo(require('../db/knex').db),
+});
