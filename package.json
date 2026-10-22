@@ -20,7 +20,8 @@
     "db:pg:rollback": "knex --knexfile src/db/knexfile.js migrate:rollback",
     "db:pg:status": "knex --knexfile src/db/knexfile.js migrate:status",
     "db:pg:make": "knex --knexfile src/db/knexfile.js migrate:make",
-    "db:pg:copy-subscriptions": "node scripts/copy-subscriptions-to-postgres.js"
+    "db:pg:copy-subscriptions": "node scripts/copy-subscriptions-to-postgres.js",
+    "db:pg:copy-significant-eqs": "node scripts/copy-significant-eqs-to-postgres.js"
   },
   "repository": {
     "type": "git",
