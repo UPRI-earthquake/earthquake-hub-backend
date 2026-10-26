@@ -4,6 +4,11 @@
 // email and username are citext columns, so lookups match them without regard to case: no lowercasing
 // in code. Writes still store the email trimmed and lowercased, as the MongoDB model's setter did, so
 // the API shows the same values. A write that breaks a unique rule throws DuplicateKeyError.
+//
+// legacyId is the account's MongoDB-style id (legacy_mongo_id). Until comments and contributions move
+// (Step 4) they store account ids as MongoDB ObjectIds, so session tokens carry legacyId, not the
+// uuid. Copied accounts keep their old _id; accounts created here get a new ObjectId.
+const { Types } = require('mongoose');
 const { fromPostgresError } = require('../errors');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,6 +36,7 @@ const opt = (value) => (value === null ? undefined : value);
 // null when there's no row, as the MongoDB repository returns
 const toAccount = (row) => (!row ? null : {
   id: row.id,
+  legacyId: row.legacy_mongo_id ? row.legacy_mongo_id.trim() : null,
   username: row.username,
   email: row.email,
   password: row.password_hash,
@@ -92,7 +98,9 @@ const createAccountsRepo = (db) => {
   async function create(fields) {
     let id;
     try {
-      [{ id }] = await db('accounts').insert(toColumns(fields)).returning('id');
+      [{ id }] = await db('accounts')
+        .insert({ ...toColumns(fields), legacy_mongo_id: new Types.ObjectId().toString() })
+        .returning('id');
     } catch (err) {
       throw fromPostgresError(err);
     }

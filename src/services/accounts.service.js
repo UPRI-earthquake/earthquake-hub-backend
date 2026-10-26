@@ -178,7 +178,8 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   }
 
   const username = user.username;
-  const accountId = user.id;
+  // MongoDB-style id: comments and contributions still store account ids as ObjectIds (until Step 4)
+  const accountId = user.legacyId;
 
   // compare received password with user's password in db
   let passwordIsValid = bcrypt.compareSync(

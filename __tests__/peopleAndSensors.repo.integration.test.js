@@ -2,9 +2,9 @@
 // PostgreSQL alike, so switching accounts and devices to PostgreSQL can't change what services see.
 // Behavior only one database has (case-insensitive lookups, legacy records) is tested per database.
 const mongoose = require('mongoose');
-const mongoAccountsRepo = require('../src/repositories/accounts.repo');
-const mongoDevicesRepo = require('../src/repositories/devices.repo');
-const mongoTransactions = require('../src/repositories/transactions');
+const mongoAccountsRepo = require('../src/repositories/mongodb/accounts.repo');
+const mongoDevicesRepo = require('../src/repositories/mongodb/devices.repo');
+const mongoTransactions = require('../src/repositories/mongodb/transactions');
 const { createAccountsRepo } = require('../src/repositories/postgres/accounts.repo');
 const { createDevicesRepo } = require('../src/repositories/postgres/devices.repo');
 const { createPostgresTransactions } = require('../src/repositories/postgres/transactions');
@@ -113,6 +113,16 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
       expect((await backend.storedAccount(created.id)).email).toBe('juan@example.org');
       expect(await Accounts.findByEmail('juan@example.org')).toMatchObject({ id: created.id });
       expect(await Accounts.findById(created.id)).toMatchObject({ id: created.id });
+    });
+
+    test('every account has a MongoDB-style legacyId (what session tokens carry until Step 4)', async () => {
+      const first = await Accounts.create(account());
+      const second = await Accounts.create(account({ username: 'maria', email: 'maria@example.org' }));
+
+      expect(first.legacyId).toMatch(/^[0-9a-f]{24}$/);
+      expect(second.legacyId).toMatch(/^[0-9a-f]{24}$/);
+      expect(second.legacyId).not.toBe(first.legacyId);
+      expect(await Accounts.findByUsername('juan')).toMatchObject({ legacyId: first.legacyId });
     });
 
     test.each([
@@ -356,6 +366,12 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
 
   if (name === 'mongodb') {
     describe('MongoDB only', () => {
+      test('legacyId is the account id itself', async () => {
+        const created = await Accounts.create(account());
+
+        expect(created.legacyId).toBe(created.id);
+      });
+
       test('an older device missing a required field can still be updated (e.g. unlinked)', async () => {
         const { insertedId } = await mongoose.connection.collection('devices').insertOne({ network: 'AM', station: 'R0009', latitude: 14, longitude: 121 });
 
@@ -376,6 +392,22 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
 
   if (name === 'postgres') {
     describe('PostgreSQL only', () => {
+      test('an account created here gets a new ObjectId as legacyId, separate from its uuid', async () => {
+        const created = await Accounts.create(account());
+
+        expect(created.id).toMatch(/^[0-9a-f]{8}-/);
+        expect(created.legacyId).not.toBe(created.id);
+        expect((await backend.pg.db('accounts').where({ id: created.id }).first()).legacy_mongo_id).toBe(created.legacyId);
+      });
+
+      test('a copied account keeps its MongoDB _id as legacyId', async () => {
+        const [{ id }] = await backend.pg.db('accounts')
+          .insert({ legacy_mongo_id: '69000000000000000000a001', email: 'copied@example.org', username: 'copied', password_hash: 'hash' })
+          .returning('id');
+
+        expect(await Accounts.findById(id)).toMatchObject({ legacyId: '69000000000000000000a001' });
+      });
+
       test('email and username lookups ignore case (citext), with no lowercasing in code', async () => {
         const created = await Accounts.create(account({ username: 'Juan' }));
 
