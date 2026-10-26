@@ -218,6 +218,12 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Accounts | `src/repositories/accounts.repo.js` | (Step 2) | MongoDB |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | (Step 2) | MongoDB |
 
+Accounts and devices have their PostgreSQL versions written (`src/repositories/postgres/accounts.repo.js`, `devices.repo.js`, `transactions.js`) but not switched on yet. In those versions:
+
+- email and username lookups ignore case through `citext`, with no lowercasing in code; usernames therefore become case-insensitive, as emails already were
+- a citizen's device list is the devices it owns (`devices.owner_account_id`); a brgy's is `brgy_forwarded_devices`
+- releasing a device takes it out of the account's list and writes its `device_releases` row in one transaction
+
 Repositories return plain objects with an `id`, never database documents, and services change data only through repository functions, so a PostgreSQL version can stand in unchanged. Two shared helpers keep the rest database-neutral:
 
 - `src/repositories/errors.js`: a write that breaks a unique rule throws `DuplicateKeyError` (with the colliding `fields`), whichever database rejected it.
