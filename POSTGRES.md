@@ -328,6 +328,54 @@ Validation passed: all 11 valid records are in PostgreSQL.
 
 **Old links keep working.** The API returns a copied record's MongoDB id as `_id`, and `POST /significant-eqs` finds a record by that old id as well as by its new uuid, so links like `/significant-eq-info?id=<old id>` still open the right page. The list keeps the order the records were added in, as on MongoDB.
 
+### Copying accounts and devices
+
+[`scripts/copy-people-and-sensors-to-postgres.js`](scripts/copy-people-and-sensors-to-postgres.js) copies MongoDB accounts, devices and each account's released-device history into `accounts`, `devices` and `device_releases`. Run `npm run db:find-duplicates` first, then:
+
+```sh
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-people-and-sensors -- --dry-run
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-people-and-sensors
+```
+
+Accounts hold personal data. Run it against real data only on the server or a sanitized dump, never a production copy on a laptop.
+
+What it does, in order:
+
+1. **Accounts.** Skipped and listed: accounts with no email, username or password, an unknown role, or a ringserver port outside 1–65535; and accounts that would collide in PostgreSQL, meaning the same email or username **ignoring case** (`Juan` / `juan`) or the same ringserver URL as another account. All accounts in a collision are skipped, since picking one would be a guess: resolve them in MongoDB and run the copy again.
+2. **Devices,** with each device's owner taken from the accounts' `devices[]` lists.
+   - A brgy account's list holds devices it forwards data for, not devices it owns, so it doesn't count as ownership. These forwarding links are counted in the report but not copied: PostgreSQL has no table for them yet.
+   - A device listed by two owners, or whose owner was skipped, is copied **without an owner** and listed.
+   - Skipped and listed: devices with missing or invalid coordinates, a missing elevation, or an unknown activity, and devices that would collide (same network + station, stream ID or MAC address).
+   - An empty stream ID or MAC address becomes NULL ("not linked yet"); the legacy activity `streaming` becomes `active`.
+3. **Released devices** of the copied accounts. History never changes, so entries already copied are left alone.
+4. **Validation:** every copyable account, device and released device has its row, and the counts add up, per table. Exit code `0` = done (skipped records alone don't fail it), `1` = validation failed, `2` = error.
+
+Like the other copies, it's **safe to run again** (rows matched by `legacy_mongo_id`), and a row changed in PostgreSQL since it was copied is kept. Password hashes are copied as they are (bcrypt), so everyone keeps their password. The report only ever names MongoDB `_id`s: never emails, usernames or password hashes.
+
+Example output:
+
+```
+Accounts in MongoDB: 120
+  inserted: 118, updated: 0, kept (changed in PostgreSQL since copied): 0
+  skipped: 2
+    6512...a01: same username as 6512...a02 (ignoring case)
+    6512...a02: same username as 6512...a01 (ignoring case)
+Devices in MongoDB: 85
+  inserted: 84, updated: 0, kept (changed in PostgreSQL since copied): 0
+  skipped: 1
+    6513...d07: missing coordinates
+Released devices in MongoDB: 9
+  inserted: 9, already copied: 0
+  skipped: 0
+Ownership:
+  devices listed by more than one owner (copied without an owner): 0
+  devices whose owner wasn't copied (copied without an owner): 1
+    6513...d02: owner 6512...a01
+  accounts listing a device that doesn't exist: 0
+  brgy forwarding links (not copied: no PostgreSQL table yet): 14
+Validation passed: every copyable account, device and released device is in PostgreSQL.
+```
+
 ---
 
 ## 7. Tables
@@ -337,9 +385,9 @@ Validation passed: all 11 valid records are in PostgreSQL.
 | `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` | none (temporary data) |
 | `push_subscriptions` | `subscriptions` | `20261022000200_create_push_subscriptions.js` | `db:pg:copy-subscriptions` |
 | `significant_eqs` | `significant-eqs` | `20261023000000_create_significant_eqs.js` | `db:pg:copy-significant-eqs` |
-| `accounts` | `accounts` | `20261026000000_create_accounts.js` | coming next (Step 2) |
-| `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | coming next (Step 2) |
-| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js` | coming next (Step 2) |
+| `accounts` | `accounts` | `20261026000000_create_accounts.js` | `db:pg:copy-people-and-sensors` |
+| `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
+| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js` | `db:pg:copy-people-and-sensors` |
 
 `accounts`, `devices` and `device_releases` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
 
@@ -436,7 +484,7 @@ One user: a citizen (who may own sensors), a barangay, or an admin.
 
 Rules: email and username required, not blank, and unique in any case; one brgy per ringserver URL; ringserver port 1–65535; roles limited to the four above.
 
-Usernames are case-sensitive in MongoDB, so `Juan` and `juan` can both exist there. Such pairs can't both be copied: the copy script (next Step 2 task) will report them for the team to resolve.
+Usernames are case-sensitive in MongoDB, so `Juan` and `juan` can both exist there. Such pairs can't both be copied: the [copy](#copying-accounts-and-devices) skips and reports them for the team to resolve.
 
 ### `devices`
 
