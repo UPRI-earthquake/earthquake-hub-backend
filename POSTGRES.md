@@ -337,6 +337,11 @@ Validation passed: all 11 valid records are in PostgreSQL.
 | `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` | none (temporary data) |
 | `push_subscriptions` | `subscriptions` | `20261022000200_create_push_subscriptions.js` | `db:pg:copy-subscriptions` |
 | `significant_eqs` | `significant-eqs` | `20261023000000_create_significant_eqs.js` | `db:pg:copy-significant-eqs` |
+| `accounts` | `accounts` | `20261026000000_create_accounts.js` | coming next (Step 2) |
+| `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | coming next (Step 2) |
+| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js` | coming next (Step 2) |
+
+`accounts`, `devices` and `device_releases` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger (migration `20261022000000`). An update that sets `updated_at` itself keeps that value; the copy scripts rely on this to preserve MongoDB's timestamps.
 
@@ -410,6 +415,63 @@ Hand-curated notable earthquakes, shown on the significant earthquakes page. The
 | `instrument_recordings` and `reference_links` are lists | `significant_eqs_recordings_is_array`, `significant_eqs_references_is_array` |
 
 An optional field that's empty is left out of the API response, as it was when a MongoDB document lacked it.
+
+### `accounts`
+
+One user: a citizen (who may own sensors), a barangay, or an admin.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `email`, `username` | `citext`, required, unique | compared **without regard to case**: `Juan@x.org` and `juan@x.org` are the same account |
+| `password_hash` | `text`, required | bcrypt; never returned by the API |
+| `roles` | `account_role[]` | each one of `citizen`, `sensor`, `brgy`, `admin` |
+| `is_approved` | `boolean`, default false | brgy accounts need admin approval |
+| `password_policy_version`, `password_updated_at` | `int` (default 1), `timestamptz` | |
+| `password_reset_token_id`, `password_reset_issued_at`, `password_reset_used_at` | `text`, `timestamptz` | single-use reset links |
+| `ringserver_url`, `ringserver_port` | `text` (unique), `int` | brgy accounts only |
+| `rshake_email_enabled`, `alert_prefs_updated_at` | `boolean` (default false), `timestamptz` | device alert emails |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: email and username required, not blank, and unique in any case; one brgy per ringserver URL; ringserver port 1–65535; roles limited to the four above.
+
+Usernames are case-sensitive in MongoDB, so `Juan` and `juan` can both exist there. Such pairs can't both be copied: the copy script (next Step 2 task) will report them for the team to resolve.
+
+### `devices`
+
+One Raspberry Shake sensor. Ownership moves here from `accounts.devices[]`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `owner_account_id` | `uuid` → `accounts` | at most one owner; **null when the owner is deleted** (`ON DELETE SET NULL`) |
+| `network`, `station` | `varchar(8)`, `varchar(16)`, required | unique **together** (e.g. `AM` + `R3B2D`) |
+| `description` | `text` | |
+| `stream_id`, `mac_address` | `text`, unique | null = not linked yet; empty strings aren't allowed |
+| `latitude`, `longitude`, `elevation_m` | `double precision`, required | coordinates must be valid |
+| `location` | `geography(Point, 4326)` | **generated** from latitude/longitude, GiST index |
+| `activity`, `activity_toggled_at` | `device_activity` (default `inactive`), `timestamptz` | `active`, `inactive` or `unlinked` |
+| `rshake_alert_credential_hash`, `rshake_alert_credential_issued_at` | `text`, `timestamptz` | never returned by the API |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: one device per network + station; a stream ID or MAC address belongs to one device; latitude −90…90 and longitude −180…180; the owner must be an existing account.
+
+### `device_releases`
+
+One row each time an account unlinked a device, with a snapshot of the device at that moment (replaces `accounts.releasedDevices[]`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | |
+| `legacy_mongo_id` | `char(24)`, unique | `_id` of the MongoDB `releasedDevices[]` entry (lets the copy be re-run) |
+| `account_id` | `uuid` → `accounts`, required | who released it; **deleted with the account** (`ON DELETE CASCADE`) |
+| `device_id` | `uuid` → `devices` | **null if the device is later deleted** (`ON DELETE SET NULL`); the snapshot stays |
+| `network`, `station`, `stream_id`, `mac_address`, `description`, `latitude`, `longitude`, `elevation_m` | | the device as it was |
+| `reason`, `released_at` | `text` (default `unlink`), `timestamptz` | |
+
+Index: `(account_id, released_at)`, for an account's history in order.
 
 ### Scheduled deletes (instead of TTL indexes)
 
