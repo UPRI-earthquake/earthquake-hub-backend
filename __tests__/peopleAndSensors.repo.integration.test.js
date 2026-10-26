@@ -235,6 +235,25 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
         .map((x) => x.id).sort()).toEqual([d.id, other.id].sort());
     });
 
+    test('listByStreamIds returns activity details for the listed streams (ringserver status listener)', async () => {
+      const toggled = new Date('2026-01-01T00:00:00.000Z');
+      const d = await Devices.create(device({ streamId: 'AM_R0001_.*/MSEED', activity: 'active', activityToggleTime: toggled }));
+      await Devices.create(device({ station: 'R0002', streamId: 'AM_R0002_.*/MSEED' }));
+
+      expect(await Devices.listByStreamIds(['AM_R0001_.*/MSEED', 'AM_R9999_.*/MSEED'])).toEqual([
+        { id: d.id, streamId: 'AM_R0001_.*/MSEED', activity: 'active', activityToggleTime: toggled },
+      ]);
+      expect(await Devices.listByStreamIds([])).toEqual([]);
+    });
+
+    test('listStationLocations lists station coordinates, optionally by activity (nearest stations for an event)', async () => {
+      await Devices.create(device({ activity: 'active' }));
+      await Devices.create(device({ station: 'R0002', latitude: 7.07, longitude: 125.6 }));
+
+      expect(await Devices.listStationLocations({ activity: 'active' })).toEqual([{ station: 'R0001', latitude: 14.6, longitude: 121 }]);
+      expect((await Devices.listStationLocations()).map((s) => s.station).sort()).toEqual(['R0001', 'R0002']);
+    });
+
     test('setDescription updates every listed device and resolves to how many', async () => {
       const a = await Devices.create(device({ description: 'old' }));
       const b = await Devices.create(device({ station: 'R0002', description: 'new' }));
@@ -350,6 +369,19 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
       expect(await Devices.findById(d.id)).toMatchObject({ activity: 'inactive' });
       expect(await Devices.listAccountDeviceIds(owner.id)).toEqual([d.id]);
       expect(await Devices.listReleases(owner.id)).toEqual([]);
+    });
+
+    test('a device created and listed in a transaction that fails is not kept (link)', async () => {
+      const owner = await Accounts.create(account());
+
+      await expect(backend.withTransaction(async (tx) => {
+        const d = await Devices.create(device({ macAddress: 'AA:BB:CC:DD:EE:01' }), { tx });
+        await Devices.addToAccount(owner.id, [d.id], { tx });
+        throw new Error('later step failed');
+      })).rejects.toThrow('later step failed');
+
+      expect(await Devices.findByMacAddress('AA:BB:CC:DD:EE:01')).toBeNull();
+      expect(await Devices.listAccountDeviceIds(owner.id)).toEqual([]);
     });
 
     test('an account renamed in a transaction that fails keeps its old username', async () => {
