@@ -103,6 +103,19 @@ describe('scripts/copy-significant-eqs-to-postgres', () => {
     expect(await pgRow(id(1))).toMatchObject({ title: 'Corrected title' });
   });
 
+  test('a MongoDB edit is still copied after an unchanged re-run', async () => {
+    // These records have no timestamps, so updated_at stays the same on every run
+    await collection().insertOne(fullDoc);
+    await copy();
+    await copy();
+
+    await collection().updateOne({ _id: id(1) }, { $set: { title: 'Corrected title' } });
+    const result = await copy();
+
+    expect(result).toMatchObject({ ok: true, updated: 1, keptNewer: 0 });
+    expect(await pgRow(id(1))).toMatchObject({ title: 'Corrected title' });
+  });
+
   test('re-running never overwrites a row edited in PostgreSQL since it was copied', async () => {
     await collection().insertOne(fullDoc);
     await copy();

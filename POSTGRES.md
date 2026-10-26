@@ -391,7 +391,7 @@ Validation passed: every copyable account, device and released device is in Post
 
 `accounts`, `devices` and `device_releases` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
 
-Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger (migration `20261022000000`). An update that sets `updated_at` itself keeps that value; the copy scripts rely on this to preserve MongoDB's timestamps.
+Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
 ### `job_locks`
 

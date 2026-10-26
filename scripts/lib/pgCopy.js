@@ -27,8 +27,8 @@ async function copiedUpdatedAt(db, table, legacyIds) {
   * upsertByLegacyId:
   *     Inserts rows not copied yet and refreshes copied ones, except rows changed in PostgreSQL since
   *     they were copied (newer updated_at), so a re-run after the switch never overwrites newer data.
-  *     All in one transaction. Rows must carry legacy_mongo_id and updated_at (the trigger keeps an
-  *     explicitly set updated_at, so MongoDB's timestamps survive).
+  *     All in one transaction. Rows must carry legacy_mongo_id and updated_at; the transaction sets
+  *     app.preserve_updated_at so the updated_at trigger keeps MongoDB's timestamps.
   *
   * Inputs:
   *     db, table, rows
@@ -53,6 +53,9 @@ async function upsertByLegacyId({ db, table, rows, columns, dryRun = false }) {
   }
 
   await db.transaction(async (trx) => {
+    // Tells the updated_at trigger to keep the copied MongoDB updated_at (for this transaction only).
+    // Without it, re-writing an unchanged row would stamp it now() and block later copies of it.
+    await trx.raw("SELECT set_config('app.preserve_updated_at', 'on', true)");
     for (const batch of chunk(rows)) {
       // RETURNING gives only the rows actually written; xmax = 0 marks a fresh insert
       const written = await trx(table)

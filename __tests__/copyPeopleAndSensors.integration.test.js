@@ -269,6 +269,21 @@ describe('scripts/copy-people-and-sensors-to-postgres', () => {
     expect(await pgRow('devices', ID.unowned)).toMatchObject({ activity: 'active' });
   });
 
+  test('a MongoDB change is still copied after an unchanged re-run', async () => {
+    await devices().insertOne(device({ _id: ID.owned, station: 'R0001' }));
+    await accounts().insertOne(account({ _id: ID.juan, email: 'juan@example.org', username: 'juan', devices: [ID.owned] }));
+    await copy();
+    await copy(); // nothing changed: must not make the rows look changed in PostgreSQL
+
+    await accounts().updateOne({ _id: ID.juan }, { $set: { isApproved: true, updatedAt: new Date('2025-03-01T00:00:00.000Z') } });
+    await devices().updateOne({ _id: ID.owned }, { $set: { description: 'renamed', updatedAt: new Date('2025-03-01T00:00:00.000Z') } });
+    const result = await copy();
+
+    expect(result).toMatchObject({ accounts: { updated: 1, keptNewer: 0 }, devices: { updated: 1, keptNewer: 0 } });
+    expect(await pgRow('accounts', ID.juan)).toMatchObject({ is_approved: true, updated_at: new Date('2025-03-01T00:00:00.000Z') });
+    expect(await pgRow('devices', ID.owned)).toMatchObject({ description: 'renamed' });
+  });
+
   test('a dry run writes nothing', async () => {
     await devices().insertOne(device({ _id: ID.owned, station: 'R0001' }));
     await accounts().insertOne(account({ _id: ID.juan, email: 'juan@example.org', username: 'juan', devices: [ID.owned] }));
