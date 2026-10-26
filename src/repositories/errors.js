@@ -15,7 +15,23 @@ const fromMongoError = (err) => (
   err?.code === 11000 ? new DuplicateKeyError(Object.keys(err.keyPattern || err.keyValue || {})) : err
 );
 
+// PostgreSQL unique constraints, as the fields services know them by
+const PG_UNIQUE_FIELDS = {
+  accounts_email_unique: ['email'],
+  accounts_username_unique: ['username'],
+  accounts_ringserver_url_unique: ['ringserverUrl'],
+  devices_network_station_unique: ['network', 'station'],
+  devices_stream_id_unique: ['streamId'],
+  devices_mac_address_unique: ['macAddress'],
+};
+
+// PostgreSQL's unique_violation (23505) as a DuplicateKeyError; any other error is returned unchanged
+const fromPostgresError = (err) => (
+  err?.code === '23505' ? new DuplicateKeyError(PG_UNIQUE_FIELDS[err.constraint] || [err.constraint]) : err
+);
+
 module.exports = {
   DuplicateKeyError,
   fromMongoError,
+  fromPostgresError,
 };
