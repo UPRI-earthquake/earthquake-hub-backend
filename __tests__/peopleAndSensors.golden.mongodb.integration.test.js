@@ -1,4 +1,4 @@
-// Accounts and devices on MongoDB (the only option until Step 2 - Ticket 3 adds PostgreSQL)
+// Accounts and devices on MongoDB (PEOPLE_AND_SENSORS_DB unset, the default)
 jest.mock('../src/services/email.service', () => ({
   sendMail: jest.fn().mockResolvedValue({ accepted: [] }),
 }));

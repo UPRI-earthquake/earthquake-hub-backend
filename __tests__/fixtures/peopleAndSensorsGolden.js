@@ -3,6 +3,10 @@
 // Each peopleAndSensors.golden.*.integration.test.js runs these cases with one set of area settings,
 // so every setting must give identical responses.
 //
+// The data is always seeded in MongoDB. With PEOPLE_AND_SENSORS_DB=postgres it is then copied with the
+// real copy script (scripts/copy-people-and-sensors-to-postgres.js) and removed from MongoDB, so the
+// responses come from PostgreSQL alone and show that copied data keeps its ids.
+//
 // The test file must mock src/services/email.service (password reset sends mail).
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
@@ -11,6 +15,7 @@ const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
 const { generateAMStationCode } = require('../../src/controllers/helpers');
+const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
 
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
 const at = (iso) => new Date(iso);
@@ -170,6 +175,9 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
   let pg;
   let app;
   let EmailService;
+  let AccountsRepo;
+  let DevicesRepo;
+  const onPostgres = settings.PEOPLE_AND_SENSORS_DB === 'postgres';
   const webOrigin = () => `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`;
 
   const send = (req, agent = null) => {
@@ -204,6 +212,8 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
     Object.assign(process.env, pg.env, settings);
     app = require('../../src/app');
     EmailService = require('../../src/services/email.service');
+    AccountsRepo = require('../../src/repositories/accounts.repo');
+    DevicesRepo = require('../../src/repositories/devices.repo');
     await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
   }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
 
@@ -213,6 +223,11 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
     await Promise.all([mongo.clear(), pg.clear()]);
     await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
     await mongoose.connection.collection('devices').insertMany(DEVICES);
+    if (onPostgres) {
+      const copied = await copyPeopleAndSensors({ db: pg.db, log: () => {} });
+      if (!copied.ok) throw new Error('Copying the seeded accounts and devices to PostgreSQL failed');
+      await Promise.all(['accounts', 'devices'].map((name) => mongoose.connection.collection(name).deleteMany({})));
+    }
   });
 
   afterEach(() => {
@@ -243,7 +258,7 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
       await check('accounts.register.citizen.then-sign-in', {
         method: 'POST', path: '/accounts/authenticate', body: { username: 'new_citizen', password: PASSWORD, role: 'citizen' },
       }, {
-        replace: { [String((await mongoose.connection.collection('accounts').findOne({ username: 'new_citizen' }))._id)]: '<new account id>' },
+        replace: { [(await AccountsRepo.findByUsername('new_citizen')).legacyId]: '<new account id>' },
       });
     });
     test('a new brgy', () => check('accounts.register.brgy', register({
@@ -393,8 +408,7 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
   describe('POST /device/link', () => {
     test('a new device, then my devices', async () => {
       const res = await send({ method: 'POST', path: '/device/link', body: linkBody() });
-      const created = await mongoose.connection.collection('devices').findOne({ macAddress: NEW_MAC });
-      const replace = { [String(created._id)]: '<new device id>' };
+      const replace = { [(await DevicesRepo.findByMacAddress(NEW_MAC)).legacyId]: '<new device id>' };
       expectGolden('device.link.new', recorded({ method: 'POST', path: '/device/link', body: linkBody() }), res, { replace });
       const { agent } = await signIn('golden_citizen');
       await check('device.link.new.then-my-devices', { method: 'GET', path: '/device/my-devices' }, { agent, replace });
