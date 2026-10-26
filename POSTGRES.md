@@ -215,14 +215,14 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
 | Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
-| Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | MongoDB (switch pending) |
-| Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | MongoDB (switch pending) |
+| Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
+| Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 
 Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
 - email and username lookups ignore case through `citext`, with no lowercasing in code; usernames therefore become case-insensitive, as emails already were
 - a citizen's device list is the devices it owns (`devices.owner_account_id`); a brgy's is `brgy_forwarded_devices`
-- releasing a device takes it out of the account's list and writes its `device_releases` row in one transaction
+- linking a device (the device, the account's list, clearing its release history) and releasing one (taking it out of the list, writing its `device_releases` row) each run in one transaction, so a failed step changes nothing
 
 Repositories return plain objects with an `id`, never database documents, and services change data only through repository functions, so a PostgreSQL version can stand in unchanged. Two shared helpers keep the rest database-neutral:
 
@@ -232,7 +232,7 @@ Repositories return plain objects with an `id`, never database documents, and se
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` once with the areas on PostgreSQL and once on MongoDB, `peopleAndSensors` (accounts and devices) on MongoDB until Step 2 moves them.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` and `peopleAndSensors` (accounts and devices) each once with their areas on PostgreSQL and once on MongoDB, against the same recordings. On PostgreSQL, the accounts and devices are seeded in MongoDB and copied with the real copy script, then removed from MongoDB, so the responses also show that copied data keeps its ids.
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
@@ -253,38 +253,54 @@ Each moved area has a setting in `.env` that picks its database:
 JOB_LOCKS_DB=postgres            # mongodb | postgres
 PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
-PEOPLE_AND_SENSORS_DB=mongodb    # accounts + devices together; mongodb until they're copied and verified
+PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
 ```
 
 Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup. The backend reads these on startup and logs its choice:
 
 ```
+[db] accounts: postgres (PEOPLE_AND_SENSORS_DB)
+[db] devices: postgres (PEOPLE_AND_SENSORS_DB)
 [db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
 [db] job locks: postgres (JOB_LOCKS_DB)
+[db] significant earthquakes: postgres (SIGNIFICANT_EQS_DB)
 ```
 
 While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
 
-### Account ids while comments are still on MongoDB
+### Ids the API shows: MongoDB-style, until Step 4
 
-Comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4, and they store the author's account id as a MongoDB ObjectId, taken from the session token. So until Step 4:
+**The rule:** whatever id a client or a MongoDB collection sees stays the MongoDB-style id (`legacy_mongo_id`), never the PostgreSQL uuid. The uuid is used only inside PostgreSQL (keys and joins). Every row has one: a copied row keeps its old `_id`, and a row created in PostgreSQL gets a new ObjectId. Repositories return it as `legacyId`.
 
-- **Session tokens carry the account's MongoDB-style id** (`legacyId`), not its PostgreSQL uuid. For an account copied from MongoDB that's its old `_id`, stored in `legacy_mongo_id`.
-- **Accounts created in PostgreSQL get a new ObjectId** in `legacy_mongo_id`, so new users can comment too.
+Why: comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4 and store the author's account id as a MongoDB ObjectId, taken from the session token; and clients already hold device ids from earlier responses. So until Step 4:
+
+- **Session tokens carry the account's `legacyId`**, so comments keep their author id, and new users can comment too.
 - **Sessions from before the switch keep working:** tokens are checked by signature, accounts are looked up by username, and the `accountId` inside the token is still the account's `legacy_mongo_id`.
+- **Device ids in responses are the device's `legacyId`:** `deviceId` in alert credentials (`/device/alert-credential`, `/device/link`) and in `releasedDevices[]`. A released device keeps its id in `device_releases.device_legacy_mongo_id`, so the history still shows it after the device is deleted, as MongoDB did.
 
-`__tests__/peopleAndSensors.switch.integration.test.js` checks all three against the real app.
+`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, and the golden files on PostgreSQL check the ids in every recorded response.
 
 ### Switching an area to PostgreSQL
 
 1. Apply the migrations: `npm run db:pg:migrate`.
-2. Copy the area's data, if it has a copy script (see below). Do a dry run first.
-3. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
-4. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
+2. Save a few of the area's responses to compare later (e.g. `curl -s localhost:5000/device/all > before.json`).
+3. Copy the area's data, if it has a copy script (see below). Do a dry run first. The copy must end with `Validation passed`.
+4. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
+5. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
+6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account.
 
 ### Rolling an area back
 
 Set its setting to `mongodb` and restart the backend. MongoDB still has the data as it was at the switch. Anything written to PostgreSQL since then stays there and isn't copied back.
+
+**Accounts and devices** (`PEOPLE_AND_SENSORS_DB`) need more care, because people change them through the app:
+
+- **Lost on rollback** (still in PostgreSQL, not in MongoDB): accounts registered after the switch, and changes since the switch to passwords, emails, usernames, alert settings, device links and unlinks, and brgy forwarding. List them before rolling back: `SELECT legacy_mongo_id, created_at, updated_at FROM accounts WHERE updated_at > '<switch time>'` (and the same for `devices`).
+- **Sessions:** a copied account's token carries its old `_id`, so it keeps working on MongoDB. An account registered after the switch doesn't exist in MongoDB, so its sessions stop working and it has to register again.
+- **Device activity** is stale in MongoDB until each station's next status update, which corrects it.
+- **Moving forward again:** run the copy again before switching back. Rows changed in PostgreSQL since the first copy are kept, so changes made on MongoDB during the rollback to those same rows are not copied: check the copy's `kept` counts.
+
+On dev nothing is live, so a rollback only loses test data.
 
 ### Copying push subscriptions
 
@@ -407,10 +423,10 @@ Validation passed: every copyable account, device, released device and forwardin
 | `significant_eqs` | `significant-eqs` | `20261023000000_create_significant_eqs.js` | `db:pg:copy-significant-eqs` |
 | `accounts` | `accounts` | `20261026000000_create_accounts.js` | `db:pg:copy-people-and-sensors` |
 | `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
-| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js` | `db:pg:copy-people-and-sensors` |
+| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js`, `20261028000000_add_device_legacy_id_to_device_releases.js` | `db:pg:copy-people-and-sensors` |
 | `brgy_forwarded_devices` | brgy accounts' `devices[]` | `20261027000000_create_brgy_forwarded_devices.js` | `db:pg:copy-people-and-sensors` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -492,7 +508,7 @@ One user: a citizen (who may own sensors), a barangay, or an admin.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid`, primary key | `uuidv7()` |
-| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for an account created here: the id session tokens carry ([ids the API shows](#ids-the-api-shows-mongodb-style-until-step-4)) |
 | `email`, `username` | `citext`, required, unique | compared **without regard to case**: `Juan@x.org` and `juan@x.org` are the same account |
 | `password_hash` | `text`, required | bcrypt; never returned by the API |
 | `roles` | `account_role[]` | each one of `citizen`, `sensor`, `brgy`, `admin` |
@@ -514,7 +530,7 @@ One Raspberry Shake sensor. Ownership moves here from `accounts.devices[]`.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid`, primary key | `uuidv7()` |
-| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for a device created here: the `deviceId` the API returns |
 | `owner_account_id` | `uuid` → `accounts` | at most one owner; **null when the owner is deleted** (`ON DELETE SET NULL`) |
 | `network`, `station` | `varchar(8)`, `varchar(16)`, required | unique **together** (e.g. `AM` + `R3B2D`) |
 | `description` | `text` | |
@@ -537,6 +553,7 @@ One row each time an account unlinked a device, with a snapshot of the device at
 | `legacy_mongo_id` | `char(24)`, unique | `_id` of the MongoDB `releasedDevices[]` entry (lets the copy be re-run) |
 | `account_id` | `uuid` → `accounts`, required | who released it; **deleted with the account** (`ON DELETE CASCADE`) |
 | `device_id` | `uuid` → `devices` | **null if the device is later deleted** (`ON DELETE SET NULL`); the snapshot stays |
+| `device_legacy_mongo_id` | `char(24)` | the device's `legacy_mongo_id`, returned as `releasedDevices[].deviceId`; **kept after the device is deleted** |
 | `network`, `station`, `stream_id`, `mac_address`, `description`, `latitude`, `longitude`, `elevation_m` | | the device as it was |
 | `reason`, `released_at` | `text` (default `unlink`), `timestamptz` | |
 
