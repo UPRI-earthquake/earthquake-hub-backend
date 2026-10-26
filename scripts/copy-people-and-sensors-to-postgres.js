@@ -1,18 +1,20 @@
-// Copies accounts, devices and released devices from MongoDB to PostgreSQL (`accounts`, `devices`,
-// `device_releases`). Safe to run more than once: rows are matched by legacy_mongo_id (the MongoDB _id).
+// Copies accounts, devices, released devices and brgy forwarding links from MongoDB to PostgreSQL
+// (`accounts`, `devices`, `device_releases`, `brgy_forwarded_devices`). Safe to run more than once:
+// rows are matched by legacy_mongo_id (the MongoDB _id).
 //
 //   1. Accounts. Ones that can't be stored (no email, username or password; unknown role; bad
 //      ringserver port) are skipped, and so are ones that would collide in PostgreSQL: the same email,
 //      username (compared without regard to case) or ringserver URL as another account. Colliding
 //      accounts are all skipped, since picking one would be a guess; resolve them in MongoDB first.
 //   2. Devices, with their owner taken from the accounts' devices[] lists. A brgy account's list holds
-//      devices it forwards data for, not devices it owns, so it doesn't count as ownership (those links
-//      are counted, not copied: PostgreSQL has no table for them yet). A device listed by two owners
-//      is copied without an owner and reported. Devices with missing or invalid coordinates, or that
-//      would collide (network + station, stream ID, MAC), are skipped.
+//      devices it forwards data for, not devices it owns, so it doesn't count as ownership (step 4).
+//      A device listed by two owners is copied without an owner and reported. Devices with missing or
+//      invalid coordinates, or that would collide (network + station, stream ID, MAC), are skipped.
 //   3. Released devices (accounts' releasedDevices[]), for the copied accounts. History never changes,
 //      so entries already copied are left alone.
-//   4. Checks that every copyable record now has its row, and that the counts add up, per table.
+//   4. Brgy forwarding links (the brgy accounts' devices[] lists), in list order, for copied brgys and
+//      devices. Links already copied are left alone; the copy never deletes one.
+//   5. Checks that every copyable record now has its row, and that the counts add up, per table.
 //
 // Rows changed in PostgreSQL since they were copied (newer updated_at) are kept, so re-running after
 // the switch never overwrites newer data. Password hashes are copied as they are (bcrypt). The report
@@ -184,6 +186,23 @@ async function existingStations(db, devices) {
   return found;
 }
 
+const linkKey = ({ brgyId, deviceId }) => `${brgyId} -> ${deviceId}`;
+
+// Which of these forwarding links (by MongoDB ids) PostgreSQL already has, as linkKey()s
+async function copiedLinks(db, links) {
+  const found = new Set();
+  for (const batch of chunk(links)) {
+    const rows = await db('brgy_forwarded_devices AS f')
+      .join('accounts AS a', 'a.id', 'f.brgy_account_id')
+      .join('devices AS d', 'd.id', 'f.device_id')
+      .select('a.legacy_mongo_id AS brgy', 'd.legacy_mongo_id AS device')
+      .whereIn('a.legacy_mongo_id', [...new Set(batch.map((link) => link.brgyId))])
+      .whereIn('d.legacy_mongo_id', [...new Set(batch.map((link) => link.deviceId))]);
+    rows.forEach((row) => found.add(linkKey({ brgyId: row.brgy.trim(), deviceId: row.device.trim() })));
+  }
+  return found;
+}
+
 /***************************************************************************
   * copyPeopleAndSensors:
   *     Copies MongoDB accounts, devices and released devices to PostgreSQL (see the steps at the top
@@ -195,13 +214,14 @@ async function existingStations(db, devices) {
   *     log:     function for progress lines (default console.log)
   *
   * Outputs:
-  *     { ok, accounts, devices, releases, ownership }, where each table has
+  *     { ok, accounts, devices, releases, forwarding, ownership }, where each table has
   *     { mongoTotal, skipped: [{ id, reason }], inserted, updated, keptNewer, missing: [id] }
-  *     (releases: inserted, alreadyCopied) and ownership lists what couldn't be decided:
+  *     (releases and forwarding: inserted, alreadyCopied) and ownership lists what couldn't be decided:
   *     { sharedDevices: [{ id, accountIds }], ownerNotCopied: [{ id, accountId }],
-  *       missingDevices: [{ accountId, deviceId }], brgyForwardingLinks }
+  *       missingDevices: [{ accountId, deviceId }] }
  ***************************************************************************/
 async function copyPeopleAndSensors({ db, dryRun = false, log = console.log }) {
+  const startedAt = Date.now();
   const accountDocs = await mongoose.connection.collection('accounts').find({}).toArray();
   const deviceDocs = await mongoose.connection.collection('devices').find({}).toArray();
 
@@ -256,13 +276,13 @@ async function copyPeopleAndSensors({ db, dryRun = false, log = console.log }) {
   const deviceIdsInMongo = new Set(deviceDocs.map((doc) => String(doc._id)));
   const ownersByDevice = new Map();
   const missingDevices = [];
-  let brgyForwardingLinks = 0;
+  const brgyLinks = []; // { brgyId, deviceId, position } in each brgy's list order
   accountDocs.forEach((doc) => {
-    listedIds(doc.devices).forEach((deviceId) => {
+    listedIds(doc.devices).forEach((deviceId, position) => {
       if (!deviceIdsInMongo.has(deviceId)) {
         missingDevices.push({ accountId: String(doc._id), deviceId });
       } else if (isBrgy(doc)) {
-        brgyForwardingLinks += 1;
+        brgyLinks.push({ brgyId: String(doc._id), deviceId, position });
       } else {
         ownersByDevice.set(deviceId, [...new Set([...(ownersByDevice.get(deviceId) || []), String(doc._id)])]);
       }
@@ -346,7 +366,32 @@ async function copyPeopleAndSensors({ db, dryRun = false, log = console.log }) {
   });
   const releaseCounts = await insertMissingByLegacyId({ db, table: 'device_releases', rows: releaseRows, dryRun });
 
-  // 4. Validation: every copyable record has its row, and the counts add up
+  // 4. Brgy forwarding links between copied brgys and copied devices
+  const copiedDeviceIds = new Set(deviceRows.map((row) => row.legacy_mongo_id));
+  const forwardingSkipped = [];
+  const links = brgyLinks.filter((link) => {
+    const reason = (!copiedAccountIds.has(link.brgyId) && `brgy ${link.brgyId} wasn't copied`)
+      || (!copiedDeviceIds.has(link.deviceId) && `device ${link.deviceId} wasn't copied`);
+    if (reason) forwardingSkipped.push({ id: linkKey(link), reason });
+    return !reason;
+  });
+  const alreadyLinked = await copiedLinks(db, links);
+  const newLinks = links.filter((link) => !alreadyLinked.has(linkKey(link)));
+  if (!dryRun && newLinks.length > 0) {
+    await db.transaction(async (trx) => {
+      for (const batch of chunk(newLinks)) {
+        await trx('brgy_forwarded_devices').insert(batch.map((link) => ({
+          brgy_account_id: accountIds.get(link.brgyId),
+          device_id: deviceIds.get(link.deviceId),
+          // Keeps each brgy's list order: MongoDB doesn't record when a link was added
+          added_at: new Date(startedAt + link.position),
+        }))).onConflict(['brgy_account_id', 'device_id']).ignore();
+      }
+    });
+  }
+  const forwardingCounts = { inserted: newLinks.length, alreadyCopied: links.length - newLinks.length };
+
+  // 5. Validation: every copyable record has its row, and the counts add up
   const missing = async (table, rows) => (dryRun ? [] : missingLegacyIds(db, table, rows.map((row) => row.legacy_mongo_id)));
   const accounts = {
     mongoTotal: accountDocs.length, skipped: accountsSkipped, ...accountCounts, missing: await missing('accounts', accountRows),
@@ -357,13 +402,22 @@ async function copyPeopleAndSensors({ db, dryRun = false, log = console.log }) {
   const releases = {
     mongoTotal: releasesTotal, skipped: releasesSkipped, ...releaseCounts, missing: await missing('device_releases', releaseRows),
   };
+  const linkedNow = dryRun ? null : await copiedLinks(db, links);
+  const forwarding = {
+    mongoTotal: brgyLinks.length,
+    skipped: forwardingSkipped,
+    ...forwardingCounts,
+    missing: dryRun ? [] : links.filter((link) => !linkedNow.has(linkKey(link))).map(linkKey),
+  };
   const upsertAddsUp = (table, rows) => table.mongoTotal === table.skipped.length + rows.length
     && rows.length === table.inserted + table.updated + table.keptNewer;
   const countsAddUp = upsertAddsUp(accounts, accountRows) && upsertAddsUp(devices, deviceRows)
     && releases.mongoTotal === releases.skipped.length + releaseRows.length
-    && releaseRows.length === releases.inserted + releases.alreadyCopied;
-  const ok = countsAddUp && accounts.missing.length === 0 && devices.missing.length === 0 && releases.missing.length === 0;
-  const ownership = { sharedDevices, ownerNotCopied, missingDevices, brgyForwardingLinks };
+    && releaseRows.length === releases.inserted + releases.alreadyCopied
+    && forwarding.mongoTotal === forwarding.skipped.length + links.length;
+  const allMissing = [...accounts.missing, ...devices.missing, ...releases.missing, ...forwarding.missing];
+  const ok = countsAddUp && allMissing.length === 0;
+  const ownership = { sharedDevices, ownerNotCopied, missingDevices };
 
   // Report: MongoDB _ids only
   const would = (word) => (dryRun ? `would ${word}` : { insert: 'inserted', update: 'updated' }[word]);
@@ -387,16 +441,18 @@ async function copyPeopleAndSensors({ db, dryRun = false, log = console.log }) {
   ownerNotCopied.forEach(({ id, accountId }) => log(`    ${id}: owner ${accountId}`));
   log(`  accounts listing a device that doesn't exist: ${missingDevices.length}`);
   missingDevices.forEach(({ accountId, deviceId }) => log(`    account ${accountId} lists ${deviceId}`));
-  log(`  brgy forwarding links (not copied: no PostgreSQL table yet): ${brgyForwardingLinks}`);
+  log(`Brgy forwarding links in MongoDB: ${forwarding.mongoTotal}`);
+  log(`  ${would('insert')}: ${forwarding.inserted}, already copied: ${forwarding.alreadyCopied}`);
+  log(`  skipped: ${forwarding.skipped.length}`);
+  listSkipped(forwarding.skipped);
   if (!dryRun) {
-    const missingTotal = accounts.missing.length + devices.missing.length + releases.missing.length;
-    log(missingTotal === 0
-      ? 'Validation passed: every copyable account, device and released device is in PostgreSQL.'
-      : `Validation FAILED: no PostgreSQL row for ${[...accounts.missing, ...devices.missing, ...releases.missing].join(', ')}`);
+    log(allMissing.length === 0
+      ? 'Validation passed: every copyable account, device, released device and forwarding link is in PostgreSQL.'
+      : `Validation FAILED: no PostgreSQL row for ${allMissing.join(', ')}`);
   }
   if (!countsAddUp) log('Validation FAILED: counts do not add up.');
 
-  return { ok, accounts, devices, releases, ownership };
+  return { ok, accounts, devices, releases, forwarding, ownership };
 }
 
 module.exports = { copyPeopleAndSensors };

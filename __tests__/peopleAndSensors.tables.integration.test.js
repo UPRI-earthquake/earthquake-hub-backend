@@ -163,6 +163,46 @@ describe('accounts, devices and device_releases tables', () => {
     });
   });
 
+  describe('brgy_forwarded_devices', () => {
+    const forwarding = async () => {
+      const brgy = await insertAccount({ username: 'brgy', email: 'brgy@example.org', roles: pg.db.raw("'{brgy}'") });
+      const device = await insertDevice();
+      await pg.db('brgy_forwarded_devices').insert({ brgy_account_id: brgy.id, device_id: device.id });
+      return { brgy, device };
+    };
+    const linkCount = async () => Number((await pg.db('brgy_forwarded_devices').count({ n: '*' }).first()).n);
+
+    test('a brgy can forward a sensor only once', async () => {
+      const { brgy, device } = await forwarding();
+
+      await expect(pg.db('brgy_forwarded_devices').insert({ brgy_account_id: brgy.id, device_id: device.id }))
+        .rejects.toThrow(/brgy_forwarded_devices_pkey/);
+    });
+
+    test('deleting the brgy account removes its links', async () => {
+      const { brgy } = await forwarding();
+
+      await pg.db('accounts').where({ id: brgy.id }).del();
+
+      expect(await linkCount()).toBe(0);
+    });
+
+    test('deleting the device removes its links', async () => {
+      const { device } = await forwarding();
+
+      await pg.db('devices').where({ id: device.id }).del();
+
+      expect(await linkCount()).toBe(0);
+    });
+
+    test('rejects a link to a device that does not exist', async () => {
+      const brgy = await insertAccount({ username: 'brgy', email: 'brgy@example.org' });
+
+      await expect(pg.db('brgy_forwarded_devices').insert({ brgy_account_id: brgy.id, device_id: '01890000-0000-7000-8000-000000000000' }))
+        .rejects.toThrow(/brgy_forwarded_devices_device_id_foreign/);
+    });
+  });
+
   describe('device_releases', () => {
     const insertRelease = async (fields) => {
       const [row] = await pg.db('device_releases').insert({ network: 'AM', station: 'R0001', ...fields }).returning('*');

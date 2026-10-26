@@ -129,11 +129,39 @@ describe('scripts/copy-people-and-sensors-to-postgres', () => {
       account({ _id: ID.brgy, email: 'brgy@example.org', username: 'brgy', roles: ['brgy'], isApproved: true, ringserverUrl: 'ring.example.org', ringserverPort: 18000, devices: [ID.owned] }),
     ]);
 
-    const { ownership } = await copy();
+    const { ownership, forwarding } = await copy();
 
     expect((await pgRow('devices', ID.owned)).owner_account_id).toBe((await pgRow('accounts', ID.juan)).id);
-    expect(ownership).toMatchObject({ brgyForwardingLinks: 1, sharedDevices: [] });
+    expect(ownership).toMatchObject({ sharedDevices: [] });
     expect(await pgRow('accounts', ID.brgy)).toMatchObject({ roles: '{brgy}', ringserver_url: 'ring.example.org', ringserver_port: 18000, is_approved: true });
+    // ...and the brgy's link to it is copied as forwarding
+    expect(forwarding).toMatchObject({ mongoTotal: 1, inserted: 1, skipped: [], missing: [] });
+    expect(await pg.db('brgy_forwarded_devices').select('brgy_account_id', 'device_id')).toEqual([{
+      brgy_account_id: (await pgRow('accounts', ID.brgy)).id,
+      device_id: (await pgRow('devices', ID.owned)).id,
+    }]);
+  });
+
+  test('copies brgy forwarding links in list order, once, and skips ones whose brgy was not copied', async () => {
+    await devices().insertMany([
+      device({ _id: ID.owned, station: 'R0001' }),
+      device({ _id: ID.shared, station: 'R0002' }),
+    ]);
+    await accounts().insertMany([
+      account({ _id: ID.brgy, email: 'brgy@example.org', username: 'brgy', roles: ['brgy'], devices: [ID.shared, ID.owned] }),
+      account({ _id: ID.jose, email: '', username: 'brgy2', roles: ['brgy'], devices: [ID.owned] }), // can't be copied
+    ]);
+
+    const first = await copy();
+    const second = await copy();
+
+    expect(first.forwarding).toMatchObject({ mongoTotal: 3, inserted: 2, alreadyCopied: 0 });
+    expect(first.forwarding.skipped).toEqual([{ id: `${ID.jose} -> ${ID.owned}`, reason: `brgy ${ID.jose} wasn't copied` }]);
+    expect(second.forwarding).toMatchObject({ inserted: 0, alreadyCopied: 2 });
+    expect(second.ok).toBe(true);
+    const ordered = await pg.db('brgy_forwarded_devices AS f').join('devices AS d', 'd.id', 'f.device_id')
+      .orderBy('f.added_at').pluck('d.station');
+    expect(ordered).toEqual(['R0002', 'R0001']);
   });
 
   test('reports ownership it cannot decide, and copies those devices without an owner', async () => {
