@@ -120,9 +120,9 @@ async function listStationLocations({ activity } = {}) {
 }
 
 // `fields`: any device fields except id/createdAt/updatedAt
-async function create(fields) {
+async function create(fields, { tx } = {}) {
   const doc = new Device(fields);
-  await save(doc);
+  await save(doc, tx);
   return toDevice(doc);
 }
 
@@ -170,9 +170,9 @@ async function accountHasDevice(accountId, deviceId) {
 }
 
 // Adds devices to the end of the account's device list, skipping ones already in it
-async function addToAccount(accountId, deviceIds) {
+async function addToAccount(accountId, deviceIds, { tx } = {}) {
   if (deviceIds.length === 0) return;
-  await Account.updateOne({ _id: accountId }, { $addToSet: { devices: { $each: deviceIds } } });
+  await Account.updateOne({ _id: accountId }, { $addToSet: { devices: { $each: deviceIds } } }, opts(tx));
 }
 
 async function removeFromAccount(accountId, deviceId) {

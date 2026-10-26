@@ -4,11 +4,18 @@ const { DuplicateKeyError } = require('../repositories/errors');
 const { withTransaction, isTransactionUnsupported } = require('../repositories/transactions');
 const {generateAMStationCode} = require('../controllers/helpers')
 
-// Writes a device (create or update), resolving to null instead of throwing when it collides with
-// another device's identity (network+station, streamId or macAddress).
-async function writeDeviceIfUnique(write) {
+// Runs a link's writes (device + account list + release history) together: in a transaction, so a
+// failed step leaves nothing half-done, or as plain writes on a MongoDB that can't run transactions.
+// Resolves to null instead of throwing when the device collides with another device's identity
+// (network+station, streamId or macAddress).
+async function writeLinkTogether(fn) {
   try {
-    return await write();
+    try {
+      return await withTransaction(fn);
+    } catch (err) {
+      if (!isTransactionUnsupported(err)) throw err;
+      return await fn(null);
+    }
   } catch (err) {
     if (err instanceof DuplicateKeyError) return null;
     throw err;
@@ -262,25 +269,24 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   if(deviceOwned){
     // If the device is marked unlinked, treat this as a relink that restores activity only.
     if (deviceOwned.activity === 'unlinked') {
-      const relinked = await writeDeviceIfUnique(() => DevicesRepo.update(deviceOwned.id, {
-        description: `${username}'s device`,
-        network: (network || deviceOwned.network || '').toUpperCase(),
-        station: (station || deviceOwned.station || '').toUpperCase(),
-        elevation: elevation,
-        longitude: longitude,
-        latitude: latitude,
-        streamId: streamId,
-        activity: 'inactive',
-        activityToggleTime: new Date(),
-      }));
+      const relinked = await writeLinkTogether(async (tx) => {
+        const updated = await DevicesRepo.update(deviceOwned.id, {
+          description: `${username}'s device`,
+          network: (network || deviceOwned.network || '').toUpperCase(),
+          station: (station || deviceOwned.station || '').toUpperCase(),
+          elevation: elevation,
+          longitude: longitude,
+          latitude: latitude,
+          streamId: streamId,
+          activity: 'inactive',
+          activityToggleTime: new Date(),
+        }, { tx });
+        await DevicesRepo.clearReleases({ deviceId: updated.id, streamId, macAddress }, { tx });
+        return updated;
+      });
       if (!relinked) {
         return { str: 'alreadyLinkedToSomeone' };
       }
-      await DevicesRepo.clearReleases({
-        deviceId: relinked.id,
-        streamId,
-        macAddress,
-      });
 
       const payload = {
         deviceInfo: {
@@ -325,28 +331,26 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
 
     if (device.activity === 'unlinked') {
       // Relink existing record and refresh description/ownership.
-      const relinked = await writeDeviceIfUnique(() => DevicesRepo.update(device.id, {
-        description: `${username}'s device`,
-        network: (network || device.network || '').toUpperCase(),
-        station: (station || device.station || '').toUpperCase(),
-        elevation: elevation,
-        longitude: longitude,
-        latitude: latitude,
-        streamId: streamId,
-        activity: 'inactive',
-        activityToggleTime: new Date(),
-      }));
+      const relinked = await writeLinkTogether(async (tx) => {
+        const updated = await DevicesRepo.update(device.id, {
+          description: `${username}'s device`,
+          network: (network || device.network || '').toUpperCase(),
+          station: (station || device.station || '').toUpperCase(),
+          elevation: elevation,
+          longitude: longitude,
+          latitude: latitude,
+          streamId: streamId,
+          activity: 'inactive',
+          activityToggleTime: new Date(),
+        }, { tx });
+        // Backfill account association if legacy unlinking removed it.
+        await DevicesRepo.addToAccount(currentAccount.id, [updated.id], { tx });
+        await DevicesRepo.clearReleases({ deviceId: updated.id, streamId, macAddress }, { tx });
+        return updated;
+      });
       if (!relinked) {
         return { str: 'alreadyLinkedToSomeone' };
       }
-
-      // Backfill account association if legacy unlinking removed it.
-      await DevicesRepo.addToAccount(currentAccount.id, [relinked.id]);
-      await DevicesRepo.clearReleases({
-        deviceId: relinked.id,
-        streamId,
-        macAddress,
-      });
 
       const payload = {
         deviceInfo: {
@@ -372,28 +376,27 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     }
   }
 
-  // Create new device with provided info; a collision means another record already has this station/stream/MAC
-  const newDevice = await writeDeviceIfUnique(() => DevicesRepo.create({
-    description: `${username}'s device`,
-    network: network.toUpperCase(),
-    station: station.toUpperCase(),
-    elevation: elevation,
-    longitude: longitude,
-    latitude: latitude,
-    macAddress: macAddress,
-    streamId: streamId,
-    activityToggleTime: new Date(),
-  }));
+  // Create new device with provided info and add it to the account's device list, together; a
+  // collision means another record already has this station/stream/MAC
+  const newDevice = await writeLinkTogether(async (tx) => {
+    const created = await DevicesRepo.create({
+      description: `${username}'s device`,
+      network: network.toUpperCase(),
+      station: station.toUpperCase(),
+      elevation: elevation,
+      longitude: longitude,
+      latitude: latitude,
+      macAddress: macAddress,
+      streamId: streamId,
+      activityToggleTime: new Date(),
+    }, { tx });
+    await DevicesRepo.addToAccount(currentAccount.id, [created.id], { tx });
+    await DevicesRepo.clearReleases({ deviceId: created.id, streamId, macAddress }, { tx });
+    return created;
+  });
   if (!newDevice) {
     return { str: 'alreadyLinkedToSomeone' };
   }
-
-  await DevicesRepo.addToAccount(currentAccount.id, [newDevice.id]); // add to the account's device list
-  await DevicesRepo.clearReleases({
-    deviceId: newDevice.id,
-    streamId,
-    macAddress,
-  });
 
   // Query updated device information
   const updatedDevice = await DevicesRepo.findById(newDevice.id)

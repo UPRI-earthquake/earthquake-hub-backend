@@ -127,14 +127,14 @@ const createDevicesRepo = (db) => {
     return query;
   }
 
-  async function create(fields) {
+  async function create(fields, { tx } = {}) {
     let id;
     try {
-      [{ id }] = await db('devices').insert(toColumns(fields)).returning('id');
+      [{ id }] = await q(tx)('devices').insert(toColumns(fields)).returning('id');
     } catch (err) {
       throw fromPostgresError(err);
     }
-    return one({ id });
+    return one({ id }, tx);
   }
 
   async function update(id, changes, { tx } = {}) {
@@ -183,17 +183,17 @@ const createDevicesRepo = (db) => {
 
   // Adds devices to the account's list, skipping ones already in it: a brgy forwards them; any other
   // account becomes their owner
-  async function addToAccount(accountId, deviceIds) {
+  async function addToAccount(accountId, deviceIds, { tx } = {}) {
     const ids = deviceIds.filter(isUuid);
     if (ids.length === 0 || !isUuid(accountId)) return;
-    if (await isBrgy(accountId)) {
+    if (await isBrgy(accountId, tx)) {
       const now = Date.now();
-      await db('brgy_forwarded_devices')
+      await q(tx)('brgy_forwarded_devices')
         .insert(ids.map((deviceId, i) => ({ brgy_account_id: accountId, device_id: deviceId, added_at: new Date(now + i) })))
         .onConflict(['brgy_account_id', 'device_id']).ignore();
       return;
     }
-    await db('devices').whereIn('id', ids).update({ owner_account_id: accountId });
+    await q(tx)('devices').whereIn('id', ids).update({ owner_account_id: accountId });
   }
 
   async function takeOutOfList(accountId, deviceId, tx) {
