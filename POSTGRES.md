@@ -215,10 +215,10 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
 | Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
-| Accounts | `src/repositories/accounts.repo.js` | (Step 2) | MongoDB |
-| Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | (Step 2) | MongoDB |
+| Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | MongoDB (switch pending) |
+| Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | MongoDB (switch pending) |
 
-Accounts and devices have their PostgreSQL versions written (`src/repositories/postgres/accounts.repo.js`, `devices.repo.js`, `transactions.js`) but not switched on yet. In those versions:
+Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
 - email and username lookups ignore case through `citext`, with no lowercasing in code; usernames therefore become case-insensitive, as emails already were
 - a citizen's device list is the devices it owns (`devices.owner_account_id`); a brgy's is `brgy_forwarded_devices`
@@ -253,6 +253,7 @@ Each moved area has a setting in `.env` that picks its database:
 JOB_LOCKS_DB=postgres            # mongodb | postgres
 PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
+PEOPLE_AND_SENSORS_DB=mongodb    # accounts + devices together; mongodb until they're copied and verified
 ```
 
 Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup. The backend reads these on startup and logs its choice:
@@ -263,6 +264,16 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 ```
 
 While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
+
+### Account ids while comments are still on MongoDB
+
+Comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4, and they store the author's account id as a MongoDB ObjectId, taken from the session token. So until Step 4:
+
+- **Session tokens carry the account's MongoDB-style id** (`legacyId`), not its PostgreSQL uuid. For an account copied from MongoDB that's its old `_id`, stored in `legacy_mongo_id`.
+- **Accounts created in PostgreSQL get a new ObjectId** in `legacy_mongo_id`, so new users can comment too.
+- **Sessions from before the switch keep working:** tokens are checked by signature, accounts are looked up by username, and the `accountId` inside the token is still the account's `legacy_mongo_id`.
+
+`__tests__/peopleAndSensors.switch.integration.test.js` checks all three against the real app.
 
 ### Switching an area to PostgreSQL
 
