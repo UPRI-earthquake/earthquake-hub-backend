@@ -330,7 +330,7 @@ Validation passed: all 11 valid records are in PostgreSQL.
 
 ### Copying accounts and devices
 
-[`scripts/copy-people-and-sensors-to-postgres.js`](scripts/copy-people-and-sensors-to-postgres.js) copies MongoDB accounts, devices and each account's released-device history into `accounts`, `devices` and `device_releases`. Run `npm run db:find-duplicates` first, then:
+[`scripts/copy-people-and-sensors-to-postgres.js`](scripts/copy-people-and-sensors-to-postgres.js) copies MongoDB accounts, devices, each account's released-device history and the brgy forwarding links into `accounts`, `devices`, `device_releases` and `brgy_forwarded_devices`. Run `npm run db:find-duplicates` first, then:
 
 ```sh
 docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-people-and-sensors -- --dry-run
@@ -343,12 +343,13 @@ What it does, in order:
 
 1. **Accounts.** Skipped and listed: accounts with no email, username or password, an unknown role, or a ringserver port outside 1–65535; and accounts that would collide in PostgreSQL, meaning the same email or username **ignoring case** (`Juan` / `juan`) or the same ringserver URL as another account. All accounts in a collision are skipped, since picking one would be a guess: resolve them in MongoDB and run the copy again.
 2. **Devices,** with each device's owner taken from the accounts' `devices[]` lists.
-   - A brgy account's list holds devices it forwards data for, not devices it owns, so it doesn't count as ownership. These forwarding links are counted in the report but not copied: PostgreSQL has no table for them yet.
+   - A brgy account's list holds devices it forwards data for, not devices it owns, so it doesn't count as ownership (see step 4).
    - A device listed by two owners, or whose owner was skipped, is copied **without an owner** and listed.
    - Skipped and listed: devices with missing or invalid coordinates, a missing elevation, or an unknown activity, and devices that would collide (same network + station, stream ID or MAC address).
    - An empty stream ID or MAC address becomes NULL ("not linked yet"); the legacy activity `streaming` becomes `active`.
 3. **Released devices** of the copied accounts. History never changes, so entries already copied are left alone.
-4. **Validation:** every copyable account, device and released device has its row, and the counts add up, per table. Exit code `0` = done (skipped records alone don't fail it), `1` = validation failed, `2` = error.
+4. **Brgy forwarding links:** each brgy account's `devices[]` list becomes rows in `brgy_forwarded_devices`, in the same order, for copied brgys and devices (others are listed as skipped). Links already copied are left alone; the copy never deletes one.
+5. **Validation:** every copyable account, device, released device and forwarding link has its row, and the counts add up, per table. Exit code `0` = done (skipped records alone don't fail it), `1` = validation failed, `2` = error.
 
 Like the other copies, it's **safe to run again** (rows matched by `legacy_mongo_id`), and a row changed in PostgreSQL since it was copied is kept. Password hashes are copied as they are (bcrypt), so everyone keeps their password. The report only ever names MongoDB `_id`s: never emails, usernames or password hashes.
 
@@ -372,8 +373,10 @@ Ownership:
   devices whose owner wasn't copied (copied without an owner): 1
     6513...d02: owner 6512...a01
   accounts listing a device that doesn't exist: 0
-  brgy forwarding links (not copied: no PostgreSQL table yet): 14
-Validation passed: every copyable account, device and released device is in PostgreSQL.
+Brgy forwarding links in MongoDB: 14
+  inserted: 14, already copied: 0
+  skipped: 0
+Validation passed: every copyable account, device, released device and forwarding link is in PostgreSQL.
 ```
 
 ---
@@ -388,8 +391,9 @@ Validation passed: every copyable account, device and released device is in Post
 | `accounts` | `accounts` | `20261026000000_create_accounts.js` | `db:pg:copy-people-and-sensors` |
 | `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
 | `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js` | `db:pg:copy-people-and-sensors` |
+| `brgy_forwarded_devices` | brgy accounts' `devices[]` | `20261027000000_create_brgy_forwarded_devices.js` | `db:pg:copy-people-and-sensors` |
 
-`accounts`, `devices` and `device_releases` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` exist but nothing reads or writes them yet: accounts and devices still run on MongoDB until the Step 2 switch.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -520,6 +524,18 @@ One row each time an account unlinked a device, with a snapshot of the device at
 | `reason`, `released_at` | `text` (default `unlink`), `timestamptz` | |
 
 Index: `(account_id, released_at)`, for an account's history in order.
+
+### `brgy_forwarded_devices`
+
+The sensors a barangay ringserver forwards data for. In MongoDB these were in the brgy account's `devices[]` list, mixed with ownership; here ownership is `devices.owner_account_id` and forwarding is this table, so the two can't be confused.
+
+| Column | Type | Notes |
+|---|---|---|
+| `brgy_account_id` | `uuid` → `accounts` | the barangay; **links deleted with the account** |
+| `device_id` | `uuid` → `devices`, indexed | a sensor owned by another account; **links deleted with the device** |
+| `added_at` | `timestamptz` | orders a barangay's list, oldest first |
+
+Primary key `(brgy_account_id, device_id)`: a barangay forwards a sensor only once. A row is added when a sensor's owner verifies with a barangay (`/accounts/verify-sensor-token`) and removed when the sensor is unlinked or the owner removes it from the barangay.
 
 ### Scheduled deletes (instead of TTL indexes)
 
