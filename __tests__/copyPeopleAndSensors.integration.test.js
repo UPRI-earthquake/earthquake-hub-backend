@@ -113,6 +113,7 @@ describe('scripts/copy-people-and-sensors-to-postgres', () => {
     expect(await pgRow('device_releases', ID.release)).toMatchObject({
       account_id: juan.id,
       device_id: owned.id,
+      device_legacy_mongo_id: String(ID.owned),
       station: 'R0001',
       elevation_m: 40,
       released_at: new Date('2025-06-01T00:00:00.000Z'),

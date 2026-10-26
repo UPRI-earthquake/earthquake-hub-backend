@@ -149,6 +149,7 @@ const toReleaseRow = (entry, account, accountId, deviceIds) => ({
   legacy_mongo_id: String(entry._id),
   account_id: accountId,
   device_id: (entry.deviceId && deviceIds.get(String(entry.deviceId))) || null,
+  device_legacy_mongo_id: entry.deviceId ? String(entry.deviceId) : null, // kept even if the device wasn't copied
   network: textOrNull(entry.network),
   station: textOrNull(entry.station),
   stream_id: textOrNull(entry.streamId),

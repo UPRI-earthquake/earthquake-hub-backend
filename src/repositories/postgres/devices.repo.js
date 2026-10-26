@@ -7,6 +7,12 @@
 //   - releasedDevices[] = device_releases rows
 // A write that breaks a unique rule (network+station, stream ID, MAC) throws DuplicateKeyError.
 // Functions that take { tx } run on that Knex transaction (postgres/transactions.js).
+//
+// legacyId is the device's MongoDB-style id (legacy_mongo_id), which the API returns as deviceId
+// (alert credentials, released devices) so clients see the same ids as before the move. Copied
+// devices keep their old _id; devices created here get a new ObjectId. Released devices keep it in
+// device_legacy_mongo_id, so the history still shows it after the device is deleted.
+const { Types } = require('mongoose');
 const { fromPostgresError } = require('../errors');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,6 +37,7 @@ const COLUMN_OF = {
 // null when there's no row, as the MongoDB repository returns
 const toDevice = (row) => (!row ? null : {
   id: row.id,
+  legacyId: row.legacy_mongo_id ? row.legacy_mongo_id.trim() : null,
   // MongoDB left description out when unset (no default); the other nullable fields defaulted to null
   description: row.description === null ? undefined : row.description,
   network: row.network,
@@ -49,7 +56,7 @@ const toDevice = (row) => (!row ? null : {
 });
 
 const toRelease = (row) => ({
-  deviceId: row.device_id,
+  deviceId: row.device_legacy_mongo_id ? row.device_legacy_mongo_id.trim() : null,
   network: row.network,
   station: row.station,
   description: row.description,
@@ -130,7 +137,9 @@ const createDevicesRepo = (db) => {
   async function create(fields, { tx } = {}) {
     let id;
     try {
-      [{ id }] = await q(tx)('devices').insert(toColumns(fields)).returning('id');
+      [{ id }] = await q(tx)('devices')
+        .insert({ ...toColumns(fields), legacy_mongo_id: new Types.ObjectId().toString() })
+        .returning('id');
     } catch (err) {
       throw fromPostgresError(err);
     }
@@ -246,9 +255,12 @@ const createDevicesRepo = (db) => {
   async function recordRelease(accountId, deviceId, snapshot, { tx } = {}) {
     const write = async (trx) => {
       await takeOutOfList(accountId, deviceId, trx);
+      const releasedId = isUuid(snapshot.deviceId) ? snapshot.deviceId : deviceId;
+      const released = await trx('devices').select('legacy_mongo_id').where({ id: releasedId }).first();
       await trx('device_releases').insert({
         account_id: accountId,
-        device_id: isUuid(snapshot.deviceId) ? snapshot.deviceId : deviceId,
+        device_id: releasedId,
+        device_legacy_mongo_id: released ? released.legacy_mongo_id : null,
         network: snapshot.network ?? null,
         station: snapshot.station ?? null,
         stream_id: snapshot.streamId ?? null,

@@ -3,9 +3,10 @@
 // behaving like postgres/devices.repo.js: both must pass __tests__/peopleAndSensors.repo.integration.test.js.
 //
 // Devices are returned as plain objects:
-//   { id, description, network, station, streamId, macAddress, latitude, longitude, elevation,
-//     activity, activityToggleTime, rshakeAlertCredentialHash, rshakeAlertCredentialIssuedAt,
-//     createdAt, updatedAt }
+//   { id, legacyId (= id here: the MongoDB _id), description, network, station, streamId, macAddress,
+//     latitude, longitude, elevation, activity, activityToggleTime, rshakeAlertCredentialHash,
+//     rshakeAlertCredentialIssuedAt, createdAt, updatedAt }
+// Released devices: { deviceId (the device's legacyId), network, station, ..., releasedAt, reason }
 //
 // An account's device list holds the devices a citizen/sensor account owns. A brgy account's list
 // holds the devices it forwards data for, which belong to other accounts.
@@ -20,6 +21,7 @@ const { fromMongoError } = require('../errors');
 
 const toDevice = (doc) => doc && {
   id: String(doc._id),
+  legacyId: String(doc._id),
   description: doc.description,
   network: doc.network,
   station: doc.station,

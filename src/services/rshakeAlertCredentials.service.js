@@ -111,7 +111,7 @@ async function issueAlertCredentialForOwnedDevice({ username, identifiers = {} }
   return {
     str: 'success',
     payload: {
-      deviceId: device.id,
+      deviceId: device.legacyId, // the MongoDB-style id, as before the move to PostgreSQL
       issuedAt: issuedAt.toISOString(),
       authHeader: 'X-RShake-Alert-Secret',
       sharedSecret,

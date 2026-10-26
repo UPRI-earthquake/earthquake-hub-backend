@@ -219,14 +219,15 @@ describe('accounts, devices and device_releases tables', () => {
       expect(release.released_at).toBeInstanceOf(Date);
     });
 
-    test('deleting the device keeps the history but clears device_id', async () => {
+    test("deleting the device keeps the history and the device's MongoDB-style id, but clears device_id", async () => {
       const account = await insertAccount();
       const device = await insertDevice();
-      const release = await insertRelease({ account_id: account.id, device_id: device.id });
+      const release = await insertRelease({ account_id: account.id, device_id: device.id, device_legacy_mongo_id: '6a0000000000000000000d01' });
 
       await pg.db('devices').where({ id: device.id }).del();
 
-      expect(await pg.db('device_releases').where({ id: release.id }).first()).toMatchObject({ device_id: null, station: 'R0001' });
+      expect(await pg.db('device_releases').where({ id: release.id }).first())
+        .toMatchObject({ device_id: null, device_legacy_mongo_id: '6a0000000000000000000d01', station: 'R0001' });
     });
 
     test('deleting the account deletes its history', async () => {

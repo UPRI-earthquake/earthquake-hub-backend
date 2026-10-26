@@ -328,11 +328,31 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
 
       expect(await Devices.listAccountDeviceIds(owner.id)).toEqual([]);
       expect(await Devices.listReleases(owner.id)).toEqual([expect.objectContaining({
-        deviceId: d.id, station: 'R0001', streamId: 'AM_R0001_.*/MSEED', releasedAt, reason: 'unlink',
+        deviceId: d.legacyId, station: 'R0001', streamId: 'AM_R0001_.*/MSEED', releasedAt, reason: 'unlink',
       })]);
 
       await expect(Devices.clearReleases({ macAddress: 'AA:BB:CC:DD:EE:01' })).resolves.toBe(1);
       expect(await Devices.listReleases(owner.id)).toEqual([]);
+    });
+
+    test('every device has a MongoDB-style legacyId (what the API returns as deviceId)', async () => {
+      const first = await Devices.create(device());
+      const second = await Devices.create(device({ station: 'R0002' }));
+
+      expect(first.legacyId).toMatch(/^[0-9a-f]{24}$/);
+      expect(second.legacyId).not.toBe(first.legacyId);
+      expect(await Devices.findByNetworkStation('AM', 'R0001')).toMatchObject({ legacyId: first.legacyId });
+    });
+
+    test('a released device keeps its legacyId in the history, also after the device is deleted', async () => {
+      const owner = await Accounts.create(account());
+      const d = await Devices.create(device());
+      await Devices.addToAccount(owner.id, [d.id]);
+      await Devices.recordRelease(owner.id, d.id, { deviceId: d.id, station: 'R0001', reason: 'unlink' });
+
+      await Devices.remove(d.id);
+
+      expect(await Devices.listReleases(owner.id)).toEqual([expect.objectContaining({ deviceId: d.legacyId, station: 'R0001' })]);
     });
   });
 
