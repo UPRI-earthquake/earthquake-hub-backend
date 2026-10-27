@@ -33,7 +33,7 @@
     "cors": "^2.8.5",
     "eventsource": "^2.0.2",
     "express": "^4.17.1",
-    "joi": "^17.9.1",
+    "joi": "^17.13.8",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.0",
     "multer": "^2.1.1",
