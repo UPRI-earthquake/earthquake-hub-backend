@@ -1,10 +1,10 @@
 const axios = require('axios');
-const EQEvents = require('../src/models/events.model');
+const EventsRepo = require('../src/repositories/events.repo');
 const EQEventsService = require('../src/services/EQevents.service');
 
 jest.mock('axios');
-jest.mock('../src/models/events.model', () => ({
-  updateOne: jest.fn(),
+jest.mock('../src/repositories/events.repo', () => ({
+  savePlace: jest.fn(),
 }));
 
 describe('GeoServe place persistence', () => {
@@ -44,16 +44,9 @@ describe('GeoServe place persistence', () => {
     ]);
 
     expect(event.place).toBe('0 km SW of Metro Manila, Philippines');
-    expect(EQEvents.updateOne).toHaveBeenCalledWith(
-      {
-        _id: 'event-id',
-        $or: expect.any(Array),
-      },
-      {
-        $set: {
-          place: '0 km SW of Metro Manila, Philippines',
-        },
-      },
+    expect(EventsRepo.savePlace).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'event-id', publicID: 'upri-event-001' }),
+      '0 km SW of Metro Manila, Philippines',
     );
   });
 
@@ -70,7 +63,7 @@ describe('GeoServe place persistence', () => {
 
     expect(event.place).toBe('Existing place');
     expect(axios.get).not.toHaveBeenCalled();
-    expect(EQEvents.updateOne).not.toHaveBeenCalled();
+    expect(EventsRepo.savePlace).not.toHaveBeenCalled();
   });
 
   test('retries GeoServe and persists when place is a placeholder value', async () => {
@@ -104,16 +97,9 @@ describe('GeoServe place persistence', () => {
 
     expect(event.place).toBe('0 km SW of Metro Manila, Philippines');
     expect(axios.get).toHaveBeenCalledTimes(1);
-    expect(EQEvents.updateOne).toHaveBeenCalledWith(
-      {
-        _id: 'event-id',
-        $or: expect.any(Array),
-      },
-      {
-        $set: {
-          place: '0 km SW of Metro Manila, Philippines',
-        },
-      },
+    expect(EventsRepo.savePlace).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'event-id', publicID: 'upri-event-001' }),
+      '0 km SW of Metro Manila, Philippines',
     );
   });
 });

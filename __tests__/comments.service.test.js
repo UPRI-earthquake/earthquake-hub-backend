@@ -1,8 +1,8 @@
-const mockEventFindById = jest.fn();
+const mockFindEventRef = jest.fn();
 let mockSaveResult;
 
-jest.mock('../src/models/events.model', () => ({
-  findById: (...args) => mockEventFindById(...args),
+jest.mock('../src/repositories/events.repo', () => ({
+  findRefById: (...args) => mockFindEventRef(...args),
 }));
 
 jest.mock('../src/models/comments.model', () => {
@@ -33,13 +33,9 @@ const Comment = require('../src/models/comments.model');
 const CommentsService = require('../src/services/comments.service');
 const ContributionsService = require('../src/services/contributions.service');
 
+// The event a comment refers to, as EventsRepo.findRefById gives it ({ _id, publicID }), or null
 function mockEventLookup(event) {
-  const chain = {
-    select: jest.fn(() => chain),
-    lean: jest.fn(() => Promise.resolve(event)),
-  };
-  mockEventFindById.mockReturnValue(chain);
-  return chain;
+  mockFindEventRef.mockResolvedValue(event);
 }
 
 function createFindChain(result) {
