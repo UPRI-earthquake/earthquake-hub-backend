@@ -476,7 +476,7 @@ The two `onlineStations` differences are the same stations in another order: the
 | `brgy_forwarded_devices` | brgy accounts' `devices[]` | `20261027000000_create_brgy_forwarded_devices.js` | `db:pg:copy-people-and-sensors` |
 | `events` | `events` | `20261029000000_create_events.js` | `db:pg:copy-earthquakes` |
 | `event_stations` | `events.candidateStations[]`, `recordingStations[]` | `20261029000100_create_event_stations.js` | `db:pg:copy-earthquakes` |
-| `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js` | `db:pg:copy-earthquakes` |
+| `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js`, `20261030000000_add_position_to_event_catalog_matches.js` | `db:pg:copy-earthquakes` |
 | `event_catalog_status` | `events.pendingCatalogSources`, `catalogEnrichment*`, legacy `upForEnrichment` | `20261029000300_create_event_catalog_status.js` | `db:pg:copy-earthquakes` |
 
 `accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables hold copied data only: the app reads events from MongoDB until Step 3 - Ticket 3 switches them. Migration `20261029000400` links `significant_eqs.event_id` to `events`.
@@ -679,7 +679,8 @@ The report another catalog has for the same earthquake: at most one per catalog 
 | `has_felt_intensity`, `latitude_floor_match`, `longitude_floor_match` | `boolean` | [`hasFeltIntensity`, `latitudeFloorMatch`, `longitudeFloorMatch`] |
 | `distance_km`, `time_difference_minutes`, `magnitude_difference`, `score` | `double precision` | how close the match is; lower `score` is better |
 | `match_quality` | `match_quality` enum | `high`, `medium` or `low` [`matchQuality`] |
-| `extra` | `jsonb` object, default `{}` | upstream keys without a column (e.g. a legacy entry's `sourceServer`) |
+| `position` | `smallint`, default 0 | order among the event's matches: the API returns them in `additionalInformation[]`'s order, which the frontend shows |
+| `extra` | `jsonb` object, default `{}` | upstream keys without a column (e.g. a legacy entry's `sourceServer`), and keys whose value is null |
 | `raw` | `jsonb` | the full upstream payload, when kept |
 | `created_at`, `updated_at` | `timestamptz` | |
 

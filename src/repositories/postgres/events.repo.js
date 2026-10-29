@@ -4,7 +4,7 @@
 //   events                  the event; `_id` is legacy_mongo_id: copied events keep their old _id, new
 //                           ones get a new ObjectId, so comments (still on MongoDB) keep finding them
 //   event_stations          candidateStations / recordingStations, as the devices' station codes
-//   event_catalog_matches   additionalInformation[]
+//   event_catalog_matches   additionalInformation[], in its order
 //   event_catalog_status    pendingCatalogSources, catalogEnrichmentStatus / Attempts, and the legacy
 //                           upForEnrichment / enrichmentAttempts, worked out from the rows
 // onlineStations isn't stored: it's worked out when reading, with the rule the station check uses
@@ -93,9 +93,7 @@ const createEventsRepo = (db, {
       last_modification: row.last_modification,
       upForEnrichment: pendingCatalogSources.length > 0,
       enrichmentAttempts: Math.max(0, ...statuses.map((status) => status.attempts)),
-      additionalInformation: [...matches]
-        .sort((a, b) => MATCH_SOURCES.indexOf(a.source) - MATCH_SOURCES.indexOf(b.source))
-        .map(toCatalogEntry),
+      additionalInformation: [...matches].sort((a, b) => a.position - b.position).map(toCatalogEntry),
       pendingCatalogSources,
       catalogEnrichmentAttempts: Object.fromEntries(statuses.filter((s) => s.attempts > 0).map((s) => [s.source, s.attempts])),
       catalogEnrichmentStatus: Object.fromEntries(statuses.map((s) => [s.source, s.status])),
@@ -358,7 +356,7 @@ const createEventsRepo = (db, {
       await trx('event_catalog_matches').where({ event_id: eventId }).del();
       if (bySource.size > 0) {
         await trx('event_catalog_matches').insert([...bySource.entries()]
-          .map(([source, entry]) => ({ ...toMatchColumns(entry, source), event_id: eventId })));
+          .map(([source, entry], position) => ({ ...toMatchColumns(entry, source, position), event_id: eventId })));
       }
 
       const pending = new Set((pendingCatalogSources || []).map((source) => String(source).toLowerCase()));

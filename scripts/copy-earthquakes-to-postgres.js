@@ -103,7 +103,7 @@ const toEventRow = (doc) => {
     magnitude: toNumber(doc.magnitude_value),
     seiscomp_type: textOrNull(doc.type),
     region_text: textOrNull(doc.text),
-    place: textOrNull(doc.place),
+    place: typeof doc.place === 'string' ? doc.place : null, // '' kept: the API showed it
     recording_status: RECORDING_STATUSES.has(doc.recordingAvailabilityStatus) ? doc.recordingAvailabilityStatus : 'pending',
     recording_checked_at: toDate(doc.recordingAvailabilityCheckedAt),
     recording_attempts: attempts !== null && attempts > 0 ? Math.floor(attempts) : 0,
@@ -145,8 +145,8 @@ const catalogEntries = (additionalInformation) => {
 };
 
 // The entry's columns (see src/repositories/postgres/eventMappings.js), with the event's timestamps
-const toMatchRow = (entry, source, eventId, eventRow) => ({
-  ...toMatchColumns(entry, source), event_id: eventId, created_at: eventRow.created_at, updated_at: eventRow.updated_at,
+const toMatchRow = (entry, source, position, eventId, eventRow) => ({
+  ...toMatchColumns(entry, source, position), event_id: eventId, created_at: eventRow.created_at, updated_at: eventRow.updated_at,
 });
 
 // --- Enrichment status ---
@@ -324,7 +324,8 @@ async function copyEarthquakes({ db, dryRun = false, log = console.log }) {
       if (bySource.has(source)) matches.duplicates.push({ id: label(doc), source });
       bySource.set(source, entry);
     });
-    const matchRows = [...bySource.entries()].map(([source, entry]) => toMatchRow(entry, source, eventId, eventRow));
+    // In MongoDB's order: the frontend shows the catalogs in it
+    const matchRows = [...bySource.entries()].map(([source, entry], position) => toMatchRow(entry, source, position, eventId, eventRow));
 
     // Enrichment status
     const derived = toStatusRows(doc, eventId, new Set(bySource.keys()), eventRow.updated_at);

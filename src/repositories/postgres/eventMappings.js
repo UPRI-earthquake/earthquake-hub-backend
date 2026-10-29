@@ -67,15 +67,18 @@ const asType = (value, type) => {
   return date || undefined;
 };
 
-// A catalog entry as event_catalog_matches columns (without event_id and timestamps). jsonb values are
-// JSON text, since knex would send a JS array as a PostgreSQL array.
-const toMatchColumns = (entry, source) => {
-  const row = { source };
+// A catalog entry as event_catalog_matches columns (without event_id and timestamps), at `position`
+// among the event's matches. A key whose value is null is kept in `extra`, so it comes back as null.
+// jsonb values are JSON text, since knex would send a JS array as a PostgreSQL array.
+const toMatchColumns = (entry, source, position = 0) => {
+  const row = { source, position };
   const extra = {};
   Object.entries(entry).forEach(([key, value]) => {
     if (key === 'source' || value === undefined) return;
-    if (key === 'raw') {
-      row.raw = value === null ? null : JSON.stringify(value);
+    if (value === null) {
+      extra[key] = null;
+    } else if (key === 'raw') {
+      row.raw = JSON.stringify(value);
     } else if (key === 'matchQuality' && MATCH_QUALITIES.has(value)) {
       row.match_quality = value;
     } else if (MATCH_FIELDS[key] && asType(value, MATCH_FIELDS[key][1]) !== undefined) {
@@ -93,9 +96,19 @@ const toMatchColumns = (entry, source) => {
   return row;
 };
 
+// Free-form values without their empty objects, as Mongoose showed them (its `minimize` option)
+const minimize = (value) => {
+  if (Array.isArray(value)) return value.map(minimize);
+  if (!value || typeof value !== 'object') return value;
+  const kept = Object.entries(value)
+    .map(([key, item]) => [key, minimize(item)])
+    .filter(([, item]) => !(item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length === 0));
+  return Object.fromEntries(kept);
+};
+
 // An event_catalog_matches row back as the catalog entry the API shows (empty columns left out)
 const toCatalogEntry = (row) => {
-  const entry = { ...(row.extra || {}), source: row.source };
+  const entry = { ...minimize(row.extra || {}), source: row.source };
   const put = (key, value) => {
     if (value !== null && value !== undefined) entry[key] = value;
   };
@@ -104,7 +117,7 @@ const toCatalogEntry = (row) => {
   });
   put(row.source === 'usgs' ? 'depth' : 'depthKm', row.depth_km);
   put('matchQuality', row.match_quality);
-  put('raw', row.raw);
+  put('raw', minimize(row.raw));
   return entry;
 };
 

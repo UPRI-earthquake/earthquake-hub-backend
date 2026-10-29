@@ -264,6 +264,17 @@ describe('scripts/copy-earthquakes-to-postgres', () => {
     });
   });
 
+  test("keeps MongoDB's match order, null values, and an empty place", async () => {
+    await events().insertOne(event({ _id: ID.quezon, place: '', additionalInformation: [USGS_MATCH, { ...PHIVOLCS_MATCH, depthKm: null }] }));
+
+    await copy();
+
+    const [usgs, phivolcs] = await pg.db('event_catalog_matches').orderBy('position').select('source', 'depth_km', 'extra');
+    expect([usgs.source, phivolcs.source]).toEqual(['usgs', 'phivolcs']);
+    expect(phivolcs).toMatchObject({ depth_km: null, extra: { depthKm: null } });
+    expect((await pgEvent(ID.quezon)).place).toBe('');
+  });
+
   test.each([
     ['a catalog still pending', { pendingCatalogSources: ['usgs'], catalogEnrichmentStatus: { phivolcs: 'no_match', usgs: 'pending' }, catalogEnrichmentAttempts: { phivolcs: 1, usgs: 1 } },
       [['phivolcs', 'no_match', 1], ['usgs', 'pending', 1]]],

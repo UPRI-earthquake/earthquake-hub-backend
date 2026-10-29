@@ -435,6 +435,19 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
     });
   });
 
+  test('matches come back in the order they were saved (the frontend shows them in it), null values kept', async () => {
+    await ingest('ev-1');
+    const { _id } = await Events.findForStationCheck('ev-1');
+    const usgs = { source: 'usgs', title: 'M 4.6', depth: 12, network: 'us' };
+    const phivolcs = { source: 'phivolcs', location: '010 km N of Quezon City', depthKm: null, time: null };
+
+    await Events.saveEnrichment(_id, {
+      additionalInformation: [usgs, phivolcs], pendingCatalogSources: [], catalogEnrichmentAttempts: { phivolcs: 1, usgs: 1 }, catalogEnrichmentStatus: { phivolcs: 'done', usgs: 'done' },
+    });
+
+    expect((await Events.findByPublicID('ev-1')).additionalInformation).toEqual([usgs, phivolcs]);
+  });
+
   if (name === 'postgres') {
     describe('PostgreSQL only', () => {
       const db = () => backend.pg.db;
