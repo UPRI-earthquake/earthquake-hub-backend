@@ -18,7 +18,8 @@ const isObjectId = (id) => /^[0-9a-f]{24}$/i.test(String(id)) && Types.ObjectId.
 
 // --- Reads ---
 
-// Events whose origin time is in [startTime, endTime], in stored order
+// Events whose origin time is in [startTime, endTime], newest first: the query walks the descending
+// OT index (the API never sorted explicitly; the PostgreSQL version keeps this order)
 async function listByOriginTime(startTime, endTime) {
   const docs = await EQEvents.find({ OT: { $gte: startTime, $lte: endTime } });
   return docs.map(toEvent);

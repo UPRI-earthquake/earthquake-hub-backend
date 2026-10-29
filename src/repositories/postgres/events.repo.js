@@ -172,8 +172,10 @@ const createEventsRepo = (db, {
 
   // --- Reads ---
 
+  // Newest first, as MongoDB returned them (its query walked the descending OT index)
   async function listByOriginTime(startTime, endTime) {
-    return withRows(await ordered(db('events').whereBetween('origin_time', [toDate(startTime), toDate(endTime)])));
+    return withRows(await db('events').whereBetween('origin_time', [toDate(startTime), toDate(endTime)])
+      .orderBy([{ column: 'origin_time', order: 'desc' }, { column: 'legacy_mongo_id' }, { column: 'id' }]));
   }
 
   const findByPublicID = (publicID) => findOne({ public_id: String(publicID) });

@@ -102,7 +102,7 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
   });
 
   describe('reads', () => {
-    test('listByOriginTime returns events in the range, bounds included, in the shape the API sends', async () => {
+    test('listByOriginTime returns events in the range, bounds included, newest first, in the shape the API sends', async () => {
       await ingest('ev-before', { OT: at('2026-04-30T23:59:59.999Z') });
       await ingest('ev-start', { OT: at('2026-05-01T00:00:00.000Z') });
       await ingest('ev-end', { OT: at('2026-05-02T00:00:00.000Z') });
@@ -110,7 +110,7 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
 
       const events = await Events.listByOriginTime(at('2026-05-01T00:00:00.000Z'), at('2026-05-02T00:00:00.000Z'));
 
-      expect(events.map((e) => e.publicID).sort()).toEqual(['ev-end', 'ev-start']);
+      expect(events.map((e) => e.publicID)).toEqual(['ev-end', 'ev-start']); // newest first
       expect(events[0]).toMatchObject({
         _id: expect.anything(),
         OT: expect.any(Date),
