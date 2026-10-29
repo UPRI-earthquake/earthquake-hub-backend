@@ -18,6 +18,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 10,
           "type": "NEW",
           "text": "Luzon, Philippines",
@@ -111,6 +113,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 10,
           "type": "NEW",
           "text": "Luzon, Philippines",
@@ -161,6 +165,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 10,
           "type": "NEW",
           "text": "Luzon, Philippines",
@@ -187,8 +193,6 @@
           "__v": 0,
           "publicID": "upri2026jjkl",
           "OT": "2026-05-07T00:00:00.000Z",
-          "latitude_value": null,
-          "longitude_value": null,
           "magnitude_value": 2.1,
           "place": "Unavailable"
         },
@@ -205,6 +209,13 @@
           "OT": "2026-05-05T10:00:00.000Z",
           "latitude_value": 16.3,
           "longitude_value": 120.7,
+          "location": {
+            "type": "Point",
+            "coordinates": [
+              120.7,
+              16.3
+            ]
+          },
           "depth_value": 5,
           "text": "Northern Luzon, Philippines",
           "isLegacyRecord": true,
@@ -212,9 +223,7 @@
           "legacySourcePublicID": "legacy-2026-0505-1000",
           "upForEnrichment": false,
           "enrichmentAttempts": 1,
-          "createdAt": "2026-05-10T00:00:00.000Z",
-          "updatedAt": "<now>",
-          "additionalInformation": [],
+          "pendingCatalogSources": [],
           "catalogEnrichmentAttempts": {
             "phivolcs": 1,
             "usgs": 1
@@ -223,7 +232,10 @@
             "phivolcs": "no_match",
             "usgs": "no_match"
           },
-          "pendingCatalogSources": [],
+          "createdAt": "2026-05-10T00:00:00.000Z",
+          "updatedAt": "<now>",
+          "__v": 0,
+          "additionalInformation": [],
           "place": "17 km SE of Cordillera, Philippines"
         },
         {
@@ -231,6 +243,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 30,
           "type": "NEW",
           "text": "Mindanao, Philippines",

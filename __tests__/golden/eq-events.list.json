@@ -18,6 +18,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 10,
           "type": "NEW",
           "text": "Luzon, Philippines",
@@ -71,17 +73,18 @@
           "recordingAvailabilityStatus": "pending",
           "recordingAvailabilityAttempts": 0,
           "summaryOverride": null,
-          "pendingCatalogSources": [
-            "phivolcs",
-            "usgs"
-          ],
-          "catalogEnrichmentAttempts": {},
-          "catalogEnrichmentStatus": {},
           "_id": "69000000000000000000e103",
           "publicID": "upri2026jghi",
           "OT": "2026-05-05T10:00:00.000Z",
           "latitude_value": 16.3,
           "longitude_value": 120.7,
+          "location": {
+            "type": "Point",
+            "coordinates": [
+              120.7,
+              16.3
+            ]
+          },
           "depth_value": 5,
           "text": "Northern Luzon, Philippines",
           "isLegacyRecord": true,
@@ -89,8 +92,18 @@
           "legacySourcePublicID": "legacy-2026-0505-1000",
           "upForEnrichment": true,
           "enrichmentAttempts": 0,
+          "pendingCatalogSources": [
+            "phivolcs",
+            "usgs"
+          ],
+          "catalogEnrichmentAttempts": {},
+          "catalogEnrichmentStatus": {
+            "phivolcs": "pending",
+            "usgs": "pending"
+          },
           "createdAt": "2026-05-10T00:00:00.000Z",
           "updatedAt": "2026-05-10T00:00:00.000Z",
+          "__v": 0,
           "additionalInformation": [],
           "place": "17 km SE of Cordillera, Philippines"
         },
@@ -99,6 +112,8 @@
           "sourceCatalog": "upri-current",
           "sourceServer": "earthquake.up.edu.ph",
           "isLegacyRecord": false,
+          "legacyImportedAt": null,
+          "legacySourcePublicID": null,
           "depth_value": 30,
           "type": "NEW",
           "text": "Mindanao, Philippines",

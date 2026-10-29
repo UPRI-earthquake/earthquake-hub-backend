@@ -17,6 +17,8 @@
         "sourceCatalog": "upri-current",
         "sourceServer": "earthquake.up.edu.ph",
         "isLegacyRecord": false,
+        "legacyImportedAt": null,
+        "legacySourcePublicID": null,
         "depth_value": 30,
         "type": "NEW",
         "text": "Mindanao, Philippines",

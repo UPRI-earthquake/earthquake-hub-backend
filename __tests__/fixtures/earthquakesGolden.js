@@ -6,6 +6,11 @@
 // Two jobs aren't endpoints: the station check of one new event (run by a timer after ingest) is
 // called directly and its result recorded the same way.
 //
+// The data is always seeded in MongoDB. With EARTHQUAKES_DB=postgres it is then copied with the real
+// copy scripts (accounts and devices first, then events) and removed from MongoDB, so the responses
+// come from PostgreSQL alone. The seeded records only hold what both databases can represent: e.g. an
+// ingested event's legacy fields are null (as ingest writes them), not missing.
+//
 // The test file must mock axios and puppeteer-core with the fakes (see earthquakesExternal.js).
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
@@ -14,6 +19,8 @@ const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
 const External = require('./earthquakesExternal');
+const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
+const { copyEarthquakes } = require('../../scripts/copy-earthquakes-to-postgres');
 
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
 const at = (iso) => new Date(iso);
@@ -93,12 +100,14 @@ const ACCOUNTS = [
 // Admins have no sign-in endpoint: their session token is minted directly (see adminCookie)
 const ADMIN = { accountId: '69000000000000000000a1ad', username: 'golden_admin', role: 'admin' };
 
-// An event as the app stores it today, every field set
+// An event as SeisComP ingest stores it today, every field set
 const event = (fields) => {
   const stored = {
     sourceCatalog: 'upri-current',
     sourceServer: 'earthquake.up.edu.ph',
     isLegacyRecord: false,
+    legacyImportedAt: null,
+    legacySourcePublicID: null,
     depth_value: 10,
     type: 'NEW',
     text: 'Luzon, Philippines',
@@ -181,13 +190,15 @@ const EVENTS = [
     catalogEnrichmentStatus: { phivolcs: 'done', usgs: 'pending' },
     enrichmentAttempts: 1,
   }),
-  // A legacy import from before most fields existed (no magnitude): only what the import wrote
+  // A legacy import from before most fields existed (no magnitude, type or station lists), with the
+  // location and per-catalog tracking the maintenance scripts later added to every record
   {
     _id: oid('69000000000000000000e103'),
     publicID: 'upri2026jghi',
     OT: at('2026-05-05T10:00:00.000Z'),
     latitude_value: 16.3,
     longitude_value: 120.7,
+    location: { type: 'Point', coordinates: [120.7, 16.3] },
     depth_value: 5,
     text: 'Northern Luzon, Philippines',
     isLegacyRecord: true,
@@ -195,16 +206,18 @@ const EVENTS = [
     legacySourcePublicID: 'legacy-2026-0505-1000',
     upForEnrichment: true,
     enrichmentAttempts: 0,
+    pendingCatalogSources: ['phivolcs', 'usgs'],
+    catalogEnrichmentAttempts: {},
+    catalogEnrichmentStatus: { phivolcs: 'pending', usgs: 'pending' },
     createdAt: SEEDED_AT,
     updatedAt: SEEDED_AT,
+    __v: 0,
   },
   // No coordinates: skipped by the station check; enrichment already finished
   event({
     _id: oid('69000000000000000000e104'),
     publicID: 'upri2026jjkl',
     OT: at('2026-05-07T00:00:00.000Z'),
-    latitude_value: null,
-    longitude_value: null,
     magnitude_value: 2.1,
     upForEnrichment: false,
     pendingCatalogSources: [],
@@ -314,6 +327,13 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
     await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
     await mongoose.connection.collection('devices').insertMany(DEVICES);
     await mongoose.connection.collection('events').insertMany(EVENTS);
+    if (settings.EARTHQUAKES_DB === 'postgres') {
+      const quiet = { db: pg.db, log: () => {} };
+      if (!(await copyPeopleAndSensors(quiet)).ok || !(await copyEarthquakes(quiet)).ok) {
+        throw new Error('Copying the seeded data to PostgreSQL failed');
+      }
+      await Promise.all(['accounts', 'devices', 'events'].map((name) => mongoose.connection.collection(name).deleteMany({})));
+    }
   });
 
   afterEach(() => {
@@ -326,7 +346,7 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
   });
 
   describe('GET /eq-events', () => {
-    test('a time range: events in stored order, place names filled in from GeoServe', () => check('eq-events.list', {
+    test('a time range: newest first, place names filled in from GeoServe', () => check('eq-events.list', {
       method: 'GET', path: '/eq-events?startTime=2026-05-01T00:00:00.000Z&endTime=2026-05-06T00:00:00.000Z',
     }));
     test('a range with no events', () => check('eq-events.list.empty', {
