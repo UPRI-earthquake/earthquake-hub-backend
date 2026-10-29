@@ -37,8 +37,8 @@ jobs:
     name: Verify and create versioned release
     runs-on: ubuntu-latest
     permissions:
-      contents: ${{ inputs.dry_run && 'read' || 'write' }}
-      packages: ${{ inputs.dry_run && 'read' || 'write' }}
+      contents: write
+      packages: write
     env:
       IMAGE: ghcr.io/upri-earthquake/earthquake-hub-backend
       SOURCE_SHA: ${{ inputs.source_sha }}
