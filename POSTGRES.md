@@ -310,6 +310,21 @@ Set its setting to `mongodb` and restart the backend. MongoDB still has the data
 **Earthquakes** (`EARTHQUAKES_DB`; set it back before `PEOPLE_AND_SENSORS_DB`, or the backend won't start):
 
 - **Lost on rollback** (still in PostgreSQL, not in MongoDB): events SeisComP sent after the switch, and changes since the switch to place names, summaries, station checks and catalog matches. List them: `SELECT public_id, legacy_mongo_id, updated_at FROM events WHERE updated_at > '<switch time>'`.
+- **Getting those events back into MongoDB (resending them):** the SeisComP proxy (`earthquake-hub-commons/seiscomp-scripts/event_messaging_proxy.py`) forwards live messages only, so replay them from PostgreSQL through the same endpoint, after setting `EARTHQUAKES_DB=mongodb` and restarting:
+
+  ```sh
+  docker exec earthquake-hub-postgres psql -U ehub -d earthquake_hub -tAc "
+    SELECT json_build_object('publicID', public_id, 'OT', origin_time, 'latitude_value', latitude,
+      'longitude_value', longitude, 'depth_value', depth_km, 'magnitude_value', magnitude,
+      'eventType', coalesce(seiscomp_type, 'UPDATE'), 'method', 'replay', 'text', coalesce(region_text, ''),
+      'last_modification', coalesce(last_modification, updated_at))
+    FROM events WHERE updated_at > '<switch time>' ORDER BY origin_time" |
+  while read -r body; do
+    curl -s -X POST localhost:5000/messaging/restricted/new-event -H 'Content-Type: application/json' -d "$body"; echo
+  done
+  ```
+
+  Each one is ingested as SeisComP would send it: an event MongoDB doesn't have is created (with a new `_id`, its nearest stations, a station check and pending enrichment), and one it has is updated if the replayed `last_modification` is newer. Place names, summaries and catalog matches made in PostgreSQL aren't replayed; they're worked out again. **Replaying also sends what a live event sends:** an SSE message, and a push notification for magnitude above 5.5, so don't replay against an environment with real subscribers. A SeisComP admin can resend events from SeisComP itself instead (`scxmldump` the events, then `scdispatch` them), which the proxy forwards like any update.
 - **Comments on events created after the switch** keep those events' new ObjectIds. If SeisComP sends such an event again on MongoDB, it gets another `_id`, so those comments no longer list under it; they still list under the `publicID` (comments store `eventPublicID` too).
 - **Moving forward again:** run `db:pg:copy-earthquakes` again before switching back. Events changed in PostgreSQL since the first copy are kept with their rows.
 
