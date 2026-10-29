@@ -243,7 +243,9 @@ const newEventMessage = (fields = {}) => ({
 });
 
 // Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
-const ALL_ON_MONGODB = { PEOPLE_AND_SENSORS_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb', SIGNIFICANT_EQS_DB: 'mongodb' };
+const ALL_ON_MONGODB = {
+  PEOPLE_AND_SENSORS_DB: 'mongodb', EARTHQUAKES_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb', SIGNIFICANT_EQS_DB: 'mongodb',
+};
 
 // overrides: the area settings that differ from ALL_ON_MONGODB
 const describeEarthquakesGolden = (overrides = {}) => {
