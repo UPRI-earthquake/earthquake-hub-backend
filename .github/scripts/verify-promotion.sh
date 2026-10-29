@@ -36,7 +36,7 @@ fi
 
 # Checkout is pinned to staging/main with fetch-depth: 0, not to caller-controlled code.
 git cat-file -e "${SOURCE_SHA}^{commit}" || { echo 'Selected source commit not available'; exit 1; }
-git merge-base --is-ancestor "$SOURCE_SHA" HEAD || {
+git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/$target_branch" || {
   echo "Source commit is not in the promoted $target_branch history."
   exit 1
 }
