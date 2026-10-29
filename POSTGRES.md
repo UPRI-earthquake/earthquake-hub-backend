@@ -217,7 +217,7 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
-| Earthquake events | `src/repositories/events.repo.js` | (Step 3) | MongoDB |
+| Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | MongoDB (switch pending) |
 
 Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
@@ -237,7 +237,7 @@ Two kinds of integration tests check that a move changes nothing:
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
-Golden runs pin every area setting they depend on: the app loads your `.env`, so an unpinned setting would follow whatever your dev database uses.
+Integration tests never follow your `.env`'s area settings: the app loads `.env`, but `__tests__/fixtures/integrationEnv.js` (a `setupFiles` entry) first sets every area setting to `mongodb`, and dotenv never overrides a variable that's already set. A test runs an area on PostgreSQL only when it sets that itself.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
@@ -257,9 +257,10 @@ JOB_LOCKS_DB=postgres            # mongodb | postgres
 PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
 PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
+EARTHQUAKES_DB=mongodb           # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
 ```
 
-Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup. The backend reads these on startup and logs its choice:
+Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup, and so does an area set to `postgres` before an area its tables point to: `EARTHQUAKES_DB=postgres` with `PEOPLE_AND_SENSORS_DB=mongodb` fails with `EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres`, since event stations point to devices (`dependsOn` in `src/db/areaDatabase.js`). The backend reads these on startup and logs its choice:
 
 ```
 [db] accounts: postgres (PEOPLE_AND_SENSORS_DB)
@@ -267,6 +268,7 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 [db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
 [db] job locks: postgres (JOB_LOCKS_DB)
 [db] significant earthquakes: postgres (SIGNIFICANT_EQS_DB)
+[db] earthquake events: mongodb (EARTHQUAKES_DB)
 ```
 
 While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
@@ -275,13 +277,14 @@ While an area is on PostgreSQL, the backend doesn't read or write its MongoDB co
 
 **The rule:** whatever id a client or a MongoDB collection sees stays the MongoDB-style id (`legacy_mongo_id`), never the PostgreSQL uuid. The uuid is used only inside PostgreSQL (keys and joins). Every row has one: a copied row keeps its old `_id`, and a row created in PostgreSQL gets a new ObjectId. Repositories return it as `legacyId`.
 
-Why: comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4 and store the author's account id as a MongoDB ObjectId, taken from the session token; and clients already hold device ids from earlier responses. So until Step 4:
+Why: comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4 and store the author's account id and the event's id as MongoDB ObjectIds; and clients already hold device and event ids from earlier responses. So until Step 4:
 
 - **Session tokens carry the account's `legacyId`**, so comments keep their author id, and new users can comment too.
 - **Sessions from before the switch keep working:** tokens are checked by signature, accounts are looked up by username, and the `accountId` inside the token is still the account's `legacy_mongo_id`.
+- **An event's `_id` is its `legacy_mongo_id`:** a copied event keeps its old `_id`, and an event SeisComP sends after the switch gets a new ObjectId. Comments and contributions store that id; `comments.service.js` finds the event by it through the events repository (`findRefById`), so comments from before the switch still list under their event.
 - **Device ids in responses are the device's `legacyId`:** `deviceId` in alert credentials (`/device/alert-credential`, `/device/link`) and in `releasedDevices[]`. A released device keeps its id in `device_releases.device_legacy_mongo_id`, so the history still shows it after the device is deleted, as MongoDB did.
 
-`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, and the golden files on PostgreSQL check the ids in every recorded response.
+`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, `__tests__/earthquakes.switch.integration.test.js` the event ids (comments before and after the switch, a contribution on a new event), and the golden files on PostgreSQL check the ids in every recorded response.
 
 ### Switching an area to PostgreSQL
 
