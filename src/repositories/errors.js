@@ -10,6 +10,16 @@ class DuplicateKeyError extends Error {
   }
 }
 
+// A delete was refused because other records still refer to this one: in PostgreSQL, earthquake
+// history (event_stations) keeps the devices it lists. `constraint` names the reference.
+class StillReferencedError extends Error {
+  constructor(constraint = null) {
+    super(`Still referenced${constraint ? ` (${constraint})` : ''}`);
+    this.name = 'StillReferencedError';
+    this.constraint = constraint;
+  }
+}
+
 // MongoDB's E11000 as a DuplicateKeyError; any other error is returned unchanged
 const fromMongoError = (err) => (
   err?.code === 11000 ? new DuplicateKeyError(Object.keys(err.keyPattern || err.keyValue || {})) : err
@@ -32,6 +42,7 @@ const fromPostgresError = (err) => (
 
 module.exports = {
   DuplicateKeyError,
+  StillReferencedError,
   fromMongoError,
   fromPostgresError,
 };

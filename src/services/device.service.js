@@ -1,6 +1,6 @@
 const AccountsRepo = require('../repositories/accounts.repo');
 const DevicesRepo = require('../repositories/devices.repo');
-const { DuplicateKeyError } = require('../repositories/errors');
+const { DuplicateKeyError, StillReferencedError } = require('../repositories/errors');
 const { withTransaction, isTransactionUnsupported } = require('../repositories/transactions');
 const {generateAMStationCode} = require('../controllers/helpers')
 
@@ -319,6 +319,43 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     return {str:'alreadyLinked', payload: payload};
   }
 
+  // Takes back an existing, unlinked device record for this account, refreshing its details
+  const relinkUnlinked = async (existing) => {
+    const relinked = await writeLinkTogether(async (tx) => {
+      const updated = await DevicesRepo.update(existing.id, {
+        description: `${username}'s device`,
+        network: (network || existing.network || '').toUpperCase(),
+        station: (station || existing.station || '').toUpperCase(),
+        elevation: elevation,
+        longitude: longitude,
+        latitude: latitude,
+        streamId: streamId,
+        macAddress: macAddress,
+        activity: 'inactive',
+        activityToggleTime: new Date(),
+      }, { tx });
+      // Backfill account association if legacy unlinking removed it.
+      await DevicesRepo.addToAccount(currentAccount.id, [updated.id], { tx });
+      await DevicesRepo.clearReleases({ deviceId: updated.id, streamId, macAddress }, { tx });
+      return updated;
+    });
+    if (!relinked) {
+      return { str: 'alreadyLinkedToSomeone' };
+    }
+
+    const payload = {
+      deviceInfo: {
+        network: relinked.network,
+        station: relinked.station,
+        longitude: relinked.longitude,
+        latitude: relinked.latitude,
+        elevation: relinked.elevation,
+        streamId: relinked.streamId
+      }
+    };
+    return {str:'success', payload};
+  };
+
   // check if device's mac address already exists in the database
   const device = await DevicesRepo.findByMacAddress(macAddress)
   if (device) { // device is already saved to db
@@ -330,39 +367,7 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     }
 
     if (device.activity === 'unlinked') {
-      // Relink existing record and refresh description/ownership.
-      const relinked = await writeLinkTogether(async (tx) => {
-        const updated = await DevicesRepo.update(device.id, {
-          description: `${username}'s device`,
-          network: (network || device.network || '').toUpperCase(),
-          station: (station || device.station || '').toUpperCase(),
-          elevation: elevation,
-          longitude: longitude,
-          latitude: latitude,
-          streamId: streamId,
-          activity: 'inactive',
-          activityToggleTime: new Date(),
-        }, { tx });
-        // Backfill account association if legacy unlinking removed it.
-        await DevicesRepo.addToAccount(currentAccount.id, [updated.id], { tx });
-        await DevicesRepo.clearReleases({ deviceId: updated.id, streamId, macAddress }, { tx });
-        return updated;
-      });
-      if (!relinked) {
-        return { str: 'alreadyLinkedToSomeone' };
-      }
-
-      const payload = {
-        deviceInfo: {
-          network: relinked.network,
-          station: relinked.station,
-          longitude: relinked.longitude,
-          latitude: relinked.latitude,
-          elevation: relinked.elevation,
-          streamId: relinked.streamId
-        }
-      };
-      return {str:'success', payload};
+      return relinkUnlinked(device);
     }
 
     return {str:'alreadyLinkedToSomeone'};
@@ -374,6 +379,14 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     if (station !== correctStationCode){
       return {str:'incorrectAMStation'};
     }
+  }
+
+  // A sensor reset while earthquake history listed it keeps its record, cleared of its stream ID and
+  // MAC (see resetDeviceLink): linking the sensor again takes that record back. Only after the
+  // station check above, so the station code really belongs to this MAC.
+  const cleared = await DevicesRepo.findByNetworkStation((network || '').toUpperCase(), (station || '').toUpperCase());
+  if (cleared && !cleared.macAddress && !cleared.streamId) {
+    return relinkUnlinked(cleared);
   }
 
   // Create new device with provided info and add it to the account's device list, together; a
@@ -506,6 +519,9 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
   * resetDeviceLink:
   *     Removes a device record entirely and detaches all account references,
   *     including released-device history entries that still point to it.
+  *     A device that earthquake history lists (PostgreSQL keeps those) stays
+  *     instead, cleared of its stream ID, MAC and alert credential, so the
+  *     history keeps its station; linking the sensor again takes it back.
   * 
   * Inputs:
   *     username:    string // Requesting user's username (from token)
@@ -555,7 +571,19 @@ exports.resetDeviceLink = async (username, macAddress, streamId) => {
     macAddress: device.macAddress || macAddress,
   });
 
-  await DevicesRepo.remove(device.id);
+  try {
+    await DevicesRepo.remove(device.id);
+  } catch (err) {
+    if (!(err instanceof StillReferencedError)) throw err;
+    await DevicesRepo.update(device.id, {
+      streamId: null,
+      macAddress: null,
+      activity: 'unlinked',
+      activityToggleTime: new Date(),
+      rshakeAlertCredentialHash: null,
+      rshakeAlertCredentialIssuedAt: null,
+    });
+  }
 
   return {
     str: 'success',

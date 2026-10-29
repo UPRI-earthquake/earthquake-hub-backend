@@ -13,7 +13,7 @@
 // devices keep their old _id; devices created here get a new ObjectId. Released devices keep it in
 // device_legacy_mongo_id, so the history still shows it after the device is deleted.
 const { Types } = require('mongoose');
-const { fromPostgresError } = require('../errors');
+const { fromPostgresError, StillReferencedError } = require('../errors');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (id) => UUID.test(String(id));
@@ -167,8 +167,16 @@ const createDevicesRepo = (db) => {
     return q(tx)('devices').whereIn('id', valid).update({ description });
   }
 
+  // Throws StillReferencedError when earthquake history lists the device (event_stations keeps it)
   async function remove(id) {
-    if (isUuid(id)) await db('devices').where({ id }).del();
+    if (!isUuid(id)) return;
+    try {
+      await db('devices').where({ id }).del();
+    } catch (err) {
+      // restrict_violation (ON DELETE RESTRICT), or foreign_key_violation for a plain reference
+      if (err?.code === '23001' || err?.code === '23503') throw new StillReferencedError(err.constraint);
+      throw err;
+    }
   }
 
   // --- Account device lists ---
