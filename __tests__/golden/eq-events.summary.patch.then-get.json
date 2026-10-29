@@ -1,0 +1,70 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events/upri2026jabc"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "EQ event acquired successfully",
+      "payload": {
+        "_id": "69000000000000000000e101",
+        "sourceCatalog": "upri-current",
+        "sourceServer": "earthquake.up.edu.ph",
+        "isLegacyRecord": false,
+        "depth_value": 10,
+        "type": "NEW",
+        "text": "Luzon, Philippines",
+        "onlineStations": [
+          "R3B2D",
+          "RE722"
+        ],
+        "candidateStations": [
+          "R3B2D",
+          "RE722"
+        ],
+        "recordingStations": [],
+        "recordingAvailabilityStatus": "pending",
+        "recordingAvailabilityAttempts": 0,
+        "upForEnrichment": true,
+        "enrichmentAttempts": 0,
+        "additionalInformation": [],
+        "pendingCatalogSources": [
+          "phivolcs",
+          "usgs"
+        ],
+        "catalogEnrichmentAttempts": {},
+        "catalogEnrichmentStatus": {
+          "phivolcs": "pending",
+          "usgs": "pending"
+        },
+        "summaryOverride": {
+          "text": "Felt in Quezon City.",
+          "editedAt": "<now>"
+        },
+        "createdAt": "2026-05-10T00:00:00.000Z",
+        "updatedAt": "<now>",
+        "__v": 0,
+        "publicID": "upri2026jabc",
+        "OT": "2026-05-01T08:00:00.000Z",
+        "latitude_value": 14.67,
+        "longitude_value": 121.06,
+        "magnitude_value": 4.5,
+        "place": "3 km N of Quezon City, Metro Manila, Philippines",
+        "last_modification": "2026-05-01T08:05:00.000Z",
+        "location": {
+          "type": "Point",
+          "coordinates": [
+            121.06,
+            14.67
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events/upri2026jghi"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "EQ event acquired successfully",
+      "payload": {
+        "sourceCatalog": "upri-current",
+        "onlineStations": [],
+        "candidateStations": [],
+        "recordingStations": [],
+        "recordingAvailabilityStatus": "pending",
+        "recordingAvailabilityAttempts": 0,
+        "summaryOverride": null,
+        "pendingCatalogSources": [
+          "phivolcs",
+          "usgs"
+        ],
+        "catalogEnrichmentAttempts": {},
+        "catalogEnrichmentStatus": {},
+        "_id": "69000000000000000000e103",
+        "publicID": "upri2026jghi",
+        "OT": "2026-05-05T10:00:00.000Z",
+        "latitude_value": 16.3,
+        "longitude_value": 120.7,
+        "depth_value": 5,
+        "text": "Northern Luzon, Philippines",
+        "isLegacyRecord": true,
+        "legacyImportedAt": "2026-05-06T00:00:00.000Z",
+        "legacySourcePublicID": "legacy-2026-0505-1000",
+        "upForEnrichment": true,
+        "enrichmentAttempts": 0,
+        "createdAt": "2026-05-10T00:00:00.000Z",
+        "updatedAt": "2026-05-10T00:00:00.000Z",
+        "additionalInformation": [],
+        "place": "Unavailable"
+      }
+    }
+  }
+}

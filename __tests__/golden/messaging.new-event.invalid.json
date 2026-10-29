@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/messaging/restricted/new-event",
+    "body": {
+      "publicID": "upri2026knew",
+      "OT": "2026-05-20T03:15:00.000Z",
+      "latitude_value": 95,
+      "longitude_value": 121.1,
+      "depth_value": 12,
+      "magnitude_value": 4.6,
+      "eventType": "NEW",
+      "method": "automatic",
+      "text": "Luzon, Philippines",
+      "last_modification": "2026-05-20T03:16:00.000Z"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Latitude must be less than or equal to 90."
+    }
+  }
+}

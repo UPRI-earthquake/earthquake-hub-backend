@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events?startTime=2025-01-01T00:00:00.000Z&endTime=2025-01-02T00:00:00.000Z"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "EQ events acquired successfully",
+      "payload": []
+    }
+  }
+}

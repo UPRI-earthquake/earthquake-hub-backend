@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events/upri2026zzzz"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 100,
+      "message": "Earthquake with publicID \"upri2026zzzz\" was not found.",
+      "payload": null
+    }
+  }
+}

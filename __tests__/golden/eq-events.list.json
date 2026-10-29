@@ -1,0 +1,177 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events?startTime=2026-05-01T00:00:00.000Z&endTime=2026-05-06T00:00:00.000Z"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "EQ events acquired successfully",
+      "payload": [
+        {
+          "_id": "69000000000000000000e101",
+          "sourceCatalog": "upri-current",
+          "sourceServer": "earthquake.up.edu.ph",
+          "isLegacyRecord": false,
+          "depth_value": 10,
+          "type": "NEW",
+          "text": "Luzon, Philippines",
+          "onlineStations": [
+            "R3B2D",
+            "RE722"
+          ],
+          "candidateStations": [
+            "R3B2D",
+            "RE722"
+          ],
+          "recordingStations": [],
+          "recordingAvailabilityStatus": "pending",
+          "recordingAvailabilityAttempts": 0,
+          "upForEnrichment": true,
+          "enrichmentAttempts": 0,
+          "additionalInformation": [],
+          "pendingCatalogSources": [
+            "phivolcs",
+            "usgs"
+          ],
+          "catalogEnrichmentAttempts": {},
+          "catalogEnrichmentStatus": {
+            "phivolcs": "pending",
+            "usgs": "pending"
+          },
+          "summaryOverride": null,
+          "createdAt": "2026-05-10T00:00:00.000Z",
+          "updatedAt": "2026-05-10T00:00:00.000Z",
+          "__v": 0,
+          "publicID": "upri2026jabc",
+          "OT": "2026-05-01T08:00:00.000Z",
+          "latitude_value": 14.67,
+          "longitude_value": 121.06,
+          "magnitude_value": 4.5,
+          "place": "3 km N of Quezon City, Metro Manila, Philippines",
+          "last_modification": "2026-05-01T08:05:00.000Z",
+          "location": {
+            "type": "Point",
+            "coordinates": [
+              121.06,
+              14.67
+            ]
+          }
+        },
+        {
+          "sourceCatalog": "upri-current",
+          "onlineStations": [],
+          "candidateStations": [],
+          "recordingStations": [],
+          "recordingAvailabilityStatus": "pending",
+          "recordingAvailabilityAttempts": 0,
+          "summaryOverride": null,
+          "pendingCatalogSources": [
+            "phivolcs",
+            "usgs"
+          ],
+          "catalogEnrichmentAttempts": {},
+          "catalogEnrichmentStatus": {},
+          "_id": "69000000000000000000e103",
+          "publicID": "upri2026jghi",
+          "OT": "2026-05-05T10:00:00.000Z",
+          "latitude_value": 16.3,
+          "longitude_value": 120.7,
+          "depth_value": 5,
+          "text": "Northern Luzon, Philippines",
+          "isLegacyRecord": true,
+          "legacyImportedAt": "2026-05-06T00:00:00.000Z",
+          "legacySourcePublicID": "legacy-2026-0505-1000",
+          "upForEnrichment": true,
+          "enrichmentAttempts": 0,
+          "createdAt": "2026-05-10T00:00:00.000Z",
+          "updatedAt": "2026-05-10T00:00:00.000Z",
+          "additionalInformation": [],
+          "place": "17 km SE of Cordillera, Philippines"
+        },
+        {
+          "_id": "69000000000000000000e102",
+          "sourceCatalog": "upri-current",
+          "sourceServer": "earthquake.up.edu.ph",
+          "isLegacyRecord": false,
+          "depth_value": 30,
+          "type": "NEW",
+          "text": "Mindanao, Philippines",
+          "onlineStations": [
+            "R0001"
+          ],
+          "candidateStations": [
+            "R0001"
+          ],
+          "recordingStations": [
+            "R0001"
+          ],
+          "recordingAvailabilityStatus": "verified",
+          "recordingAvailabilityAttempts": 1,
+          "upForEnrichment": true,
+          "enrichmentAttempts": 1,
+          "additionalInformation": [
+            {
+              "source": "phivolcs",
+              "sourceLabel": "PHIVOLCS",
+              "sourceIconUrl": "https://earthquake.phivolcs.dost.gov.ph/favicon.ico",
+              "dateTime": "03 May 2026 - 10:00 AM",
+              "detailUrl": "https://earthquake.phivolcs.dost.gov.ph/2026_Earthquake_Information/May/2026_0503_0200_B1.html",
+              "hasFeltIntensity": false,
+              "time": "2026-05-03T02:00:00.000Z",
+              "latitude": 7.12,
+              "longitude": 125.52,
+              "depthKm": 28,
+              "magnitude": 3.3,
+              "location": "005 km N 10° E of Davao City (Davao Del Sur)",
+              "distanceKm": 3.11,
+              "timeDifferenceMinutes": 0,
+              "magnitudeDifference": 0.1,
+              "score": 1.87,
+              "matchQuality": "high"
+            }
+          ],
+          "pendingCatalogSources": [
+            "usgs"
+          ],
+          "catalogEnrichmentAttempts": {
+            "phivolcs": 1,
+            "usgs": 1
+          },
+          "catalogEnrichmentStatus": {
+            "phivolcs": "done",
+            "usgs": "pending"
+          },
+          "summaryOverride": {
+            "text": "Weak shaking was felt in Davao City.",
+            "editedAt": "2026-05-03T05:00:00.000Z",
+            "editedBy": "golden_citizen"
+          },
+          "createdAt": "2026-05-10T00:00:00.000Z",
+          "updatedAt": "2026-05-10T00:00:00.000Z",
+          "__v": 0,
+          "publicID": "upri2026jdef",
+          "OT": "2026-05-03T02:00:00.000Z",
+          "latitude_value": 7.1,
+          "longitude_value": 125.5,
+          "magnitude_value": 3.2,
+          "recordingAvailabilityCheckedAt": "2026-05-03T02:35:00.000Z",
+          "last_modification": "2026-05-03T02:04:00.000Z",
+          "location": {
+            "type": "Point",
+            "coordinates": [
+              125.5,
+              7.1
+            ]
+          },
+          "place": "13 km NW of Davao Region, Philippines"
+        }
+      ]
+    }
+  }
+}

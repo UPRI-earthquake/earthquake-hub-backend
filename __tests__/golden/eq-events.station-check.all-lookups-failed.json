@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "CALL",
+    "path": "EQEventsService.updateOnlineStationsForEvent",
+    "body": [
+      "upri2026jmno"
+    ]
+  },
+  "response": {
+    "status": null,
+    "headers": {},
+    "body": {
+      "matchedCount": 0,
+      "modifiedCount": 0,
+      "usableDevicesCount": 3,
+      "onlineStations": [
+        "R3B2D"
+      ],
+      "skipped": true,
+      "reason": "all_station_recording_checks_failed"
+    }
+  }
+}

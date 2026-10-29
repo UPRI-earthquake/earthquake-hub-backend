@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/eq-events/restricted/update-online-stations",
+    "headers": {
+      "Cookie": "<admin session cookie>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Updated onlineStations: 3 events modified, 3 events matched, 1 events skipped, using 3 devices.",
+      "payload": {
+        "matchedCount": 3,
+        "modifiedCount": 3,
+        "usableDevicesCount": 3,
+        "skippedCount": 1,
+        "sampleOnlineStations": [
+          "R3B2D"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/eq-events/upri2026jmno"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "EQ event acquired successfully",
+      "payload": {
+        "_id": "69000000000000000000e105",
+        "sourceCatalog": "upri-current",
+        "sourceServer": "earthquake.up.edu.ph",
+        "isLegacyRecord": false,
+        "depth_value": 10,
+        "type": "NEW",
+        "text": "Luzon, Philippines",
+        "onlineStations": [
+          "R3B2D"
+        ],
+        "candidateStations": [
+          "R3B2D"
+        ],
+        "recordingStations": [],
+        "recordingAvailabilityStatus": "pending",
+        "recordingAvailabilityAttempts": 0,
+        "upForEnrichment": true,
+        "enrichmentAttempts": 0,
+        "additionalInformation": [],
+        "pendingCatalogSources": [
+          "phivolcs",
+          "usgs"
+        ],
+        "catalogEnrichmentAttempts": {},
+        "catalogEnrichmentStatus": {
+          "phivolcs": "pending",
+          "usgs": "pending"
+        },
+        "summaryOverride": null,
+        "createdAt": "2026-05-10T00:00:00.000Z",
+        "updatedAt": "2026-05-10T00:00:00.000Z",
+        "__v": 0,
+        "publicID": "upri2026jmno",
+        "OT": "2026-05-09T00:00:00.000Z",
+        "latitude_value": 14.1,
+        "longitude_value": 120.9,
+        "magnitude_value": 3.8,
+        "last_modification": "2026-05-09T00:03:00.000Z",
+        "location": {
+          "type": "Point",
+          "coordinates": [
+            120.9,
+            14.1
+          ]
+        },
+        "place": "66 km SW of Metro Manila, Philippines"
+      }
+    }
+  }
+}
