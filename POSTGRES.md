@@ -217,7 +217,7 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
-| Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | MongoDB (switch pending) |
+| Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | PostgreSQL |
 
 Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
@@ -233,7 +233,7 @@ Repositories return plain objects with an `id`, never database documents, and se
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` and `peopleAndSensors` (accounts and devices) each once with their areas on PostgreSQL and once on MongoDB, against the same recordings. `earthquakes` runs on MongoDB until Step 3 moves events, with GeoServe, FDSN, PHIVOLCS and USGS faked (`__tests__/fixtures/earthquakesExternal.js`). On PostgreSQL, the accounts and devices are seeded in MongoDB and copied with the real copy script, then removed from MongoDB, so the responses also show that copied data keeps its ids.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas`, `peopleAndSensors` (accounts and devices) and `earthquakes` each once with their areas on PostgreSQL and once on MongoDB, against the same recordings; `earthquakes` fakes GeoServe, FDSN, PHIVOLCS and USGS (`__tests__/fixtures/earthquakesExternal.js`). On PostgreSQL, the data is seeded in MongoDB and copied with the real copy scripts, then removed from MongoDB, so the responses also show that copied data keeps its ids. Seeded records hold only what both databases can represent (PostgreSQL can't tell a missing field from a null one), e.g. an ingested event's legacy fields are null, as ingest writes them.
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
@@ -257,7 +257,7 @@ JOB_LOCKS_DB=postgres            # mongodb | postgres
 PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
 PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
-EARTHQUAKES_DB=mongodb           # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
+EARTHQUAKES_DB=postgres          # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
 ```
 
 Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup, and so does an area set to `postgres` before an area its tables point to: `EARTHQUAKES_DB=postgres` with `PEOPLE_AND_SENSORS_DB=mongodb` fails with `EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres`, since event stations point to devices (`dependsOn` in `src/db/areaDatabase.js`). The backend reads these on startup and logs its choice:
@@ -268,7 +268,7 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 [db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
 [db] job locks: postgres (JOB_LOCKS_DB)
 [db] significant earthquakes: postgres (SIGNIFICANT_EQS_DB)
-[db] earthquake events: mongodb (EARTHQUAKES_DB)
+[db] earthquake events: postgres (EARTHQUAKES_DB)
 ```
 
 While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
@@ -293,7 +293,8 @@ Why: comments, helpful marks, issue reports and contributions stay on MongoDB un
 3. Copy the area's data, if it has a copy script (see below). Do a dry run first. The copy must end with `Validation passed`.
 4. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
 5. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
-6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account.
+6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account. For earthquakes: compare `GET /eq-events` over all time and a few event pages, field by field per `publicID` (the list order can differ, since place names are filled in as GeoServe answers); post a test event to `/messaging/restricted/new-event` (and an older update of it, which must be dropped), comment on it, then delete it from `events` and the comment from MongoDB.
+7. Optionally, run the MongoDB profiler (`db.setProfilingLevel(2)`) while you do step 6: the moved area's collection should show no operations from the backend.
 
 ### Rolling an area back
 
@@ -305,6 +306,14 @@ Set its setting to `mongodb` and restart the backend. MongoDB still has the data
 - **Sessions:** a copied account's token carries its old `_id`, so it keeps working on MongoDB. An account registered after the switch doesn't exist in MongoDB, so its sessions stop working and it has to register again.
 - **Device activity** is stale in MongoDB until each station's next status update, which corrects it.
 - **Moving forward again:** run the copy again before switching back. Rows changed in PostgreSQL since the first copy are kept, so changes made on MongoDB during the rollback to those same rows are not copied: check the copy's `kept` counts.
+
+**Earthquakes** (`EARTHQUAKES_DB`; set it back before `PEOPLE_AND_SENSORS_DB`, or the backend won't start):
+
+- **Lost on rollback** (still in PostgreSQL, not in MongoDB): events SeisComP sent after the switch, and changes since the switch to place names, summaries, station checks and catalog matches. List them: `SELECT public_id, legacy_mongo_id, updated_at FROM events WHERE updated_at > '<switch time>'`.
+- **Comments on events created after the switch** keep those events' new ObjectIds. If SeisComP sends such an event again on MongoDB, it gets another `_id`, so those comments no longer list under it; they still list under the `publicID` (comments store `eventPublicID` too).
+- **Moving forward again:** run `db:pg:copy-earthquakes` again before switching back. Events changed in PostgreSQL since the first copy are kept with their rows.
+
+The differences between the two databases that stay after a switch (none of them read by the frontend) are listed in [Copying earthquakes](#copying-earthquakes).
 
 On dev nothing is live, so a rollback only loses test data.
 
@@ -464,6 +473,19 @@ Validation passed: every copyable event and its stations, matches and status row
 
 The two `onlineStations` differences are the same stations in another order: the stored list is alphabetical, and the copy shows the candidates nearest first.
 
+**What the API shows differently after the switch** (compared on dev, all 906 events; the frontend reads none of these):
+
+| Field | Events | Why |
+|---|---|---|
+| `legacyImportedAt`, `legacySourcePublicID` | 847 | missing on old MongoDB records; `null` in PostgreSQL, as ingest writes them |
+| `catalogEnrichmentAttempts` | 835 | `{}` in MongoDB; the per-catalog attempts the copy took from the legacy counter |
+| `createdAt`, `__v` | 721, 682 | missing on old MongoDB records; always set in PostgreSQL |
+| `candidateStations` | 14 | older records only had `onlineStations`, which became their candidates (`onlineStations` is unchanged) |
+| `catalogEnrichmentStatus` | 2 | the events with no tracking now have pending rows |
+| `onlineStations` | 2 | same stations, nearest first |
+
+Also: `onlineStations` is worked out on read, so after an UPDATE for an event that already has recording stations it shows what the recording status implies, where MongoDB stored recording and candidate stations merged until the next station check.
+
 ---
 
 ## 7. Tables
@@ -482,7 +504,7 @@ The two `onlineStations` differences are the same stations in another order: the
 | `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js`, `20261030000000_add_position_to_event_catalog_matches.js` | `db:pg:copy-earthquakes` |
 | `event_catalog_status` | `events.pendingCatalogSources`, `catalogEnrichment*`, legacy `upForEnrichment` | `20261029000300_create_event_catalog_status.js` | `db:pg:copy-earthquakes` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables hold copied data only: the app reads events from MongoDB until Step 3 - Ticket 3 switches them. Migration `20261029000400` links `significant_eqs.event_id` to `events`.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
