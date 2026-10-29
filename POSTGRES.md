@@ -217,6 +217,7 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
+| Earthquake events | `src/repositories/events.repo.js` | (Step 3) | MongoDB |
 
 Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
@@ -232,9 +233,11 @@ Repositories return plain objects with an `id`, never database documents, and se
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` and `peopleAndSensors` (accounts and devices) each once with their areas on PostgreSQL and once on MongoDB, against the same recordings. On PostgreSQL, the accounts and devices are seeded in MongoDB and copied with the real copy script, then removed from MongoDB, so the responses also show that copied data keeps its ids.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas` and `peopleAndSensors` (accounts and devices) each once with their areas on PostgreSQL and once on MongoDB, against the same recordings. `earthquakes` runs on MongoDB until Step 3 moves events, with GeoServe, FDSN, PHIVOLCS and USGS faked (`__tests__/fixtures/earthquakesExternal.js`). On PostgreSQL, the accounts and devices are seeded in MongoDB and copied with the real copy script, then removed from MongoDB, so the responses also show that copied data keeps its ids.
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
+
+Golden runs pin every area setting they depend on: the app loads your `.env`, so an unpinned setting would follow whatever your dev database uses.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
