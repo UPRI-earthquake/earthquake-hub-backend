@@ -30,6 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate isolated CI-only web push keys
+        run: |
+          node -e 'const fs = require("fs"); const k = require("web-push").generateVAPIDKeys(); fs.appendFileSync(process.env.GITHUB_ENV, "PUBLIC_VAPID_KEY=" + k.publicKey + "\nPRIVATE_VAPID_KEY=" + k.privateKey + "\nWEB_PUSH_CONTACT=mailto:ci@example.com\n");'
+
       - name: Run Jest tests
         env:
           NODE_ENV: test
