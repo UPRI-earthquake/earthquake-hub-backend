@@ -23,6 +23,8 @@ const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION 
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
+// The two turf functions the station lookups use (the same ones @turf/turf exports)
+const turf = { point: turfHelpers.point, distance: turfDistance.default };
 const scheduledOnlineStationRefinements = new Set();
 
 function _positiveNumberEnv(name, fallback) {
@@ -603,10 +605,7 @@ async function getNearestActiveStations(latitude_value, longitude_value) {
     usableDevices,
     longitude_value,
     latitude_value,
-    {
-      point: turfHelpers.point,
-      distance: turfDistance.default,
-    },
+    turf,
   );
 
   return nearestStations.map((station) => String(station.station));
@@ -682,8 +681,6 @@ async function getEventOnlineStations(event, stationDevices, turf) {
 }
 
 async function updateOnlineStationsForEvent(publicID) {
-  const turf = await import('@turf/turf');
-
   const event = await EQEvents.findOne({ publicID }, STATION_REFINEMENT_EVENT_FIELDS).lean();
   if (!event || event.longitude_value == null || event.latitude_value == null) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0, onlineStations: [] };
@@ -759,7 +756,6 @@ async function updateOnlineStationsForEvent(publicID) {
   *
  ***************************************************************************/
 async function updateOnlineStations() {
-  const turf = await import('@turf/turf');
   const usableDevices = await findStationDevices();
   const eventFilter = { latitude_value: { $ne: null }, longitude_value: { $ne: null } };
 
