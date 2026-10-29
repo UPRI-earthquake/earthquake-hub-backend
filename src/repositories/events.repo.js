@@ -1,5 +1,11 @@
-// Data access for earthquake events. Services use this module instead of the Event model, so events can
-// move to PostgreSQL (Step 3) without changing the services. MongoDB only for now; Step 3 - Ticket 3
-// adds the PostgreSQL version and the setting that picks between them. See mongodb/events.repo.js for
-// the functions and the shape they return.
-module.exports = require('./mongodb/events.repo');
+// Data access for earthquake events. Services use this module instead of a database client, so events can
+// switch databases with EARTHQUAKES_DB (mongodb | postgres). Event stations point to devices, so events
+// can only be on PostgreSQL when accounts and devices are too (PEOPLE_AND_SENSORS_DB=postgres): the
+// backend refuses to start otherwise. See either implementation for the functions and the event shape;
+// both pass the same integration tests.
+const { selectRepository } = require('../db/areaDatabase');
+
+module.exports = selectRepository('earthquake events', 'EARTHQUAKES_DB', {
+  mongodb: () => require('./mongodb/events.repo'),
+  postgres: () => require('./postgres/events.repo').createEventsRepo(require('../db/knex').db),
+}, { dependsOn: ['PEOPLE_AND_SENSORS_DB'] });

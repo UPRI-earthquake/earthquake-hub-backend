@@ -15,8 +15,16 @@ const areaDatabase = (settingKey) => {
 
 // Picks an area's repository implementation. Only the chosen one is loaded, so an area on PostgreSQL
 // never loads its Mongoose model (which would otherwise build indexes in MongoDB on connect).
-const selectRepository = (area, settingKey, implementations) => {
+// options.dependsOn: the settings of areas whose tables this area's tables point to (foreign keys).
+// It can only be on PostgreSQL when they are too, so a mismatch stops the backend at startup.
+const selectRepository = (area, settingKey, implementations, { dependsOn = [] } = {}) => {
   const database = areaDatabase(settingKey);
+  const notMoved = database === 'postgres' ? dependsOn.filter((key) => areaDatabase(key) !== 'postgres') : [];
+  if (notMoved.length > 0) {
+    throw new Error(
+      `${settingKey}=postgres needs ${notMoved.map((key) => `${key}=postgres`).join(' and ')}: ${area} point to that data in PostgreSQL`,
+    );
+  }
   console.log(`[db] ${area}: ${database} (${settingKey})`);
   return implementations[database]();
 };
