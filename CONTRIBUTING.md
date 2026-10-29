@@ -52,6 +52,11 @@ Create regular working branches from `dev`.
 - Organization Owners may bypass required approvals on release PRs.
 - Any bypass should include a documented reason and validation performed.
 
+
+### Container Image Tagging
+
+Frontend and Backend use the shared [GHCR image-tag policy](https://github.com/UPRI-earthquake/earthquake-hub-commons/blob/dev/docs/image-tagging.md). Automated publishing updates only `dev` and write-once `sha-COMMIT` tags. Staging and release aliases require separate approval and promotion workflows; never deploy a mutable tag without recording its image digest.
+
 ### Release Promotion and Hotfixes
 
 - Regular development: working branch → `dev`.

@@ -62,9 +62,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check whether the commit image already exists
+        id: existing
+        if: steps.current.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          tag="${IMAGE}:sha-${SOURCE_SHA}"
+          if docker buildx imagetools inspect "$tag" >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+            echo "Existing SHA tag found; do not overwrite $tag"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and publish commit-specific image
         id: build
-        if: steps.current.outputs.publish == 'true'
+        if: steps.current.outputs.publish == 'true' && steps.existing.outputs.exists != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -87,6 +100,15 @@ jobs:
             echo "Newer dev commit detected; preserving dev tag."
             echo "Published immutable candidate: ${IMAGE}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [[ "${{ steps.existing.outputs.exists }}" == 'true' ]]; then
+            echo "Existing immutable SHA tag; checking it rather than rebuilding."
+            existing_digest="$(docker buildx imagetools inspect "${IMAGE}:sha-${SOURCE_SHA}" --format '{{.Manifest.Digest}}')"
+            if [[ -z "$existing_digest" ]]; then
+              echo "Unable to resolve existing digest; refusing to move dev tag."
+              exit 1
+            fi
+            DIGEST="$existing_digest"
           fi
           docker buildx imagetools create --tag "${IMAGE}:dev" "${IMAGE}@${DIGEST}"
           echo "Published ${IMAGE}:sha-${SOURCE_SHA} and updated ${IMAGE}:dev" >> "$GITHUB_STEP_SUMMARY"
