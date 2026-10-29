@@ -415,6 +415,52 @@ Brgy forwarding links in MongoDB: 14
 Validation passed: every copyable account, device, released device and forwarding link is in PostgreSQL.
 ```
 
+### Copying earthquakes
+
+[`scripts/copy-earthquakes-to-postgres.js`](scripts/copy-earthquakes-to-postgres.js) copies MongoDB `events` into `events`, and what each event embedded into `event_stations`, `event_catalog_matches` and `event_catalog_status`. Copy accounts and devices first: stations are linked to devices.
+
+```sh
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-earthquakes -- --dry-run
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-earthquakes
+```
+
+What it does, in order:
+
+1. **Events.** Skipped and listed: events with no `publicID`, a `publicID` another MongoDB event also has (all of them: picking one would be a guess) or that a different PostgreSQL event already has, and a `type` longer than 10 characters. Events with missing or out-of-range coordinates are copied with no `location`, and listed.
+2. **Stations.** `candidateStations` (or, on older records without them, `onlineStations`) and `recordingStations`, in order, each code linked to the device with that `station`. Codes that match no device, or several, are listed and left out. `onlineStations` isn't stored but worked out when reading, so events whose stored list would come out differently are listed with both versions.
+3. **Catalog matches** (`additionalInformation[]`), one per catalog: PHIVOLCS, USGS and the legacy UPRI catalog. Entries from any other catalog are listed and left out; a catalog listed twice keeps its last entry. Fields without a column, or of an unexpected type, are kept in `extra`.
+4. **Enrichment status**, one row per searched catalog (PHIVOLCS, USGS), from `pendingCatalogSources`, `catalogEnrichmentStatus`/`Attempts` and the legacy `upForEnrichment`/`enrichmentAttempts`. Where a catalog has no attempt count, the legacy counter (enrichment passes over the whole event) is used. Events with no enrichment tracking at all get `pending` rows, so the nightly job picks them up after the switch.
+5. **Validation:** every copyable event has its row, each copied event has all its stations, matches and status rows, and the counts add up. Exit code `0` = done (listed records alone don't fail it), `1` = validation failed, `2` = error.
+
+An event and its rows are copied **as one unit**, matched by `legacy_mongo_id`, so it's safe to run again. An event changed in PostgreSQL since it was copied (newer `updated_at`) is kept with all its rows; otherwise its rows are rewritten from MongoDB. For this to hold after the switch, the PostgreSQL events repository moves an event's `updated_at` whenever it writes one of its rows (Step 3 - Ticket 3).
+
+Example output (dev data, October 2026):
+
+```
+Events in MongoDB: 906
+  inserted: 906, updated: 0, kept with their rows (changed in PostgreSQL since copied): 0
+  skipped: 0
+  copied with no location (missing or out-of-range coordinates): 0
+Station entries in MongoDB: 6548
+  written: 6548, kept with their event: 0
+  left out, no device with that station: 0
+  left out, several devices with that station: 0
+  candidates taken from onlineStations (older records): 14
+  onlineStations that will show differently: 2
+    6a55...5dce (gfz2026nrac): stored [R1382, R257C, ...], will show [R98E0, R5B48, ...]
+Catalog matches in MongoDB: 1204
+  written: 1204, kept with their event: 0
+  left out, unknown catalog: 0
+  left out, catalog listed twice (last entry kept): 0
+Enrichment status rows (one per event per searched catalog): written: 1812, kept with their event: 0
+  attempts taken from the legacy enrichmentAttempts counter: 835 events
+  no enrichment tracking (pending, so the nightly job picks them up): 2 events
+  unknown status values (worked out from the other fields): 0
+Validation passed: every copyable event and its stations, matches and status rows are in PostgreSQL.
+```
+
+The two `onlineStations` differences are the same stations in another order: the stored list is alphabetical, and the copy shows the candidates nearest first.
+
 ---
 
 ## 7. Tables
@@ -428,8 +474,12 @@ Validation passed: every copyable account, device, released device and forwardin
 | `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
 | `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js`, `20261028000000_add_device_legacy_id_to_device_releases.js` | `db:pg:copy-people-and-sensors` |
 | `brgy_forwarded_devices` | brgy accounts' `devices[]` | `20261027000000_create_brgy_forwarded_devices.js` | `db:pg:copy-people-and-sensors` |
+| `events` | `events` | `20261029000000_create_events.js` | `db:pg:copy-earthquakes` |
+| `event_stations` | `events.candidateStations[]`, `recordingStations[]` | `20261029000100_create_event_stations.js` | `db:pg:copy-earthquakes` |
+| `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js` | `db:pg:copy-earthquakes` |
+| `event_catalog_status` | `events.pendingCatalogSources`, `catalogEnrichment*`, legacy `upForEnrichment` | `20261029000300_create_event_catalog_status.js` | `db:pg:copy-earthquakes` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables hold copied data only: the app reads events from MongoDB until Step 3 - Ticket 3 switches them. Migration `20261029000400` links `significant_eqs.event_id` to `events`.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -477,7 +527,7 @@ Hand-curated notable earthquakes, shown on the significant earthquakes page. The
 |---|---|---|
 | `id` | `uuid`, primary key | `uuidv7()`; the API's `_id` for rows created in PostgreSQL |
 | `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row; the API's `_id` for those rows |
-| `event_id` | `uuid` | optional link to the detected event; foreign key added when events move (Step 3) |
+| `event_id` | `uuid` → `events`, indexed | optional link to the detected event; **cleared if the event is deleted** (`ON DELETE SET NULL`) |
 | `title` | `text`, required | [`title`] |
 | `magnitude` | `double precision`, required | [`magnitude`] |
 | `depth_km` | `double precision` | [`depth`] |
@@ -546,6 +596,8 @@ One Raspberry Shake sensor. Ownership moves here from `accounts.devices[]`.
 
 Rules: one device per network + station; a stream ID or MAC address belongs to one device; latitude −90…90 and longitude −180…180; the owner must be an existing account.
 
+**A device that earthquake history lists can't be deleted** (`event_stations`, `ON DELETE RESTRICT`), so `POST /device/reset-link` keeps such a device instead: it removes it from every account as before, and clears its stream ID, MAC address and alert credential (activity `unlinked`). The history keeps its station, and linking the sensor again takes the same record back, for whichever account links it: a link that finds no device with that MAC reuses a cleared device with the same network and station, after the usual check that an AM station code belongs to that MAC. A device without history is still deleted. (On MongoDB nothing refers to devices, so reset-link always deletes.)
+
 ### `device_releases`
 
 One row each time an account unlinked a device, with a snapshot of the device at that moment (replaces `accounts.releasedDevices[]`).
@@ -573,6 +625,77 @@ The sensors a barangay ringserver forwards data for. In MongoDB these were in th
 | `added_at` | `timestamptz` | orders a barangay's list, oldest first |
 
 Primary key `(brgy_account_id, device_id)`: a barangay forwards a sensor only once. A row is added when a sensor's owner verifies with a barangay (`/accounts/verify-sensor-token`) and removed when the sensor is unlinked or the owner removes it from the barangay.
+
+### `events`
+
+One earthquake detected by SeisComP. Column names in brackets are the API field names, which don't change.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `public_id` | `text`, required, unique | SeisComP event id [`publicID`]; one row per earthquake, whether SeisComP said NEW or UPDATE |
+| `source_catalog`, `source_server`, `source_seiscomp_version` | `text` | where the event came from; `source_catalog` defaults to `upri-current` and is indexed |
+| `is_legacy_record`, `legacy_imported_at`, `legacy_source_public_id` | `boolean` (default false, indexed), `timestamptz`, `text` | events imported from the old catalog |
+| `origin_time` | `timestamptz`, indexed | [`OT`] |
+| `latitude`, `longitude` | `double precision` | [`latitude_value`, `longitude_value`]; not range-checked, since old records may hold bad ones |
+| `location` | `geography(Point, 4326)` | **generated** from latitude/longitude, **null when they're missing or out of range**; GiST index |
+| `depth_km`, `magnitude` | `double precision` | [`depth_value`, `magnitude_value`] |
+| `seiscomp_type` | `varchar(10)` | latest SeisComP message type, e.g. `NEW`, `UPDATE`, `M` [`type`] |
+| `region_text` | `text` | SeisComP region text [`text`] |
+| `place` | `text` | GeoServe place name, filled on first read |
+| `recording_status`, `recording_checked_at`, `recording_attempts` | `recording_status` enum (default `pending`, indexed), `timestamptz`, `int` | which nearby stations recorded it: `pending`, `partial`, `verified` or `unavailable` [`recordingAvailability*`] |
+| `last_modification` | `timestamptz` | an update older than this is dropped (SeisComP messages can arrive out of order) |
+| `summary_override_text`, `summary_override_edited_at`, `summary_override_edited_by` | `text`, `timestamptz`, `text` | summary edited by hand [`summaryOverride`] |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: `public_id` unique and not blank; `recording_attempts` not negative; an edit time or editor only with a summary text. `onlineStations` isn't a column: it's worked out from `event_stations` and the recording status, as the app did when storing it.
+
+### `event_stations`
+
+The stations near an earthquake, linked to their devices. Replaces `candidateStations[]` and `recordingStations[]`, which MongoDB stored as station codes nothing tied to a real device.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `device_id` | `uuid` → `devices`, indexed | the station; **the device can't be deleted while listed** (`ON DELETE RESTRICT`) |
+| `kind` | `station_kind` enum | `candidate` (nearest active station at ingest) or `recording` (FDSN has its waveform data) |
+| `position` | `smallint` | order in its list, nearest first |
+
+Primary key `(event_id, device_id, kind)`: a station appears once per list. Unique `(event_id, kind, position)`, so the order is always defined. The `device_id` index answers "which earthquakes did this station record?".
+
+### `event_catalog_matches`
+
+The report another catalog has for the same earthquake: at most one per catalog (unique `(event_id, source)`). Replaces `additionalInformation[]`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | |
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `source` | `catalog_source` enum | `phivolcs`, `usgs`, or `upri-legacy` (the old UPRI catalog's entry on imported records, which the frontend shows; `postgres-schema.dbml` lists only the first two) |
+| `source_label`, `source_icon_url`, `external_id`, `title`, `place`, `location_text`, `detail`, `url`, `detail_url`, `query_url` | `text` | [`sourceLabel`, `sourceIconUrl`, `id`, `title`, `place`, `location`, `detail`, `url`, `detailUrl`, `queryUrl`] |
+| `match_time`, `match_time_text` | `timestamptz`, `text` | [`time`]; PHIVOLCS's own date text, GMT+8 [`dateTime`] |
+| `latitude`, `longitude`, `depth_km`, `magnitude` | `double precision` | depth is [`depthKm`] in PHIVOLCS and legacy entries, [`depth`] in USGS ones |
+| `has_felt_intensity`, `latitude_floor_match`, `longitude_floor_match` | `boolean` | [`hasFeltIntensity`, `latitudeFloorMatch`, `longitudeFloorMatch`] |
+| `distance_km`, `time_difference_minutes`, `magnitude_difference`, `score` | `double precision` | how close the match is; lower `score` is better |
+| `match_quality` | `match_quality` enum | `high`, `medium` or `low` [`matchQuality`] |
+| `extra` | `jsonb` object, default `{}` | upstream keys without a column (e.g. a legacy entry's `sourceServer`) |
+| `raw` | `jsonb` | the full upstream payload, when kept |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+### `event_catalog_status`
+
+How far the nightly enrichment job got for one earthquake in one catalog. Replaces `pendingCatalogSources`, `catalogEnrichmentStatus`/`Attempts` and the legacy `upForEnrichment`/`enrichmentAttempts`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `source` | `catalog_source` | only `phivolcs` or `usgs`, the catalogs the job searches |
+| `status` | `enrichment_status` enum, default `pending` | `pending`, `done`, `no_match` or `failed` |
+| `attempts` | `int`, default 0 | not negative |
+| `updated_at` | `timestamptz` | |
+
+Primary key `(event_id, source)`; index `(source, status)` finds the events still pending for a catalog.
 
 ### Scheduled deletes (instead of TTL indexes)
 
