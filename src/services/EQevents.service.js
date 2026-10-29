@@ -1,8 +1,7 @@
 const axios = require('axios');
 const Joi = require('joi');
-const EQEvents = require('../models/events.model');
+const EventsRepo = require('../repositories/events.repo');
 const DevicesRepo = require('../repositories/devices.repo');
-const { toGeoPoint } = require('../models/geoPoint');
 const puppeteer = require('puppeteer-core');
 
 const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.up.edu.ph/fdsnws/dataselect/1/query';
@@ -43,33 +42,13 @@ function _hasUsablePlace(place) {
   );
 }
 
-function _getEventIdentityFilter(eventData) {
-  if (eventData?._id) return { _id: eventData._id };
-  if (eventData?.publicID) return { publicID: eventData.publicID };
-  return null;
-}
-
 async function _persistComputedPlace(eventData, place) {
   if (!_hasUsablePlace(place)) return;
-
-  const identityFilter = _getEventIdentityFilter(eventData);
-  if (!identityFilter) return;
+  if (!eventData?._id && !eventData?.publicID) return;
 
   try {
-    await EQEvents.updateOne(
-      {
-        ...identityFilter,
-        $or: [
-          { place: { $exists: false } },
-          { place: null },
-          { place: '' },
-          { place: 'Unavailable' },
-          { place: 'Unable to geocode' },
-          { place: 'Nominatim unavailable' },
-        ],
-      },
-      { $set: { place } },
-    );
+    // Only fills in a missing or placeholder place; a usable stored one is kept
+    await EventsRepo.savePlace(eventData, place);
   } catch (err) {
     console.error(`addPlacesAttribute [${eventData.publicID || eventData._id}]: place persistence failed - ${err.message}`);
   }
@@ -136,15 +115,11 @@ const USGS_REQUEST_TIMEOUT_MS = _positiveNumberEnv('USGS_REQUEST_TIMEOUT_MS', 15
   * 
  ***************************************************************************/
 async function getEventsList(startTime, endTime){
-  const response = await EQEvents.find({
-    OT: { $gte: startTime, $lte: endTime }
-  });
-
-  return response;
+  return EventsRepo.listByOriginTime(startTime, endTime);
 }
 
 async function getEventByPublicID(publicID) {
-  return EQEvents.findOne({ publicID });
+  return EventsRepo.findByPublicID(publicID);
 }
 
 /***************************************************************************
@@ -241,17 +216,7 @@ function direction(lat, lon, ref_lat, ref_lon){
 async function addPlacesAttribute(eventsList){
   var updatedData = [];
 
-  await Promise.all(eventsList.map(async (event) => {
-    let eventData;
-    // check event data structure
-    if (event._doc) {
-      // if coming from mongoDB output
-      eventData = event._doc;
-    } else {
-      // others
-      eventData = event;
-    }
-
+  await Promise.all(eventsList.map(async (eventData) => {
     if (_hasUsablePlace(eventData.place)) {
       updatedData.push(eventData);
       return;
@@ -357,18 +322,7 @@ async function addEQEvent(
   }
   onlineStations = normalizeStationList(onlineStations);
 
-  const existingEvent = await EQEvents.findOne(
-    { publicID },
-    {
-      depth_value: 1,
-      latitude_value: 1,
-      longitude_value: 1,
-      place: 1,
-      last_modification: 1,
-      recordingStations: 1,
-      recordingAvailabilityStatus: 1,
-    },
-  ).lean();
+  const existingEvent = await EventsRepo.findIngestState(publicID);
 
   // Ignore stale updates: only newer last_modification may overwrite existing
   // event details. This prevents out-of-order proxy messages from regressing
@@ -381,11 +335,9 @@ async function addEQEvent(
     }
   }
 
-  // Idempotent upsert by publicID. This prevents duplicates when a previous
-  // bug or out-of-order messages would otherwise create separate NEW/UPDATE
-  // documents for the same quake. The unique index on publicID enforces this
-  // at the database level as well.
-  const filter = { publicID };
+  // Saved by publicID, so NEW and UPDATE messages for the same quake never
+  // become separate events. The repository repeats the out-of-order check in
+  // the write itself, for two messages that arrive at the same moment.
   const existingRecordingStations = normalizeStationList(existingEvent?.recordingStations);
   const displayStations = existingRecordingStations.length > 0
     ? mergeStationLists(existingRecordingStations, onlineStations)
@@ -396,56 +348,34 @@ async function addEQEvent(
     longitude_value,
   );
 
-  const update = {
-    $set: {
-      OT,
-      latitude_value,
-      longitude_value,
-      depth_value,
-      magnitude_value,
-      type: eventType,
-      text,
-      sourceCatalog: EVENT_SOURCE_CATALOG,
-      sourceServer: EVENT_SOURCE_SERVER,
-      isLegacyRecord: false,
-      legacyImportedAt: null,
-      legacySourcePublicID: null,
-      onlineStations: displayStations,
-      candidateStations: onlineStations,
-      recordingAvailabilityStatus: existingRecordingStations.length > 0
-        ? existingEvent.recordingAvailabilityStatus || 'partial'
-        : 'pending',
-      ...(last_modification ? { last_modification: last_modification } : {}),
-      ...(EVENT_SOURCE_SEISCOMP_VERSION ? { sourceSeiscompVersion: EVENT_SOURCE_SEISCOMP_VERSION } : {}),
-    },
-    $setOnInsert: {
-      publicID,
-      recordingStations: [],
-      recordingAvailabilityAttempts: 0,
-      pendingCatalogSources: CATALOG_SOURCE_NAMES,
-      catalogEnrichmentAttempts: {},
-      catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
-    },
+  const fields = {
+    OT,
+    latitude_value,
+    longitude_value,
+    depth_value,
+    magnitude_value,
+    type: eventType,
+    text,
+    sourceCatalog: EVENT_SOURCE_CATALOG,
+    sourceServer: EVENT_SOURCE_SERVER,
+    onlineStations: displayStations,
+    candidateStations: onlineStations,
+    recordingAvailabilityStatus: existingRecordingStations.length > 0
+      ? existingEvent.recordingAvailabilityStatus || 'partial'
+      : 'pending',
+    ...(last_modification ? { last_modification: last_modification } : {}),
+    ...(EVENT_SOURCE_SEISCOMP_VERSION ? { sourceSeiscompVersion: EVENT_SOURCE_SEISCOMP_VERSION } : {}),
   };
-  const unset = {};
-  if (shouldRefreshPlace) {
-    unset.place = '';
-  }
-  // Keep the indexed GeoJSON point in step with the coordinates. Out-of-range
-  // coordinates would make the 2dsphere index reject the whole write, so the
-  // point is dropped instead of stored.
-  const location = toGeoPoint(latitude_value, longitude_value);
-  if (location) {
-    update.$set.location = location;
-  } else {
-    unset.location = '';
-  }
-  if (Object.keys(unset).length > 0) {
-    update.$unset = unset;
-  }
 
-  await EQEvents.updateOne(filter, update, { upsert: true });
-  scheduleOnlineStationsRefinement(publicID);
+  // A moved event loses its place name, which is recomputed on the next read.
+  // A new event is looked up in every catalog.
+  const saved = await EventsRepo.saveFromSeiscomp(publicID, fields, {
+    clearPlace: shouldRefreshPlace,
+    catalogSources: CATALOG_SOURCE_NAMES,
+  });
+  if (saved) {
+    scheduleOnlineStationsRefinement(publicID);
+  }
   return 'success';
 }
 
@@ -472,17 +402,6 @@ function formatFdsnTime(date) {
 function findStationDevices({ activity } = {}) {
   return DevicesRepo.listStationLocations({ activity });
 }
-
-// Event fields read by the station refinement (getEventOnlineStationsResult + buildRecordingAvailabilityUpdate).
-const STATION_REFINEMENT_EVENT_FIELDS = {
-  OT: 1,
-  latitude_value: 1,
-  longitude_value: 1,
-  candidateStations: 1,
-  onlineStations: 1,
-  recordingAvailabilityAttempts: 1,
-  recordingAvailabilityStatus: 1,
-};
 
 function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
   const epicenter = turf.point([epicenterLng, epicenterLat]);
@@ -681,7 +600,7 @@ async function getEventOnlineStations(event, stationDevices, turf) {
 }
 
 async function updateOnlineStationsForEvent(publicID) {
-  const event = await EQEvents.findOne({ publicID }, STATION_REFINEMENT_EVENT_FIELDS).lean();
+  const event = await EventsRepo.findForStationCheck(publicID);
   if (!event || event.longitude_value == null || event.latitude_value == null) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0, onlineStations: [] };
   }
@@ -690,16 +609,12 @@ async function updateOnlineStationsForEvent(publicID) {
   const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
   if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
     const attempts = Number(event.recordingAvailabilityAttempts || 0) + 1;
-    await EQEvents.updateOne(
-      { publicID },
-      {
-        $set: {
-          recordingAvailabilityCheckedAt: new Date(),
-          recordingAvailabilityAttempts: attempts,
-          recordingAvailabilityStatus: event.recordingAvailabilityStatus || 'pending',
-        },
-      },
-    );
+    await EventsRepo.saveStationChecks([{
+      _id: event._id,
+      recordingAvailabilityCheckedAt: new Date(),
+      recordingAvailabilityAttempts: attempts,
+      recordingAvailabilityStatus: event.recordingAvailabilityStatus || 'pending',
+    }]);
     if (attempts < RECORDING_AVAILABILITY_MAX_ATTEMPTS) {
       scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
     }
@@ -714,19 +629,7 @@ async function updateOnlineStationsForEvent(publicID) {
   }
 
   const availability = buildRecordingAvailabilityUpdate(event, refinement);
-  const result = await EQEvents.updateOne(
-    { publicID },
-    {
-      $set: {
-        candidateStations: availability.candidateStations,
-        recordingStations: availability.recordingStations,
-        recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-        recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-        recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-        onlineStations: availability.onlineStations,
-      },
-    },
-  );
+  const result = await EventsRepo.saveStationChecks([stationCheckResults(event, availability)]);
 
   if (availability.shouldRetry) {
     scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
@@ -755,9 +658,21 @@ async function updateOnlineStationsForEvent(publicID) {
   *     An object with matchedCount, modifiedCount, and usableDevicesCount.
   *
  ***************************************************************************/
+// What a station check saves for one event
+function stationCheckResults(event, availability) {
+  return {
+    _id: event._id,
+    candidateStations: availability.candidateStations,
+    recordingStations: availability.recordingStations,
+    recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+    recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+    recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+    onlineStations: availability.onlineStations,
+  };
+}
+
 async function updateOnlineStations() {
   const usableDevices = await findStationDevices();
-  const eventFilter = { latitude_value: { $ne: null }, longitude_value: { $ne: null } };
 
   let processedCount = 0;
   let skippedCount = 0;
@@ -765,21 +680,16 @@ async function updateOnlineStations() {
   let modifiedCount = 0;
   let lastId = null;
 
-  // Keyset pagination by _id rather than one long-lived cursor: each event waits on FDSN
-  // requests, and a cursor left idle that long is closed by the server.
+  // In batches, each picking up after the last one's _id, rather than one long-lived
+  // cursor: each event waits on FDSN requests, and a cursor left idle that long is
+  // closed by the server.
   for (;;) {
-    const events = await EQEvents.find(
-      lastId ? { ...eventFilter, _id: { $gt: lastId } } : eventFilter,
-      STATION_REFINEMENT_EVENT_FIELDS,
-    )
-      .sort({ _id: 1 })
-      .limit(ONLINE_STATIONS_BATCH_SIZE)
-      .lean();
+    const events = await EventsRepo.listForStationCheck({ after: lastId, limit: ONLINE_STATIONS_BATCH_SIZE });
     if (events.length === 0) break;
     lastId = events[events.length - 1]._id;
     processedCount += events.length;
 
-    const operations = [];
+    const results = [];
     for (const event of events) {
       const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
       if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
@@ -787,26 +697,11 @@ async function updateOnlineStations() {
         continue;
       }
 
-      const availability = buildRecordingAvailabilityUpdate(event, refinement);
-      operations.push({
-        updateOne: {
-          filter: { _id: event._id },
-          update: {
-            $set: {
-              candidateStations: availability.candidateStations,
-              recordingStations: availability.recordingStations,
-              recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-              recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-              recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-              onlineStations: availability.onlineStations,
-            },
-          },
-        },
-      });
+      results.push(stationCheckResults(event, buildRecordingAvailabilityUpdate(event, refinement)));
     }
 
-    if (operations.length > 0) {
-      const result = await EQEvents.bulkWrite(operations);
+    if (results.length > 0) {
+      const result = await EventsRepo.saveStationChecks(results);
       matchedCount += result.matchedCount;
       modifiedCount += result.modifiedCount;
     }
@@ -826,14 +721,12 @@ async function updateOnlineStations() {
     };
   }
 
-  const sampleEvent = await EQEvents.findOne({}, { onlineStations: 1 }).lean();
-
   return {
     matchedCount,
     modifiedCount,
     usableDevicesCount: usableDevices.length,
     skippedCount,
-    sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
+    sampleOnlineStations: await EventsRepo.sampleOnlineStations(),
   };
 }
 
@@ -1003,22 +896,17 @@ function _validateReferenceEvent(ref) {
   return missing;
 }
 
-function _getEnrichmentEligibilityFilter() {
-  const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
+// Which events are ready for enrichment: old enough for the catalogs to have published them
+// (ENRICHMENT_MIN_AGE_HOURS), and with a catalog still pending or legacy attempts left
+function _getEnrichmentEligibility() {
   return {
-    OT: { $lte: cutoff },
-    $or: [
-      { pendingCatalogSources: { $exists: true, $ne: [] } },
-      {
-        upForEnrichment: true,
-        enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
-      },
-    ],
+    cutoff: new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000),
+    maxAttempts: MAX_ENRICHMENT_ATTEMPTS,
   };
 }
 
 async function countEligibleEnrichmentEvents() {
-  return EQEvents.countDocuments(_getEnrichmentEligibilityFilter());
+  return EventsRepo.countEnrichmentEligible(_getEnrichmentEligibility());
 }
 
 function _buildPhivolcsUrl(year, month) {
@@ -1244,10 +1132,7 @@ async function addAdditionalInformation() {
     const page          = await browser.newPage();
     const phivolcsCache = new Map();
 
-    const events = await EQEvents.find(_getEnrichmentEligibilityFilter())
-      .sort({ OT: 1 })
-      .limit(ENRICHMENT_BATCH_SIZE)
-      .lean();
+    const events = await EventsRepo.listEnrichmentEligible({ ..._getEnrichmentEligibility(), limit: ENRICHMENT_BATCH_SIZE });
 
     console.log(
       `addAdditionalInformation: processing ${events.length} event(s) ` +
@@ -1288,19 +1173,12 @@ async function addAdditionalInformation() {
           sourceStatus[source] = 'no_match';
           sourceAttempts[source] = (sourceAttempts[source] || 0) + 1;
         });
-        await EQEvents.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              additionalInformation: _normalizeCatalogSources(event.additionalInformation),
-              pendingCatalogSources: [],
-              catalogEnrichmentAttempts: sourceAttempts,
-              catalogEnrichmentStatus: sourceStatus,
-              upForEnrichment: false,
-            },
-            $inc: { enrichmentAttempts: 1 },
-          },
-        );
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+          pendingCatalogSources: [],
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
         process.stdout.write(`skipped (missing: ${missingFields.join(', ')})\n`);
         skippedCount  += 1;
         modifiedCount += 1;
@@ -1364,19 +1242,12 @@ async function addAdditionalInformation() {
         );
         const allCompleted = sourceFailureCount === 0;
 
-        await EQEvents.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              additionalInformation,
-              pendingCatalogSources,
-              catalogEnrichmentAttempts: sourceAttempts,
-              catalogEnrichmentStatus: sourceStatus,
-              upForEnrichment: pendingCatalogSources.length > 0,
-            },
-            $inc: { enrichmentAttempts: 1 },
-          },
-        );
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation,
+          pendingCatalogSources,
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
 
         const statusNote = allCompleted ? '' : ' (partial — will retry failed source)';
         if (!allCompleted) {
@@ -1400,16 +1271,6 @@ async function addAdditionalInformation() {
         const remainingPendingSources = pendingSources.filter(
           (source) => sourceAttempts[source] < MAX_ENRICHMENT_ATTEMPTS,
         );
-        const updateFields = {
-          $set: {
-            additionalInformation: _normalizeCatalogSources(event.additionalInformation),
-            pendingCatalogSources: remainingPendingSources,
-            catalogEnrichmentAttempts: sourceAttempts,
-            catalogEnrichmentStatus: sourceStatus,
-            upForEnrichment: remainingPendingSources.length > 0,
-          },
-          $inc: { enrichmentAttempts: 1 },
-        };
 
         if (remainingPendingSources.length === 0) {
           exhaustedCount += 1;
@@ -1418,7 +1279,12 @@ async function addAdditionalInformation() {
           process.stdout.write(`error (will retry) -> ${err.message}\n`);
         }
 
-        await EQEvents.updateOne({ _id: event._id }, updateFields);
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+          pendingCatalogSources: remainingPendingSources,
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
         modifiedCount += 1;
       }
     }
@@ -1446,19 +1312,7 @@ async function addAdditionalInformation() {
 }
 
 async function setEventSummary(publicID, text, editedBy) {
-  const event = await EQEvents.findOneAndUpdate(
-    { publicID },
-    {
-      $set: {
-        summaryOverride: {
-          text,
-          editedAt: new Date(),
-          ...(editedBy ? { editedBy } : {})
-        }
-      }
-    },
-    { new: true, runValidators: true }
-  );
+  const event = await EventsRepo.setSummary(publicID, text, editedBy);
 
   if (!event) {
     const error = new Error(`Event not found: ${publicID}`);
@@ -1470,11 +1324,7 @@ async function setEventSummary(publicID, text, editedBy) {
 }
 
 async function clearEventSummary(publicID) {
-  const event = await EQEvents.findOneAndUpdate(
-    { publicID },
-    { $unset: { summaryOverride: "" } },
-    { new: true }
-  );
+  const event = await EventsRepo.clearSummary(publicID);
 
   if (!event) {
     const error = new Error(`Event not found: ${publicID}`);

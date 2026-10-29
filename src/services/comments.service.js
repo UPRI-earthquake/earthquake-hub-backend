@@ -1,5 +1,5 @@
 const Comment = require('../models/comments.model');
-const Event = require('../models/events.model');
+const EventsRepo = require('../repositories/events.repo');
 const ContributionsService = require('./contributions.service');
 
 const COMMENT_STATUS = Object.freeze({
@@ -162,7 +162,7 @@ async function createComment({
   content,
   imageURL,
 }) {
-  const event = await Event.findById(eventId).select('_id publicID').lean();
+  const event = await EventsRepo.findRefById(eventId);
   if (!event) {
     return null;
   }
@@ -192,7 +192,7 @@ async function createComment({
 
 // Get all comments for a specific event
 async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = '', viewerAccountId = null } = {}) {
-  const event = await Event.findById(eventId).select('_id publicID').lean();
+  const event = await EventsRepo.findRefById(eventId);
   if (!event) {
     return null;
   }
