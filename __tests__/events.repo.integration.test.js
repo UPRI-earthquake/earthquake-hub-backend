@@ -1,8 +1,13 @@
-// Behavior the earthquake events repository must have. Runs against MongoDB now; Step 3 - Ticket 3 adds
-// the PostgreSQL version to `backends`, so the same cases guard the switch.
+// Behavior both versions of the earthquake events repository must have, run against MongoDB and
+// PostgreSQL alike, so switching events to PostgreSQL can't change what services see. Behavior only
+// PostgreSQL has (stations as device links, onlineStations worked out on read, transactions) is
+// tested separately.
 const mongoose = require('mongoose');
 const mongoEventsRepo = require('../src/repositories/mongodb/events.repo');
+const { createEventsRepo } = require('../src/repositories/postgres/events.repo');
+const { copyEarthquakes } = require('../scripts/copy-earthquakes-to-postgres');
 const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
+const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 
 const SOURCES = ['phivolcs', 'usgs'];
 const at = (iso) => new Date(iso);
@@ -44,9 +49,42 @@ const backends = [
       };
     },
   },
+  {
+    name: 'postgres',
+    timeout: Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS),
+    start: async () => {
+      // MongoDB too: an older record arrives in PostgreSQL the way it really would, through the copy script
+      const [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
+      // The devices the station codes in these tests belong to
+      const seedDevices = () => pg.db('devices').insert(['R3B2D', 'R0001', 'RE722'].map((station, i) => ({
+        network: 'AM', station, latitude: 14.6, longitude: 121 + i, elevation_m: 50,
+      })));
+      await seedDevices();
+      return {
+        Events: createEventsRepo(pg.db),
+        unknownId: () => new mongoose.Types.ObjectId().toString(),
+        insertRaw: async (doc) => {
+          const { insertedId } = await mongoose.connection.collection('events').insertOne({ ...doc });
+          const copied = await copyEarthquakes({ db: pg.db, log: () => {} });
+          if (!copied.ok) throw new Error('Copying the record to PostgreSQL failed');
+          return String(insertedId);
+        },
+        stored: async (publicID) => {
+          const row = await pg.db('events').where({ public_id: publicID }).first();
+          return { place: row.place ?? undefined, location: row.location ?? undefined, summaryOverride: row.summary_override_text ?? undefined };
+        },
+        pg,
+        clear: async () => {
+          await Promise.all([mongo.clear(), pg.clear()]);
+          await seedDevices();
+        },
+        stop: () => Promise.all([mongo.stop(), pg.stop()]),
+      };
+    },
+  },
 ];
 
-describe.each(backends)('events repository ($name)', ({ start, timeout }) => {
+describe.each(backends)('events repository ($name)', ({ name, start, timeout }) => {
   let backend;
   let Events;
 
@@ -396,4 +434,127 @@ describe.each(backends)('events repository ($name)', ({ start, timeout }) => {
       await expect(Events.countEnrichmentEligible(options)).resolves.toBe(0);
     });
   });
+
+  if (name === 'postgres') {
+    describe('PostgreSQL only', () => {
+      const db = () => backend.pg.db;
+      const results = (fields) => ({
+        recordingAvailabilityCheckedAt: new Date(), recordingAvailabilityAttempts: 1, onlineStations: ['IGNORED'], ...fields,
+      });
+      // Adds a rule the next write breaks, to check that the write leaves nothing half-done
+      const withFailingRule = async (table, check, fn) => {
+        await db().raw(`ALTER TABLE ${table} ADD CONSTRAINT test_failing_rule CHECK (${check})`);
+        try {
+          await fn();
+        } finally {
+          await db().raw(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS test_failing_rule`);
+        }
+      };
+
+      test('a new event gets a MongoDB-style _id; stations are linked to devices, unknown codes left out', async () => {
+        await ingest('ev-1', { candidateStations: ['r3b2d', 'RNONE', 'RE722'] });
+
+        const event = await Events.findByPublicID('ev-1');
+        expect(event._id).toMatch(/^[0-9a-f]{24}$/);
+        expect(event.candidateStations).toEqual(['R3B2D', 'RE722']);
+        expect(await db()('event_stations').where({ kind: 'candidate' }).orderBy('position').pluck('position')).toEqual([0, 2]);
+      });
+
+      test('onlineStations is worked out from the lists and the recording status, as the station check stored it', async () => {
+        await ingest('ev-recent', { OT: new Date(), candidateStations: ['R3B2D', 'R0001'] });
+        await ingest('ev-old', { candidateStations: ['R3B2D', 'R0001'] });
+        const [recent, old] = await Promise.all(['ev-recent', 'ev-old'].map((id) => Events.findForStationCheck(id)));
+        const shown = async (publicID) => (await Events.findByPublicID(publicID)).onlineStations;
+
+        expect(await shown('ev-recent')).toEqual(['R3B2D', 'R0001']); // pending: the candidates
+        await Events.saveStationChecks([
+          { _id: recent._id, ...results({ recordingStations: ['R0001'], recordingAvailabilityStatus: 'partial' }) },
+          { _id: old._id, ...results({ recordingStations: ['R0001'], recordingAvailabilityStatus: 'partial' }) },
+        ]);
+        expect(await shown('ev-recent')).toEqual(['R0001', 'R3B2D']); // partial within the grace period
+        expect(await shown('ev-old')).toEqual(['R0001']); // partial after it
+        await Events.saveStationChecks([{ _id: old._id, recordingStations: [], recordingAvailabilityStatus: 'unavailable' }]);
+        expect(await shown('ev-old')).toEqual([]);
+      });
+
+      test('every write to an event or its rows moves its updated_at (the copy treats them as one unit)', async () => {
+        await ingest('ev-1');
+        const updatedAt = async () => (await db()('events').where({ public_id: 'ev-1' }).first()).updated_at.getTime();
+        const settle = () => new Promise((resolve) => { setTimeout(resolve, 20); });
+        const { _id } = await Events.findForStationCheck('ev-1');
+        const writes = [
+          () => Events.saveStationChecks([{ _id, recordingStations: ['R3B2D'] }]),
+          () => Events.saveEnrichment(_id, {
+            additionalInformation: [], pendingCatalogSources: [], catalogEnrichmentAttempts: { usgs: 1 }, catalogEnrichmentStatus: { usgs: 'no_match' },
+          }),
+          () => Events.savePlace({ _id }, '10 km N of Manila, Philippines'),
+          () => Events.setSummary('ev-1', 'Felt in Manila.'),
+        ];
+
+        for (const write of writes) {
+          const before = await updatedAt();
+          await settle();
+          await write();
+          expect(await updatedAt()).toBeGreaterThan(before);
+        }
+      });
+
+      test('ingest: a failed step leaves no event behind', async () => {
+        await withFailingRule('event_stations', 'position < 1', async () => {
+          await expect(ingest('ev-1', { candidateStations: ['R3B2D', 'R0001'] })).rejects.toThrow(/test_failing_rule/);
+        });
+
+        expect(await Events.findByPublicID('ev-1')).toBeNull();
+        expect(Number((await db()('event_catalog_status').count({ n: '*' }).first()).n)).toBe(0);
+      });
+
+      test('station check: a failed step leaves the event as it was', async () => {
+        await ingest('ev-1');
+        const { _id } = await Events.findForStationCheck('ev-1');
+
+        await withFailingRule('event_stations', "kind <> 'recording' OR position < 1", async () => {
+          await expect(Events.saveStationChecks([{ _id, ...results({ recordingStations: ['R3B2D', 'R0001'], recordingAvailabilityStatus: 'verified' }) }]))
+            .rejects.toThrow(/test_failing_rule/);
+        });
+
+        expect(await Events.findByPublicID('ev-1')).toMatchObject({ recordingStations: [], recordingAvailabilityStatus: 'pending', recordingAvailabilityAttempts: 0 });
+      });
+
+      test('enrichment: a failed step leaves the matches and status as they were', async () => {
+        await ingest('ev-1');
+        const { _id } = await Events.findForStationCheck('ev-1');
+
+        await withFailingRule('event_catalog_status', 'attempts < 5', async () => {
+          await expect(Events.saveEnrichment(_id, {
+            additionalInformation: [{ source: 'usgs', title: 'M 4.6' }],
+            pendingCatalogSources: [],
+            catalogEnrichmentAttempts: { phivolcs: 9, usgs: 9 },
+            catalogEnrichmentStatus: { phivolcs: 'failed', usgs: 'done' },
+          })).rejects.toThrow(/test_failing_rule/);
+        });
+
+        expect(await Events.findByPublicID('ev-1')).toMatchObject({
+          additionalInformation: [], catalogEnrichmentStatus: { phivolcs: 'pending', usgs: 'pending' }, catalogEnrichmentAttempts: {},
+        });
+      });
+
+      test('eligibility comes from the status rows: a catalog without one shows as pending but is not searched', async () => {
+        await ingest('ev-1', { OT: at('2026-04-01T00:00:00.000Z') });
+        const options = { cutoff: at('2026-05-02T00:00:00.000Z'), maxAttempts: 3 };
+        await expect(Events.countEnrichmentEligible(options)).resolves.toBe(1);
+
+        await db()('event_catalog_status').del();
+
+        expect(await Events.findByPublicID('ev-1')).toMatchObject({ pendingCatalogSources: SOURCES, catalogEnrichmentStatus: {} });
+        await expect(Events.countEnrichmentEligible(options)).resolves.toBe(0);
+      });
+
+      test('a copied event keeps its MongoDB _id, which comments use', async () => {
+        const id = await backend.insertRaw({ publicID: 'ev-copied', OT: at('2026-05-01T08:00:00.000Z'), latitude_value: 14.6, longitude_value: 121 });
+
+        expect(await Events.findRefById(id)).toEqual({ _id: id, publicID: 'ev-copied' });
+        expect((await Events.findByPublicID('ev-copied'))._id).toBe(id);
+      });
+    });
+  }
 });
