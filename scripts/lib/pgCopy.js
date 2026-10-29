@@ -123,6 +123,7 @@ module.exports = {
   BATCH_SIZE,
   chunk,
   toDate,
+  copiedUpdatedAt,
   upsertByLegacyId,
   insertMissingByLegacyId,
   idsByLegacyId,
