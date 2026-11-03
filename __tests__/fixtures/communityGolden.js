@@ -6,9 +6,9 @@
 // Points aren't returned by any endpoint: after each request that can write them, the stored entries are
 // recorded the same way (or checked to be unchanged), read from where the area keeps them.
 //
-// The data is always seeded in MongoDB. With accounts and events on PostgreSQL, those are then copied with
-// the real copy scripts and removed from MongoDB, so comments find their event and author there. The
-// seeded records only hold what both databases can represent.
+// The data is always seeded in MongoDB. Each area on PostgreSQL is then copied with the real copy scripts
+// (accounts, then events, then comments and points) and removed from MongoDB, so the responses come
+// from where the settings say. The seeded records only hold what both databases can represent.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -20,6 +20,7 @@ const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
 const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
 const { copyEarthquakes } = require('../../scripts/copy-earthquakes-to-postgres');
+const { copyCommunity } = require('../../scripts/copy-community-to-postgres');
 
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
 const at = (iso) => new Date(iso);
@@ -154,7 +155,7 @@ const COMMENTS = [
 
 // Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
 const ALL_ON_MONGODB = {
-  PEOPLE_AND_SENSORS_DB: 'mongodb', EARTHQUAKES_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb', SIGNIFICANT_EQS_DB: 'mongodb',
+  PEOPLE_AND_SENSORS_DB: 'mongodb', EARTHQUAKES_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb', SIGNIFICANT_EQS_DB: 'mongodb', COMMUNITY_DB: 'mongodb',
 };
 
 // overrides: the area settings that differ from ALL_ON_MONGODB
@@ -191,9 +192,27 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
     return res;
   };
 
-  // The stored points entries, sorted by dedupeKey. Read from MongoDB: Step 4 - Ticket 3 reads them from
-  // PostgreSQL when the area is there.
+  // The stored points entries, sorted by dedupeKey, with ids MongoDB-style, read from where the area is
   const storedPoints = async () => {
+    if (settings.COMMUNITY_DB === 'postgres') {
+      const rows = await pg.db('contribution_events AS ce')
+        .join('accounts AS a', 'a.id', 'ce.account_id')
+        .leftJoin('events AS e', 'e.id', 'ce.event_id')
+        .select('ce.*', 'a.legacy_mongo_id AS account_legacy_id', 'e.legacy_mongo_id AS event_legacy_id', 'e.public_id');
+      return rows
+        .map((row) => ({
+          dedupeKey: row.dedupe_key,
+          accountId: row.account_legacy_id.trim(),
+          actionType: row.action_type,
+          targetType: row.target_type,
+          targetId: row.target_id,
+          eventId: row.event_legacy_id ? row.event_legacy_id.trim() : null,
+          eventPublicID: row.public_id || row.metadata.eventPublicID || null,
+          points: row.points,
+          reason: row.reason,
+        }))
+        .sort((a, b) => (a.dedupeKey < b.dedupeKey ? -1 : 1));
+    }
     const docs = await mongoose.connection.collection('contributionevents').find().toArray();
     return docs
       .map((doc) => ({
@@ -251,15 +270,23 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
     await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
     await mongoose.connection.collection('events').insertMany(EVENTS);
     await mongoose.connection.collection('comments').insertMany(COMMENTS);
-    if (settings.EARTHQUAKES_DB === 'postgres' || settings.PEOPLE_AND_SENSORS_DB === 'postgres') {
-      const quiet = { db: pg.db, log: () => {} };
+    // Each area on PostgreSQL: copied with its real copy script, then removed from MongoDB
+    const quiet = { db: pg.db, log: () => {} };
+    const moved = [];
+    if (settings.PEOPLE_AND_SENSORS_DB === 'postgres') {
       if (!(await copyPeopleAndSensors(quiet)).ok) throw new Error('Copying the seeded accounts to PostgreSQL failed');
-      if (settings.EARTHQUAKES_DB === 'postgres' && !(await copyEarthquakes(quiet)).ok) {
-        throw new Error('Copying the seeded events to PostgreSQL failed');
-      }
-      await Promise.all(['accounts', ...(settings.EARTHQUAKES_DB === 'postgres' ? ['events'] : [])]
-        .map((name) => mongoose.connection.collection(name).deleteMany({})));
+      moved.push('accounts');
     }
+    if (settings.EARTHQUAKES_DB === 'postgres') {
+      if (!(await copyEarthquakes(quiet)).ok) throw new Error('Copying the seeded events to PostgreSQL failed');
+      moved.push('events');
+    }
+    if (settings.COMMUNITY_DB === 'postgres') {
+      const copied = await copyCommunity(quiet);
+      if (!copied.ok || copied.comments.skipped.length > 0) throw new Error('Copying the seeded comments to PostgreSQL failed');
+      moved.push('comments', 'contributionevents');
+    }
+    await Promise.all(moved.map((name) => mongoose.connection.collection(name).deleteMany({})));
   });
 
   afterEach(() => {
