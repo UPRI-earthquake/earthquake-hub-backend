@@ -218,8 +218,8 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | PostgreSQL |
-| Comments (with their helpful marks and issue reports) | `src/repositories/comments.repo.js` | none yet (Step 4) | MongoDB |
-| Contribution points | `src/repositories/contributions.repo.js` | none yet (Step 4) | MongoDB |
+| Comments (with their helpful marks and issue reports) | `src/repositories/comments.repo.js` | `COMMUNITY_DB` | PostgreSQL |
+| Contribution points | `src/repositories/contributions.repo.js` | `COMMUNITY_DB` | PostgreSQL |
 
 Accounts and devices share **one** setting, `PEOPLE_AND_SENSORS_DB`, which also picks the transaction helper (`src/repositories/transactions.js`): they reference each other, so they always run on the same database. In the PostgreSQL versions (`src/repositories/postgres/`):
 
@@ -232,12 +232,12 @@ Repositories return plain objects with an `id`, never database documents, and se
 - `src/repositories/errors.js`: a write that breaks a unique rule throws `DuplicateKeyError` (with the colliding `fields`), whichever database rejected it.
 - `src/repositories/transactions.js`: `withTransaction(async (tx) => { ... })` runs writes together; repository functions join it when passed `{ tx }`.
 
-Comments come back with their helpful marks (`helpfulAccountIds`) and issue reports (`issueReports`) as lists, and event and account ids as MongoDB-style strings, so the PostgreSQL version can keep marks and reports in their own tables without changing `comments.service.js`. An account marks a comment helpful once and has one issue report per comment (a second replaces the first); a points entry is stored once per `dedupeKey`, and a repeated action leaves the first one as it was.
+Comments come back with their helpful marks (`helpfulAccountIds`) and issue reports (`issueReports`) as lists, and event and account ids as MongoDB-style strings, so the PostgreSQL version keeps marks and reports in their own tables without changing `comments.service.js`. An account marks a comment helpful once and has one issue report per comment (a second replaces the first); a points entry is stored once per `dedupeKey`, and a repeated action leaves the first one as it was. Posting a report, marking one helpful and reporting an issue each write the comment change and its points in **one transaction** (`src/repositories/communityTransactions.js`, which follows `COMMUNITY_DB`), so a failed points write leaves no half-done mark; a MongoDB without a replica set falls back to plain writes.
 
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas`, `peopleAndSensors` (accounts and devices) and `earthquakes` each once with their areas on PostgreSQL and once on MongoDB, against the same recordings; `earthquakes` fakes GeoServe, FDSN, PHIVOLCS and USGS (`__tests__/fixtures/earthquakesExternal.js`). `community` (comments and points) runs once with every area on MongoDB and once with accounts and events on PostgreSQL, as dev runs now; no endpoint returns points, so the points stored after each request are recorded too (or checked unchanged). On PostgreSQL, the data is seeded in MongoDB and copied with the real copy scripts, then removed from MongoDB, so the responses also show that copied data keeps its ids. Seeded records hold only what both databases can represent (PostgreSQL can't tell a missing field from a null one), e.g. an ingested event's legacy fields are null, as ingest writes them.
+- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas`, `peopleAndSensors` (accounts and devices) and `earthquakes` each once with their areas on PostgreSQL and once on MongoDB, against the same recordings; `earthquakes` fakes GeoServe, FDSN, PHIVOLCS and USGS (`__tests__/fixtures/earthquakesExternal.js`). `community` (comments and points) runs three times: every area on MongoDB, community on PostgreSQL, and community rolled back to MongoDB while accounts and events stay on PostgreSQL; no endpoint returns points, so the points stored after each request are recorded too (or checked unchanged). On PostgreSQL, the data is seeded in MongoDB and copied with the real copy scripts, then removed from MongoDB, so the responses also show that copied data keeps its ids. Seeded records hold only what both databases can represent (PostgreSQL can't tell a missing field from a null one), e.g. an ingested event's legacy fields are null, as ingest writes them.
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
@@ -262,9 +262,10 @@ PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
 PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
 EARTHQUAKES_DB=postgres          # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
+COMMUNITY_DB=postgres            # mongodb | postgres; comments and points; needs PEOPLE_AND_SENSORS_DB and EARTHQUAKES_DB=postgres
 ```
 
-Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup, and so does an area set to `postgres` before an area its tables point to: `EARTHQUAKES_DB=postgres` with `PEOPLE_AND_SENSORS_DB=mongodb` fails with `EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres`, since event stations point to devices (`dependsOn` in `src/db/areaDatabase.js`). The backend reads these on startup and logs its choice:
+Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup, and so does an area set to `postgres` before an area its tables point to: `EARTHQUAKES_DB=postgres` with `PEOPLE_AND_SENSORS_DB=mongodb` fails with `EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres`, since event stations point to devices (`dependsOn` in `src/db/areaDatabase.js`); likewise `COMMUNITY_DB=postgres` needs both `PEOPLE_AND_SENSORS_DB` and `EARTHQUAKES_DB=postgres`, since comments and points point to accounts and events. The backend reads these on startup and logs its choice:
 
 ```
 [db] accounts: postgres (PEOPLE_AND_SENSORS_DB)
@@ -273,22 +274,30 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 [db] job locks: postgres (JOB_LOCKS_DB)
 [db] significant earthquakes: postgres (SIGNIFICANT_EQS_DB)
 [db] earthquake events: postgres (EARTHQUAKES_DB)
+[db] comments: postgres (COMMUNITY_DB)
+[db] contribution points: postgres (COMMUNITY_DB)
 ```
+
+With every area on PostgreSQL (dev since Step 4), the backend still connects to MongoDB at startup but sends it nothing: the MongoDB profiler shows no operations from the backend.
 
 While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
 
-### Ids the API shows: MongoDB-style, until Step 4
+### Ids the API shows: MongoDB-style
 
-**The rule:** whatever id a client or a MongoDB collection sees stays the MongoDB-style id (`legacy_mongo_id`), never the PostgreSQL uuid. The uuid is used only inside PostgreSQL (keys and joins). Every row has one: a copied row keeps its old `_id`, and a row created in PostgreSQL gets a new ObjectId. Repositories return it as `legacyId`.
+**The rule:** whatever id a client sees stays the MongoDB-style id (`legacy_mongo_id`), never the PostgreSQL uuid. The uuid is used only inside PostgreSQL (keys and joins). Every row a client can name has one: a copied row keeps its old `_id`, and an account, device or event created in PostgreSQL gets a new ObjectId. Repositories return it as `legacyId` (or as `_id`, `eventId`, `accountId` in the API's shapes).
 
-Why: comments, helpful marks, issue reports and contributions stay on MongoDB until Step 4 and store the author's account id and the event's id as MongoDB ObjectIds; and clients already hold device and event ids from earlier responses. So until Step 4:
+Why: until Step 4, comments and contributions stayed on MongoDB and stored account and event ids as ObjectIds; and clients (the frontend, sensors, open sessions) already hold account, device and event ids from earlier responses.
+
+**After Step 4 (decided: keep them).** Comments and points are in PostgreSQL now, but session tokens and responses keep the MongoDB-style ids: the comments and points repositories take an account's MongoDB-style id (from the session token) and an event's (from `GET /comments?eventId=`) and find the row through `legacy_mongo_id` (`src/repositories/postgres/legacyIds.js`), and admin responses return `eventId` / `accountId` the same way. Sessions from before any switch keep working. Dropping the MongoDB-style ids would be a separate change, made once nothing depends on them (every client and open session would have to move to the uuids at once). So:
 
 - **Session tokens carry the account's `legacyId`**, so comments keep their author id, and new users can comment too.
 - **Sessions from before the switch keep working:** tokens are checked by signature, accounts are looked up by username, and the `accountId` inside the token is still the account's `legacy_mongo_id`.
 - **An event's `_id` is its `legacy_mongo_id`:** a copied event keeps its old `_id`, and an event SeisComP sends after the switch gets a new ObjectId. Comments and contributions store that id; `comments.service.js` finds the event by it through the events repository (`findRefById`), so comments from before the switch still list under their event.
 - **Device ids in responses are the device's `legacyId`:** `deviceId` in alert credentials (`/device/alert-credential`, `/device/link`) and in `releasedDevices[]`. A released device keeps its id in `device_releases.device_legacy_mongo_id`, so the history still shows it after the device is deleted, as MongoDB did.
 
-`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, `__tests__/earthquakes.switch.integration.test.js` the event ids (comments before and after the switch, a contribution on a new event), and the golden files on PostgreSQL check the ids in every recorded response.
+- **Comments and points name accounts and events by those ids:** a copied comment keeps its event and author, and admin responses show `eventId`, `eventPublicID` (the event's `public_id`) and `accountId` as before. A comment's own `commentId` was always a UUID and stays the same.
+
+`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, `__tests__/earthquakes.switch.integration.test.js` the event ids (comments before and after the switch, a contribution on a new event), `__tests__/community.switch.integration.test.js` a session from before the switch posting and marking comments on PostgreSQL (and that the backend sends MongoDB nothing meanwhile), and the golden files on PostgreSQL check the ids in every recorded response.
 
 ### Switching an area to PostgreSQL
 
@@ -297,8 +306,8 @@ Why: comments, helpful marks, issue reports and contributions stay on MongoDB un
 3. Copy the area's data, if it has a copy script (see below). Do a dry run first. The copy must end with `Validation passed`.
 4. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
 5. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
-6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account. For earthquakes: compare `GET /eq-events` over all time and a few event pages, field by field per `publicID` (the list order can differ, since place names are filled in as GeoServe answers); post a test event to `/messaging/restricted/new-event` (and an older update of it, which must be dropped), comment on it, then delete it from `events` and the comment from MongoDB.
-7. Optionally, run the MongoDB profiler (`db.setProfilingLevel(2)`) while you do step 6: the moved area's collection should show no operations from the backend.
+6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account. For earthquakes: compare `GET /eq-events` over all time and a few event pages, field by field per `publicID` (the list order can differ, since place names are filled in as GeoServe answers); post a test event to `/messaging/restricted/new-event` (and an older update of it, which must be dropped), comment on it, then delete it from `events` and the comment from MongoDB. For comments and points: register two throwaway accounts; post a report as one; as the other, list it, mark it helpful twice, unmark and mark again, and report an issue twice; check `contribution_events` has each action once; as an admin, reject the report, then delete it; delete both accounts (their points go with them).
+7. Optionally, run the MongoDB profiler (`db.setProfilingLevel(2)`) while you do step 6: the moved area's collection should show no operations from the backend (since Step 4, no collection at all).
 
 ### Rolling an area back
 
@@ -333,6 +342,26 @@ Set its setting to `mongodb` and restart the backend. MongoDB still has the data
 - **Moving forward again:** run `db:pg:copy-earthquakes` again before switching back. Events changed in PostgreSQL since the first copy are kept with their rows.
 
 The differences between the two databases that stay after a switch (none of them read by the frontend) are listed in [Copying earthquakes](#copying-earthquakes).
+
+**Comments and points** (`COMMUNITY_DB`; set it back first, before `EARTHQUAKES_DB` and `PEOPLE_AND_SENSORS_DB`, or the backend won't start):
+
+- **Lost on rollback** (still in PostgreSQL, not in MongoDB): reports posted after the switch, and the helpful marks, issue reports, moderation and points since then. List them before rolling back:
+
+  ```sql
+  SELECT c.comment_id, c.username, c.status, c.created_at, c.updated_at, e.public_id
+  FROM comments c JOIN events e ON e.id = c.event_id
+  WHERE c.updated_at > '<switch time>' OR c.legacy_mongo_id IS NULL;
+
+  SELECT ce.dedupe_key, a.username, ce.action_type, ce.points, ce.created_at
+  FROM contribution_events ce JOIN accounts a ON a.id = ce.account_id
+  WHERE ce.legacy_mongo_id IS NULL;
+  ```
+
+  A comment's `updated_at` moves with every mark or report on it, so the first query also finds copied reports that were marked, flagged or moderated since the switch. Rows with no `legacy_mongo_id` were created in PostgreSQL.
+- **Comments and points stay where they were written:** on MongoDB, the copied ones reappear as they were at the switch; the rest exist only in PostgreSQL. Their ids are the same MongoDB-style ids on both sides, so nothing else has to change.
+- **Moving forward again:** run `db:pg:copy-community` again before switching back. Comments changed in PostgreSQL since the first copy are kept with their marks and reports; points entries already there are never rewritten, and a `dedupeKey` already counted in PostgreSQL isn't counted again.
+
+**What the API shows differently on PostgreSQL** (none of it in the recorded responses): a comment whose author's account was deleted shows `accountId: null` to admins, where MongoDB kept the deleted account's id; and a session whose account no longer exists can still post (unlinked, under its username) but can't mark, flag or earn points, which need a real account.
 
 On dev nothing is live, so a rollback only loses test data.
 
@@ -550,7 +579,7 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`. The four community tables hold copied data only: the app reads comments and points from MongoDB until Step 4 - Ticket 3 switches them.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -632,7 +661,7 @@ One user: a citizen (who may own sensors), a barangay, or an admin.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid`, primary key | `uuidv7()` |
-| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for an account created here: the id session tokens carry ([ids the API shows](#ids-the-api-shows-mongodb-style-until-step-4)) |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for an account created here: the id session tokens carry ([ids the API shows](#ids-the-api-shows-mongodb-style)) |
 | `email`, `username` | `citext`, required, unique | compared **without regard to case**: `Juan@x.org` and `juan@x.org` are the same account |
 | `password_hash` | `text`, required | bcrypt; never returned by the API |
 | `roles` | `account_role[]` | each one of `citizen`, `sensor`, `brgy`, `admin` |

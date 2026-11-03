@@ -2,7 +2,7 @@
 // both must keep (__tests__/events.repo.integration.test.js). Events come back in the shape the API
 // sends (`_id`, OT, latitude_value, ...), put together from four tables:
 //   events                  the event; `_id` is legacy_mongo_id: copied events keep their old _id, new
-//                           ones get a new ObjectId, so comments (still on MongoDB) keep finding them
+//                           ones get a new ObjectId, so comments keep finding them by the id they hold
 //   event_stations          candidateStations / recordingStations, as the devices' station codes
 //   event_catalog_matches   additionalInformation[], in its order
 //   event_catalog_status    pendingCatalogSources, catalogEnrichmentStatus / Attempts, and the legacy

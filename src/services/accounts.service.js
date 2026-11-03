@@ -178,7 +178,7 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   }
 
   const username = user.username;
-  // MongoDB-style id: comments and contributions still store account ids as ObjectIds (until Step 4)
+  // MongoDB-style id, on either database: sessions and comments name accounts by it (POSTGRES.md, "Ids the API shows")
   const accountId = user.legacyId;
 
   // compare received password with user's password in db

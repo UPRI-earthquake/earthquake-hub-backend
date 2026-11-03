@@ -5,9 +5,10 @@
 // in code. Writes still store the email trimmed and lowercased, as the MongoDB model's setter did, so
 // the API shows the same values. A write that breaks a unique rule throws DuplicateKeyError.
 //
-// legacyId is the account's MongoDB-style id (legacy_mongo_id). Until comments and contributions move
-// (Step 4) they store account ids as MongoDB ObjectIds, so session tokens carry legacyId, not the
-// uuid. Copied accounts keep their old _id; accounts created here get a new ObjectId.
+// legacyId is the account's MongoDB-style id (legacy_mongo_id). Session tokens carry it, not the uuid,
+// so sessions and the ids comments and points name accounts by stay the same on either database
+// (POSTGRES.md, "Ids the API shows"). Copied accounts keep their old _id; accounts created here get a
+// new ObjectId.
 const { Types } = require('mongoose');
 const { fromPostgresError } = require('../errors');
 
