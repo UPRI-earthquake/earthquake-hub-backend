@@ -1,8 +1,13 @@
-// Data access for contribution points. Services use this module instead of the ContributionEvent model,
-// so points can move to PostgreSQL (Step 4) without changing the services. MongoDB only for now; Step 4 -
-// Ticket 3 adds the PostgreSQL version and the setting that picks between them.
+// Data access for contribution points. Services use this module instead of a database client, so points
+// switch databases with comments (COMMUNITY_DB, mongodb | postgres; on PostgreSQL only with accounts and
+// events there too).
 //
-//   recordOnce(entry) -> the stored entry
+//   recordOnce(entry, { tx }) -> the stored entry
 //       Stores a points entry unless one with the same dedupeKey exists (then returns that one), so a
 //       repeated action never counts twice. See mongodb/contributions.repo.js for the entry shape.
-module.exports = require('./mongodb/contributions.repo');
+const { selectRepository } = require('../db/areaDatabase');
+
+module.exports = selectRepository('contribution points', 'COMMUNITY_DB', {
+  mongodb: () => require('./mongodb/contributions.repo'),
+  postgres: () => require('./postgres/contributions.repo').createContributionsRepo(require('../db/knex').db),
+}, { dependsOn: ['PEOPLE_AND_SENSORS_DB', 'EARTHQUAKES_DB'] });

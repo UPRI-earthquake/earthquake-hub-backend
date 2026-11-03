@@ -10,6 +10,7 @@ describe('area database settings', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     delete process.env.EARTHQUAKES_DB;
     delete process.env.PEOPLE_AND_SENSORS_DB;
+    delete process.env.COMMUNITY_DB;
   });
 
   afterEach(() => {
@@ -46,6 +47,22 @@ describe('area database settings', () => {
 
     jest.isolateModules(() => {
       expect(() => require('../src/repositories/events.repo')).toThrow(/EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres/);
+    });
+  });
+
+  test('the comments and points repositories refuse COMMUNITY_DB=postgres until accounts and events are on PostgreSQL', () => {
+    process.env.COMMUNITY_DB = 'postgres';
+    process.env.PEOPLE_AND_SENSORS_DB = 'postgres';
+    process.env.EARTHQUAKES_DB = 'mongodb';
+
+    jest.isolateModules(() => {
+      expect(() => require('../src/repositories/comments.repo')).toThrow('COMMUNITY_DB=postgres needs EARTHQUAKES_DB=postgres: comments point to that data in PostgreSQL');
+      expect(() => require('../src/repositories/contributions.repo')).toThrow(/COMMUNITY_DB=postgres needs EARTHQUAKES_DB=postgres/);
+    });
+
+    process.env.PEOPLE_AND_SENSORS_DB = 'mongodb';
+    jest.isolateModules(() => {
+      expect(() => require('../src/repositories/comments.repo')).toThrow(/needs PEOPLE_AND_SENSORS_DB=postgres and EARTHQUAKES_DB=postgres/);
     });
   });
 });
