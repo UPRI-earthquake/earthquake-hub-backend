@@ -505,6 +505,29 @@ The two `onlineStations` differences are the same stations in another order: the
 
 Also: `onlineStations` is worked out on read, so after an UPDATE for an event that already has recording stations it shows what the recording status implies, where MongoDB stored recording and candidate stations merged until the next station check.
 
+### Copying comments and points
+
+[`scripts/copy-community-to-postgres.js`](scripts/copy-community-to-postgres.js) copies MongoDB `comments` into `comments`, the lists each comment embedded into `comment_helpful_marks` and `comment_issue_reports`, and `contributionevents` (the points ledger) into `contribution_events`. Copy accounts and devices, then earthquakes, first: comments and points point to both.
+
+```sh
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-community -- --dry-run
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-community
+```
+
+What it does, in order:
+
+1. **Comments.** Each comment's event is found by `eventId` (the event's `legacy_mongo_id`), or else by `eventPublicID`; its account by `accountId`.
+   - Skipped and listed: the event no longer exists; a `commentId` that is missing or not a UUID, that another MongoDB comment also has (all of them), or that a different PostgreSQL comment already has; neither text nor an image; text over 1000 characters.
+   - Copied and listed: the account no longer exists (copied with no account, under the same username); an unknown status (copied as `pending`, hidden, as MongoDB hid it); an event found by `eventPublicID`.
+   - Comments from before moderation (no status) are copied as `approved`, as MongoDB showed them. A copied comment keeps its `commentId`.
+2. **Helpful marks and issue reports** (`helpfulAccountIds[]`, `issueReports[]`), one row per account. Left out and listed: entries whose account no longer exists, and reports with an unknown reason. An account listed twice is folded into one (for reports, its latest) and listed. MongoDB kept no time per mark, so a mark gets its comment's `updated_at`.
+3. **Points.** Skipped and listed: no `dedupeKey`; an account that no longer exists (points belong to an account); an unknown action or target type; points that aren't a whole number; a `dedupeKey` another entry already counts (the earliest is kept), in MongoDB or in PostgreSQL. An entry whose event no longer exists is copied with no event, its `eventPublicID` kept in `metadata`, and listed. Copied entries are never rewritten: they don't change.
+4. **Validation:** every copyable comment and points entry has its row, each copied comment has all its marks and reports, and every MongoDB comment, mark, report and points entry is accounted for (copied, kept, or listed with a reason). Exit code `0` = done (listed records alone don't fail it), `1` = validation failed, `2` = error.
+
+A comment and its marks and reports are copied **as one unit**, matched by `legacy_mongo_id`, so it's safe to run again. A comment changed in PostgreSQL since it was copied (newer `updated_at`) is kept with all its marks and reports; otherwise they're rewritten from MongoDB. For this to hold after the switch, the PostgreSQL comments repository moves a comment's `updated_at` whenever it writes one of its marks or reports (Step 4 - Ticket 3), as MongoDB already did.
+
+Dev had no comments or points when this was written (November 2026), so the copy was checked on seeded data (`__tests__/copyCommunity.integration.test.js`). Run it against real data (the server, or a sanitized dump) before production.
+
 ---
 
 ## 7. Tables
@@ -522,8 +545,12 @@ Also: `onlineStations` is worked out on read, so after an UPDATE for an event th
 | `event_stations` | `events.candidateStations[]`, `recordingStations[]` | `20261029000100_create_event_stations.js` | `db:pg:copy-earthquakes` |
 | `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js`, `20261030000000_add_position_to_event_catalog_matches.js` | `db:pg:copy-earthquakes` |
 | `event_catalog_status` | `events.pendingCatalogSources`, `catalogEnrichment*`, legacy `upForEnrichment` | `20261029000300_create_event_catalog_status.js` | `db:pg:copy-earthquakes` |
+| `comments` | `comments` | `20261104000000_create_comments.js` | `db:pg:copy-community` |
+| `comment_helpful_marks` | `comments.helpfulAccountIds[]` | `20261104000100_create_comment_helpful_marks.js` | `db:pg:copy-community` |
+| `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
+| `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`.
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`. The four community tables hold copied data only: the app reads comments and points from MongoDB until Step 4 - Ticket 3 switches them.
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -741,6 +768,73 @@ How far the nightly enrichment job got for one earthquake in one catalog. Replac
 | `updated_at` | `timestamptz` | |
 
 Primary key `(event_id, source)`; index `(source, status)` finds the events still pending for a catalog.
+
+### `comments`
+
+A community report on an earthquake: text, an image, or both. Column names in brackets are the API field names.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()`; what marks and reports point to |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `comment_id` | `uuid`, required, unique | the public id used in URLs [`commentId`]; `gen_random_uuid()` for new rows |
+| `event_id` | `uuid` → `events`, required | **deleted with the event** (`ON DELETE CASCADE`) |
+| `account_id` | `uuid` → `accounts`, indexed | who posted it; null when posted signed out; **null when the account is deleted** (`ON DELETE SET NULL`): the comment and its username stay |
+| `username` | `text`, default `Anonymous` | the name shown |
+| `content` | `varchar(1000)` | the text |
+| `image_url` | `text` | path of the uploaded image [`imageURL`]; the files themselves stay where they are |
+| `status` | `comment_status` enum, default `approved` | `pending`, `approved` or `rejected`; only `approved` is shown |
+| `moderated_by`, `moderated_at` | `text`, `timestamptz` | who set the status, and when |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: every comment belongs to a real event; text or an image, not blank; text at most 1000 characters; username not blank. Index `(event_id, status, created_at, comment_id)` serves an event's visible reports newest first, in the API's paging order.
+
+There's no `eventPublicID` column: it's the event's `public_id`. On MongoDB, deleting an account left its comments pointing to it; here they stay, unlinked.
+
+### `comment_helpful_marks`
+
+One row per account that marked a report helpful (replaces `helpfulAccountIds[]`). A report's helpful count is its number of rows.
+
+| Column | Type | Notes |
+|---|---|---|
+| `comment_id` | `uuid` → `comments.id` | the internal id, not the public `comment_id`; **deleted with the comment** |
+| `account_id` | `uuid` → `accounts`, indexed | **deleted with the account** |
+| `created_at` | `timestamptz` | copied marks: their comment's `updated_at` (MongoDB kept no time per mark) |
+
+Primary key `(comment_id, account_id)`: **one vote per person**, which MongoDB only kept by how the app wrote the list.
+
+### `comment_issue_reports`
+
+Private moderation flags on a report (replaces `issueReports[]`); never shown publicly.
+
+| Column | Type | Notes |
+|---|---|---|
+| `comment_id` | `uuid` → `comments.id` | **deleted with the comment** |
+| `account_id` | `uuid` → `accounts`, indexed | **deleted with the account** |
+| `reason` | `issue_reason` enum | `duplicate`, `unclear`, `wrong_location`, `not_related` or `inappropriate` |
+| `created_at` | `timestamptz` | when the account last flagged it |
+
+Primary key `(comment_id, account_id)`: **one flag per person per report**; flagging again replaces the reason and time.
+
+### `contribution_events`
+
+The points ledger: one row per action that earns (or records) points. Rows never change once written, so there's no `updated_at`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `dedupe_key` | `text`, required, unique | `account:action:target type:target id`: **an action never counts twice**, even when two requests race |
+| `account_id` | `uuid` → `accounts`, required | **deleted with the account** |
+| `action_type` | `contribution_action` enum | `report_posted`, `image_report_posted`, `report_marked_helpful`, `report_received_helpful` or `report_issue_submitted` |
+| `target_type`, `target_id` | `contribution_target` enum (default `comment`), `text` | what the action was on: a comment's public `comment_id`, or an event |
+| `event_id` | `uuid` → `events` | **null when the event is deleted** (`ON DELETE SET NULL`); the points stay |
+| `points` | `int`, default 0 | |
+| `reason` | `text` | the issue reason, for `report_issue_submitted` |
+| `metadata` | `jsonb` object, default `{}` | for an entry copied without its event: `eventPublicID` |
+| `created_at` | `timestamptz` | |
+
+Indexes: `(account_id, created_at)` for an account's points over time, `(event_id, created_at)`. Like comments, there's no `eventPublicID` column: it's the event's `public_id`, or `metadata.eventPublicID` for an entry whose event was gone when copied.
 
 ### Scheduled deletes (instead of TTL indexes)
 
