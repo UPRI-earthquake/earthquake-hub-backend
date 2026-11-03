@@ -23,7 +23,8 @@
     "db:pg:copy-subscriptions": "node scripts/copy-subscriptions-to-postgres.js",
     "db:pg:copy-significant-eqs": "node scripts/copy-significant-eqs-to-postgres.js",
     "db:pg:copy-people-and-sensors": "node scripts/copy-people-and-sensors-to-postgres.js",
-    "db:pg:copy-earthquakes": "node scripts/copy-earthquakes-to-postgres.js"
+    "db:pg:copy-earthquakes": "node scripts/copy-earthquakes-to-postgres.js",
+    "db:pg:copy-community": "node scripts/copy-community-to-postgres.js"
   },
   "repository": {
     "type": "git",
