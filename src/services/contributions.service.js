@@ -1,4 +1,4 @@
-const ContributionEvent = require('../models/contributionEvent.model');
+const ContributionsRepo = require('../repositories/contributions.repo');
 
 const CONTRIBUTION_ACTION = Object.freeze({
   REPORT_POSTED: 'report_posted',
@@ -76,15 +76,8 @@ async function recordContribution({
     metadata: metadata || undefined,
   };
 
-  return ContributionEvent.findOneAndUpdate(
-    { dedupeKey },
-    { $setOnInsert: contribution },
-    {
-      new: true,
-      setDefaultsOnInsert: true,
-      upsert: true,
-    },
-  );
+  // Once per dedupeKey: a repeated action returns the entry already stored
+  return ContributionsRepo.recordOnce(contribution);
 }
 
 async function recordReportPosted({ accountId, comment, hasImage }) {
