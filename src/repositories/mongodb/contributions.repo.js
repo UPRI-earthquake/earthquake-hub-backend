@@ -1,12 +1,14 @@
 // Contribution points in MongoDB (`contributionevents` collection): one entry per action that earns (or
-// records) points. Step 4 adds a PostgreSQL version and the setting that picks between them; both must
-// pass __tests__/community.repo.integration.test.js.
+// records) points. postgres/contributions.repo.js is the PostgreSQL version (COMMUNITY_DB picks one);
+// both must pass __tests__/community.repo.integration.test.js.
 //
 // An entry comes back as:
 //   { dedupeKey, accountId, actionType, targetType, targetId, eventId, eventPublicID, points, reason,
 //     metadata, createdAt, updatedAt }
 // with account and event ids as MongoDB-style strings, and the optional fields (targetId, eventId,
 // eventPublicID, reason, metadata) left out when not set.
+//
+// Given { tx }, the write runs in that transaction: a Mongoose session (mongodb/transactions.js).
 const ContributionEvent = require('../../models/contributionEvent.model');
 
 const OPTIONAL_FIELDS = ['targetId', 'eventPublicID', 'reason', 'metadata'];
@@ -41,13 +43,13 @@ const toContribution = (doc) => {
   * Returns:
   *     the stored entry: the new one, or the earlier one with this dedupeKey (unchanged)
   ***************************************************************************/
-async function recordOnce(entry) {
+async function recordOnce(entry, { tx } = {}) {
   // Timestamps are set on insert only: Mongoose's own would also bump an earlier entry's updatedAt
   const now = new Date();
   const doc = await ContributionEvent.findOneAndUpdate(
     { dedupeKey: entry.dedupeKey },
     { $setOnInsert: { ...entry, createdAt: now, updatedAt: now } },
-    { new: true, setDefaultsOnInsert: true, upsert: true, timestamps: false },
+    { new: true, setDefaultsOnInsert: true, upsert: true, timestamps: false, session: tx },
   ).lean();
   return toContribution(doc);
 }

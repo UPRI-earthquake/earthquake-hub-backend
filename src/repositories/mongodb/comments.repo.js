@@ -1,5 +1,5 @@
 // Comments (community reports on earthquakes) in MongoDB (`comments` collection), with their helpful
-// marks and issue reports. Step 4 adds a PostgreSQL version and the setting that picks between them;
+// marks and issue reports. postgres/comments.repo.js is the PostgreSQL version (COMMUNITY_DB picks one);
 // both must pass __tests__/community.repo.integration.test.js.
 //
 // A comment comes back as:
@@ -12,6 +12,8 @@
 // without changing callers.
 //
 // "Visible" comments are the ones the public sees: approved, or from before moderation (no status).
+//
+// Functions that take { tx } run in that transaction: a Mongoose session (mongodb/transactions.js).
 const Comment = require('../../models/comments.model');
 
 const VISIBLE = { $or: [{ status: 'approved' }, { status: { $exists: false } }] };
@@ -52,8 +54,8 @@ const toComment = (doc) => {
   *     the comment. Rejects with a ValidationError (a 400 from the API) when it has neither text nor
   *     an image, or the text is over 1000 characters.
   ***************************************************************************/
-async function create(fields) {
-  const saved = await new Comment(fields).save();
+async function create(fields, { tx } = {}) {
+  const saved = await new Comment(fields).save({ session: tx });
   return toComment(saved.toObject());
 }
 
@@ -99,22 +101,22 @@ async function listVisibleForEvent(event, { limit, offset = 0, after = null }) {
 }
 
 // A visible comment, or null
-async function findVisible(commentId) {
-  return toComment(await Comment.findOne(visibleById(commentId)).lean());
+async function findVisible(commentId, { tx } = {}) {
+  return toComment(await Comment.findOne(visibleById(commentId), null, { session: tx }).lean());
 }
 
 // Deletes a comment, visible or not. Resolves to the deleted comment, or null if there was none.
-async function remove(commentId) {
-  return toComment(await Comment.findOneAndDelete({ commentId }).lean());
+async function remove(commentId, { tx } = {}) {
+  return toComment(await Comment.findOneAndDelete({ commentId }, { session: tx }).lean());
 }
 
 // Moderation: { status, moderatedBy, moderatedAt } on any comment, visible or not. Resolves to the
 // updated comment, or null.
-async function setStatus(commentId, { status, moderatedBy, moderatedAt }) {
+async function setStatus(commentId, { status, moderatedBy, moderatedAt }, { tx } = {}) {
   return toComment(await Comment.findOneAndUpdate(
     { commentId },
     { $set: { status, moderatedBy, moderatedAt } },
-    { new: true },
+    { new: true, session: tx },
   ).lean());
 }
 
@@ -126,25 +128,25 @@ async function setStatus(commentId, { status, moderatedBy, moderatedAt }) {
   *     { comment, added }: added is false when the account had already marked it (nothing changed,
   *     so no points are due). null when there is no visible comment with this commentId.
   ***************************************************************************/
-async function addHelpfulMark(commentId, accountId) {
+async function addHelpfulMark(commentId, accountId, { tx } = {}) {
   const updated = await Comment.findOneAndUpdate(
     { ...visibleById(commentId), helpfulAccountIds: { $ne: accountId } },
     { $addToSet: { helpfulAccountIds: accountId } },
-    { new: true },
+    { new: true, session: tx },
   ).lean();
   if (updated) return { comment: toComment(updated), added: true };
 
-  const existing = await findVisible(commentId);
+  const existing = await findVisible(commentId, { tx });
   return existing ? { comment: existing, added: false } : null;
 }
 
 // Removes one account's helpful mark from a visible comment (if it had one). Resolves to the comment, or
 // null when there is no visible comment with this commentId.
-async function removeHelpfulMark(commentId, accountId) {
+async function removeHelpfulMark(commentId, accountId, { tx } = {}) {
   return toComment(await Comment.findOneAndUpdate(
     visibleById(commentId),
     { $pull: { helpfulAccountIds: accountId } },
-    { new: true },
+    { new: true, session: tx },
   ).lean());
 }
 
@@ -160,11 +162,11 @@ async function removeHelpfulMark(commentId, accountId) {
   * Returns:
   *     the comment, or null when there is no visible comment with this commentId
   ***************************************************************************/
-async function saveIssueReport(commentId, { accountId, reason, createdAt }) {
+async function saveIssueReport(commentId, { accountId, reason, createdAt }, { tx } = {}) {
   const replace = () => Comment.findOneAndUpdate(
     { ...visibleById(commentId), 'issueReports.accountId': accountId },
     { $set: { 'issueReports.$.reason': reason, 'issueReports.$.createdAt': createdAt } },
-    { new: true, runValidators: true },
+    { new: true, runValidators: true, session: tx },
   ).lean();
 
   const replaced = await replace();
@@ -173,7 +175,7 @@ async function saveIssueReport(commentId, { accountId, reason, createdAt }) {
   const added = await Comment.findOneAndUpdate(
     { ...visibleById(commentId), 'issueReports.accountId': { $ne: accountId } },
     { $push: { issueReports: { accountId, reason, createdAt } } },
-    { new: true, runValidators: true },
+    { new: true, runValidators: true, session: tx },
   ).lean();
   if (added) return toComment(added);
 
