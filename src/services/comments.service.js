@@ -1,4 +1,5 @@
 const CommentsRepo = require('../repositories/comments.repo');
+const CommunityTransactions = require('../repositories/communityTransactions');
 const EventsRepo = require('../repositories/events.repo');
 const ContributionsService = require('./contributions.service');
 
@@ -35,6 +36,17 @@ function normalizeAccountId(value) {
 
 function getHelpfulAccountIds(source) {
   return Array.isArray(source?.helpfulAccountIds) ? source.helpfulAccountIds : [];
+}
+
+// Runs a comment write and the points it earns together: in one transaction, so a failed step leaves
+// neither, or one after the other on a MongoDB that can't run transactions
+async function writeTogether(fn) {
+  try {
+    return await CommunityTransactions.withTransaction(fn);
+  } catch (err) {
+    if (!CommunityTransactions.isTransactionUnsupported(err)) throw err;
+    return fn(undefined);
+  }
 }
 
 // source: a comment as the comments repository returns it
@@ -121,19 +133,22 @@ async function createComment({
   }
 
   const normalizedContent = typeof content === 'string' ? content.trim() : '';
-  const savedComment = await CommentsRepo.create({
-    eventId: event._id,
-    eventPublicID: event.publicID,
-    accountId: accountId || null,
-    username: username || 'Anonymous',
-    ...(normalizedContent ? { content: normalizedContent } : {}),
-    ...(imageURL ? { imageURL } : {}),
-    status: getDefaultCommentStatus(),
-  });
-  await ContributionsService.recordReportPosted({
-    accountId,
-    comment: savedComment,
-    hasImage: Boolean(imageURL),
+  const savedComment = await writeTogether(async (tx) => {
+    const saved = await CommentsRepo.create({
+      eventId: event._id,
+      eventPublicID: event.publicID,
+      accountId: accountId || null,
+      username: username || 'Anonymous',
+      ...(normalizedContent ? { content: normalizedContent } : {}),
+      ...(imageURL ? { imageURL } : {}),
+      status: getDefaultCommentStatus(),
+    }, { tx });
+    await ContributionsService.recordReportPosted({
+      accountId,
+      comment: saved,
+      hasImage: Boolean(imageURL),
+    }, { tx });
+    return saved;
   });
   const publicComment = toPublicComment(savedComment);
   return {
@@ -191,17 +206,19 @@ async function markCommentHelpful(commentId, accountId) {
     return { unauthenticated: true };
   }
 
-  const marked = await CommentsRepo.addHelpfulMark(commentId, accountId);
+  const marked = await writeTogether(async (tx) => {
+    const result = await CommentsRepo.addHelpfulMark(commentId, accountId, { tx });
+    // Points only for a new mark: marking again changes nothing
+    if (result?.added) {
+      await ContributionsService.recordHelpfulMarked({
+        actorAccountId: accountId,
+        comment: result.comment,
+      }, { tx });
+    }
+    return result;
+  });
   if (!marked) {
     return null;
-  }
-
-  // Points only for a new mark: marking again changes nothing
-  if (marked.added) {
-    await ContributionsService.recordHelpfulMarked({
-      actorAccountId: accountId,
-      comment: marked.comment,
-    });
   }
   return toPublicComment(marked.comment, { viewerAccountId: accountId });
 }
@@ -225,17 +242,22 @@ async function reportCommentIssue(commentId, { accountId, reason }) {
     return { invalidReason: true };
   }
 
-  // One report per account: a second one replaces the first
-  const comment = await CommentsRepo.saveIssueReport(commentId, { accountId, reason, createdAt: new Date() });
+  const comment = await writeTogether(async (tx) => {
+    // One report per account: a second one replaces the first
+    const saved = await CommentsRepo.saveIssueReport(commentId, { accountId, reason, createdAt: new Date() }, { tx });
+    if (saved) {
+      await ContributionsService.recordIssueSubmitted({
+        accountId,
+        comment: saved,
+        reason,
+      }, { tx });
+    }
+    return saved;
+  });
   if (!comment) {
     return null;
   }
 
-  await ContributionsService.recordIssueSubmitted({
-    accountId,
-    comment,
-    reason,
-  });
   return {
     commentId: comment.commentId,
     issueReported: true,

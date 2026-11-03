@@ -15,6 +15,12 @@ jest.mock('../src/repositories/comments.repo', () => ({
   saveIssueReport: jest.fn(),
 }));
 
+// Runs the function with a stand-in transaction
+jest.mock('../src/repositories/communityTransactions', () => ({
+  withTransaction: jest.fn((fn) => fn('tx')),
+  isTransactionUnsupported: jest.fn(() => false),
+}));
+
 jest.mock('../src/services/contributions.service', () => ({
   recordReportPosted: jest.fn().mockResolvedValue([]),
   recordHelpfulMarked: jest.fn().mockResolvedValue([]),
@@ -22,6 +28,7 @@ jest.mock('../src/services/contributions.service', () => ({
 }));
 
 const CommentsRepo = require('../src/repositories/comments.repo');
+const CommunityTransactions = require('../src/repositories/communityTransactions');
 const CommentsService = require('../src/services/comments.service');
 const ContributionsService = require('../src/services/contributions.service');
 
@@ -109,12 +116,13 @@ describe('comments.service', () => {
       content: 'Felt light shaking.',
       imageURL: '/uploads/report.jpg',
       status: 'approved',
-    });
+    }, { tx: 'tx' });
+    // In the same transaction as the comment
     expect(ContributionsService.recordReportPosted).toHaveBeenCalledWith({
       accountId: '69c217dc9728d1ee7fcb8ea5',
       comment: saved,
       hasImage: true,
-    });
+    }, { tx: 'tx' });
   });
 
   test('createComment leaves out empty content, and posts anonymously without an account', async () => {
@@ -130,7 +138,27 @@ describe('comments.service', () => {
       username: 'Anonymous',
       imageURL: '/uploads/only.jpg',
       status: 'approved',
-    });
+    }, { tx: 'tx' });
+  });
+
+  test("createComment falls back to plain writes on a MongoDB that can't run transactions", async () => {
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
+    CommentsRepo.create.mockResolvedValue(storedComment());
+    CommunityTransactions.withTransaction.mockRejectedValueOnce(new Error('Transaction numbers are only allowed on a replica set member'));
+    CommunityTransactions.isTransactionUnsupported.mockReturnValueOnce(true);
+
+    await CommentsService.createComment({ eventId: '69c217dc9728d1ee7fcb8ea6', content: 'Felt it.' });
+
+    expect(CommentsRepo.create).toHaveBeenCalledWith(expect.objectContaining({ content: 'Felt it.' }), { tx: undefined });
+  });
+
+  test("createComment fails when its points can't be written (the transaction undoes the comment)", async () => {
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
+    CommentsRepo.create.mockResolvedValue(storedComment({ accountId: '69c217dc9728d1ee7fcb8ea5' }));
+    ContributionsService.recordReportPosted.mockRejectedValueOnce(new Error('points write failed'));
+
+    await expect(CommentsService.createComment({ eventId: '69c217dc9728d1ee7fcb8ea6', accountId: '69c217dc9728d1ee7fcb8ea5', content: 'Felt it.' }))
+      .rejects.toThrow('points write failed');
   });
 
   test('getCommentsByEventId returns public comments only', async () => {
@@ -251,7 +279,7 @@ describe('comments.service', () => {
 
     const result = await CommentsService.markCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
 
-    expect(CommentsRepo.addHelpfulMark).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5');
+    expect(CommentsRepo.addHelpfulMark).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5', { tx: 'tx' });
     expect(result).toEqual(expect.objectContaining({
       commentId: 'report-1',
       helpfulCount: 1,
@@ -260,7 +288,7 @@ describe('comments.service', () => {
     expect(ContributionsService.recordHelpfulMarked).toHaveBeenCalledWith({
       actorAccountId: '69c217dc9728d1ee7fcb8ea5',
       comment,
-    });
+    }, { tx: 'tx' });
   });
 
   test('markCommentHelpful returns existing helpful state without scoring duplicates', async () => {
@@ -321,7 +349,7 @@ describe('comments.service', () => {
       accountId: '69c217dc9728d1ee7fcb8ea5',
       reason: 'not_related',
       createdAt: expect.any(Date),
-    });
+    }, { tx: 'tx' });
     expect(result).toEqual({
       commentId: 'report-1',
       issueReported: true,
@@ -331,7 +359,7 @@ describe('comments.service', () => {
       accountId: '69c217dc9728d1ee7fcb8ea5',
       comment,
       reason: 'not_related',
-    });
+    }, { tx: 'tx' });
   });
 
   test('reportCommentIssue returns null for a hidden or unknown comment', async () => {

@@ -33,11 +33,31 @@ describe('contributions.service', () => {
       targetId: 'report-1',
       eventId: '69c217dc9728d1ee7fcb8ea6',
       eventPublicID: 'gfz2025tean',
-    }));
+    }), { tx: undefined });
     expect(result).toEqual(expect.objectContaining({
       actionType: 'report_posted',
       points: 5,
     }));
+  });
+
+  test('writes in the transaction it is given, one entry after the other', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    ContributionsRepo.recordOnce.mockImplementation(async (entry) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setImmediate(resolve));
+      inFlight -= 1;
+      return entry;
+    });
+
+    await ContributionsService.recordHelpfulMarked({
+      actorAccountId: '69c217dc9728d1ee7fcb8ea5',
+      comment: { commentId: 'report-1', accountId: '69c217dc9728d1ee7fcb8ea7' },
+    }, { tx: 'tx' });
+
+    expect(ContributionsRepo.recordOnce.mock.calls.map((call) => call[1])).toEqual([{ tx: 'tx' }, { tx: 'tx' }]);
+    expect(maxInFlight).toBe(1);
   });
 
   test('recordContribution skips entries without an account or action', async () => {
@@ -132,6 +152,6 @@ describe('contributions.service', () => {
       actionType: 'report_issue_submitted',
       points: 0,
       reason: 'not_related',
-    }));
+    }), { tx: undefined });
   });
 });
