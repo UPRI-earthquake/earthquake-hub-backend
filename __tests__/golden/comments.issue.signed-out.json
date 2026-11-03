@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments/c0000000-0000-4000-8000-000000000001/issues",
+    "body": {
+      "reason": "unclear"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Sign in to interact with reports."
+    }
+  }
+}

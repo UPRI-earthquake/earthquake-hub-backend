@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/comments/no-such-comment",
+    "headers": {
+      "Cookie": "<admin session cookie>"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Comment not found"
+    }
+  }
+}

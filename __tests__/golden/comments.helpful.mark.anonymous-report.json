@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "PUT",
+    "path": "/comments/c0000000-0000-4000-8000-000000000003/helpful"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Report marked helpful",
+      "payload": {
+        "commentId": "c0000000-0000-4000-8000-000000000003",
+        "username": "Anonymous",
+        "content": "Plates fell off the shelf.",
+        "helpfulCount": 1,
+        "viewerHasMarkedHelpful": true,
+        "createdAt": "2026-05-03T01:00:00.000Z",
+        "updatedAt": "<now>"
+      }
+    }
+  }
+}

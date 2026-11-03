@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments",
+    "form": {
+      "eventId": "69000000000000000000e301",
+      "anonymous": "false"
+    },
+    "file": "image: report.png (image/png)"
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Comment created successfully",
+      "payload": {
+        "commentId": "<new comment id>",
+        "username": "golden_citizen",
+        "imageURL": "<uploaded image URL>",
+        "helpfulCount": 0,
+        "viewerHasMarkedHelpful": false,
+        "createdAt": "<now>",
+        "updatedAt": "<now>",
+        "status": "approved"
+      }
+    }
+  }
+}

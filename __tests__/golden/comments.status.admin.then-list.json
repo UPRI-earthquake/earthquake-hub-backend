@@ -1,0 +1,71 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/comments?eventId=69000000000000000000e301"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Comments retrieved successfully",
+      "payload": [
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000004",
+          "username": "golden_author",
+          "content": "Cracks on our wall.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-05T01:00:00.000Z",
+          "updatedAt": "<now>"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000006",
+          "username": "golden_citizen",
+          "content": "Windows rattled in Marikina.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-04T01:00:00.000Z",
+          "updatedAt": "2026-05-04T01:00:00.000Z"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000003",
+          "username": "Anonymous",
+          "content": "Plates fell off the shelf.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-03T01:00:00.000Z",
+          "updatedAt": "2026-05-03T01:00:00.000Z"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000002",
+          "username": "Anonymous",
+          "content": "Felt it on the 5th floor.",
+          "imageURL": "/uploads/seeded-report.jpg",
+          "helpfulCount": 2,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-03T01:00:00.000Z",
+          "updatedAt": "2026-05-03T01:00:00.000Z"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000001",
+          "username": "golden_author",
+          "content": "Strong shaking in Quezon City.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-02T01:00:00.000Z",
+          "updatedAt": "2026-05-02T01:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "total": 5,
+        "limit": 20,
+        "offset": 0,
+        "nextCursor": null,
+        "hasMore": false
+      }
+    }
+  }
+}

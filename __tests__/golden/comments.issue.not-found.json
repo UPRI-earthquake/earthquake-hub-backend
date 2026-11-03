@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments/no-such-comment/issues",
+    "body": {
+      "reason": "unclear"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Comment not found"
+    }
+  }
+}

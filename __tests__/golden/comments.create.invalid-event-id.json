@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments",
+    "body": {
+      "eventId": "upri2026jcom",
+      "content": "Hello."
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Event ID must be a valid ObjectId."
+    }
+  }
+}

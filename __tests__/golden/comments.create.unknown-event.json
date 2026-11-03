@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments",
+    "body": {
+      "eventId": "69000000000000000000e3ee",
+      "content": "Anyone else?"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Event not found"
+    }
+  }
+}

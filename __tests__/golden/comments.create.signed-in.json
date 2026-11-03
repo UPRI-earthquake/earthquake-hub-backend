@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments",
+    "body": {
+      "eventId": "69000000000000000000e301",
+      "content": "Felt a strong jolt.",
+      "anonymous": false
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Comment created successfully",
+      "payload": {
+        "commentId": "<new comment id>",
+        "username": "golden_citizen",
+        "content": "Felt a strong jolt.",
+        "helpfulCount": 0,
+        "viewerHasMarkedHelpful": false,
+        "createdAt": "<now>",
+        "updatedAt": "<now>",
+        "status": "approved"
+      }
+    }
+  }
+}

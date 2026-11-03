@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments/c0000000-0000-4000-8000-000000000001/issues",
+    "body": {
+      "reason": "unclear"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Report issue submitted",
+      "payload": {
+        "commentId": "c0000000-0000-4000-8000-000000000001",
+        "issueReported": true,
+        "reason": "unclear"
+      }
+    }
+  }
+}
