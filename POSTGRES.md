@@ -241,7 +241,7 @@ Two kinds of integration tests check that a move changes nothing:
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
-Integration tests never follow your `.env`'s area settings: the app loads `.env`, but `__tests__/fixtures/integrationEnv.js` (a `setupFiles` entry) first sets every area setting to `mongodb`, and dotenv never overrides a variable that's already set. A test runs an area on PostgreSQL only when it sets that itself.
+Integration tests never follow your `.env`'s area settings: `__tests__/fixtures/integrationEnv.js` (a `setupFilesAfterEnv` entry, so the `--setupFiles` of `npm run test:integration` can't replace it) sets every area setting to `mongodb` before each test file, and the app's dotenv call never overrides a variable that's already set. A test runs an area on PostgreSQL only when it sets that itself.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
