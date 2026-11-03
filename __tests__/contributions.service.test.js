@@ -1,16 +1,17 @@
-jest.mock('../src/models/contributionEvent.model', () => ({
-  findOneAndUpdate: jest.fn(),
+jest.mock('../src/repositories/contributions.repo', () => ({
+  recordOnce: jest.fn(),
 }));
 
-const ContributionEvent = require('../src/models/contributionEvent.model');
+const ContributionsRepo = require('../src/repositories/contributions.repo');
 const ContributionsService = require('../src/services/contributions.service');
 
 describe('contributions.service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    ContributionEvent.findOneAndUpdate.mockImplementation((query, update) => Promise.resolve({
-      ...update.$setOnInsert,
-      _id: 'contribution-event-id',
+    ContributionsRepo.recordOnce.mockImplementation((entry) => Promise.resolve({
+      ...entry,
+      createdAt: new Date('2026-06-17T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-17T00:00:00.000Z'),
     }));
   });
 
@@ -24,27 +25,25 @@ describe('contributions.service', () => {
       eventPublicID: 'gfz2025tean',
     });
 
-    expect(ContributionEvent.findOneAndUpdate).toHaveBeenCalledWith(
-      { dedupeKey: '69c217dc9728d1ee7fcb8ea5:report_posted:comment:report-1' },
-      {
-        $setOnInsert: expect.objectContaining({
-          accountId: '69c217dc9728d1ee7fcb8ea5',
-          actionType: 'report_posted',
-          points: 5,
-          targetId: 'report-1',
-          eventPublicID: 'gfz2025tean',
-        }),
-      },
-      {
-        new: true,
-        setDefaultsOnInsert: true,
-        upsert: true,
-      },
-    );
+    expect(ContributionsRepo.recordOnce).toHaveBeenCalledWith(expect.objectContaining({
+      dedupeKey: '69c217dc9728d1ee7fcb8ea5:report_posted:comment:report-1',
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      actionType: 'report_posted',
+      points: 5,
+      targetId: 'report-1',
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      eventPublicID: 'gfz2025tean',
+    }));
     expect(result).toEqual(expect.objectContaining({
       actionType: 'report_posted',
       points: 5,
     }));
+  });
+
+  test('recordContribution skips entries without an account or action', async () => {
+    expect(await ContributionsService.recordContribution({ actionType: 'report_posted' })).toBeNull();
+    expect(await ContributionsService.recordContribution({ accountId: '69c217dc9728d1ee7fcb8ea5' })).toBeNull();
+    expect(ContributionsRepo.recordOnce).not.toHaveBeenCalled();
   });
 
   test('recordReportPosted awards both report and image report events for image posts', async () => {
@@ -58,11 +57,11 @@ describe('contributions.service', () => {
       },
     });
 
-    expect(ContributionEvent.findOneAndUpdate).toHaveBeenCalledTimes(2);
-    expect(ContributionEvent.findOneAndUpdate.mock.calls[0][1].$setOnInsert).toEqual(
+    expect(ContributionsRepo.recordOnce).toHaveBeenCalledTimes(2);
+    expect(ContributionsRepo.recordOnce.mock.calls[0][0]).toEqual(
       expect.objectContaining({ actionType: 'report_posted', points: 5 }),
     );
-    expect(ContributionEvent.findOneAndUpdate.mock.calls[1][1].$setOnInsert).toEqual(
+    expect(ContributionsRepo.recordOnce.mock.calls[1][0]).toEqual(
       expect.objectContaining({ actionType: 'image_report_posted', points: 8 }),
     );
   });
@@ -78,15 +77,15 @@ describe('contributions.service', () => {
       },
     });
 
-    expect(ContributionEvent.findOneAndUpdate).toHaveBeenCalledTimes(2);
-    expect(ContributionEvent.findOneAndUpdate.mock.calls[0][1].$setOnInsert).toEqual(
+    expect(ContributionsRepo.recordOnce).toHaveBeenCalledTimes(2);
+    expect(ContributionsRepo.recordOnce.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         accountId: '69c217dc9728d1ee7fcb8ea5',
         actionType: 'report_marked_helpful',
         points: 1,
       }),
     );
-    expect(ContributionEvent.findOneAndUpdate.mock.calls[1][1].$setOnInsert).toEqual(
+    expect(ContributionsRepo.recordOnce.mock.calls[1][0]).toEqual(
       expect.objectContaining({
         accountId: '69c217dc9728d1ee7fcb8ea7',
         actionType: 'report_received_helpful',
@@ -105,7 +104,17 @@ describe('contributions.service', () => {
     });
 
     expect(result).toEqual([]);
-    expect(ContributionEvent.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(ContributionsRepo.recordOnce).not.toHaveBeenCalled();
+  });
+
+  test('recordHelpfulMarked awards only the voter on an anonymous report', async () => {
+    await ContributionsService.recordHelpfulMarked({
+      actorAccountId: '69c217dc9728d1ee7fcb8ea5',
+      comment: { commentId: 'report-1', accountId: null },
+    });
+
+    expect(ContributionsRepo.recordOnce).toHaveBeenCalledTimes(1);
+    expect(ContributionsRepo.recordOnce.mock.calls[0][0]).toEqual(expect.objectContaining({ actionType: 'report_marked_helpful' }));
   });
 
   test('recordIssueSubmitted stores a zero-point moderation signal', async () => {
@@ -118,16 +127,11 @@ describe('contributions.service', () => {
       },
     });
 
-    expect(ContributionEvent.findOneAndUpdate).toHaveBeenCalledWith(
-      { dedupeKey: '69c217dc9728d1ee7fcb8ea5:report_issue_submitted:comment:report-1' },
-      {
-        $setOnInsert: expect.objectContaining({
-          actionType: 'report_issue_submitted',
-          points: 0,
-          reason: 'not_related',
-        }),
-      },
-      expect.any(Object),
-    );
+    expect(ContributionsRepo.recordOnce).toHaveBeenCalledWith(expect.objectContaining({
+      dedupeKey: '69c217dc9728d1ee7fcb8ea5:report_issue_submitted:comment:report-1',
+      actionType: 'report_issue_submitted',
+      points: 0,
+      reason: 'not_related',
+    }));
   });
 });

@@ -1,27 +1,19 @@
 const mockFindEventRef = jest.fn();
-let mockSaveResult;
 
 jest.mock('../src/repositories/events.repo', () => ({
   findRefById: (...args) => mockFindEventRef(...args),
 }));
 
-jest.mock('../src/models/comments.model', () => {
-  const MockComment = jest.fn(function MockComment(doc) {
-    Object.assign(this, doc);
-    this.commentId = this.commentId || 'generated-comment-id';
-    this.createdAt = this.createdAt || new Date('2026-06-17T00:00:00.000Z');
-    this.updatedAt = this.updatedAt || new Date('2026-06-17T00:00:00.000Z');
-    this.save = jest.fn().mockImplementation(() => Promise.resolve(mockSaveResult || this));
-  });
-
-  MockComment.find = jest.fn();
-  MockComment.countDocuments = jest.fn();
-  MockComment.findOneAndDelete = jest.fn();
-  MockComment.findOneAndUpdate = jest.fn();
-  MockComment.findOne = jest.fn();
-
-  return MockComment;
-});
+jest.mock('../src/repositories/comments.repo', () => ({
+  create: jest.fn(),
+  listVisibleForEvent: jest.fn(),
+  findVisible: jest.fn(),
+  remove: jest.fn(),
+  setStatus: jest.fn(),
+  addHelpfulMark: jest.fn(),
+  removeHelpfulMark: jest.fn(),
+  saveIssueReport: jest.fn(),
+}));
 
 jest.mock('../src/services/contributions.service', () => ({
   recordReportPosted: jest.fn().mockResolvedValue([]),
@@ -29,7 +21,7 @@ jest.mock('../src/services/contributions.service', () => ({
   recordIssueSubmitted: jest.fn().mockResolvedValue(null),
 }));
 
-const Comment = require('../src/models/comments.model');
+const CommentsRepo = require('../src/repositories/comments.repo');
 const CommentsService = require('../src/services/comments.service');
 const ContributionsService = require('../src/services/contributions.service');
 
@@ -38,27 +30,28 @@ function mockEventLookup(event) {
   mockFindEventRef.mockResolvedValue(event);
 }
 
-function createFindChain(result) {
-  const chain = {
-    sort: jest.fn(() => chain),
-    skip: jest.fn(() => chain),
-    limit: jest.fn(() => chain),
-    select: jest.fn(() => chain),
-    lean: jest.fn(() => Promise.resolve(result)),
-  };
-  return chain;
-}
-
-function createSelectChain(result) {
+// A comment as the comments repository returns it
+function storedComment(fields = {}) {
   return {
-    select: jest.fn(() => Promise.resolve(result)),
+    commentId: 'report-1',
+    eventId: '69c217dc9728d1ee7fcb8ea6',
+    eventPublicID: 'gfz2025tean',
+    accountId: null,
+    username: 'Anonymous',
+    content: 'Felt shaking.',
+    status: 'approved',
+    helpfulAccountIds: [],
+    issueReports: [],
+    createdAt: new Date('2026-06-17T04:00:00.000Z'),
+    updatedAt: new Date('2026-06-17T04:00:00.000Z'),
+    ...fields,
   };
 }
 
 describe('comments.service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSaveResult = undefined;
+    process.env.COMMENTS_DEFAULT_STATUS = 'approved'; // whatever the developer's .env says
   });
 
   test('createComment returns null when the event does not exist', async () => {
@@ -70,29 +63,21 @@ describe('comments.service', () => {
     });
 
     expect(result).toBeNull();
-    expect(Comment).not.toHaveBeenCalled();
+    expect(CommentsRepo.create).not.toHaveBeenCalled();
   });
 
   test('createComment returns a public comment without account internals', async () => {
     const createdAt = new Date('2026-06-17T01:00:00.000Z');
-    const updatedAt = new Date('2026-06-17T01:00:00.000Z');
     mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
-    mockSaveResult = {
-      commentId: 'report-1',
-      eventId: '69c217dc9728d1ee7fcb8ea6',
-      eventPublicID: 'gfz2025tean',
-        accountId: '69c217dc9728d1ee7fcb8ea5',
-        username: 'citizen-user',
-        content: 'Felt light shaking.',
-        imageURL: '/uploads/report.jpg',
-        helpfulAccountIds: [],
-        status: 'approved',
-        createdAt,
-        updatedAt,
-        toObject() {
-        return this;
-      },
-    };
+    const saved = storedComment({
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+      content: 'Felt light shaking.',
+      imageURL: '/uploads/report.jpg',
+      createdAt,
+      updatedAt: createdAt,
+    });
+    CommentsRepo.create.mockResolvedValue(saved);
 
     const result = await CommentsService.createComment({
       eventId: '69c217dc9728d1ee7fcb8ea6',
@@ -111,41 +96,51 @@ describe('comments.service', () => {
       viewerHasMarkedHelpful: false,
       status: 'approved',
       createdAt,
-      updatedAt,
+      updatedAt: createdAt,
     });
     expect(result).not.toHaveProperty('accountId');
     expect(result).not.toHaveProperty('eventId');
     expect(result).not.toHaveProperty('_id');
-    expect(Comment).toHaveBeenCalledWith(expect.objectContaining({
+    expect(CommentsRepo.create).toHaveBeenCalledWith({
       eventId: '69c217dc9728d1ee7fcb8ea6',
       eventPublicID: 'gfz2025tean',
-    }));
+      accountId: '69c217dc9728d1ee7fcb8ea5',
+      username: 'citizen-user',
+      content: 'Felt light shaking.',
+      imageURL: '/uploads/report.jpg',
+      status: 'approved',
+    });
     expect(ContributionsService.recordReportPosted).toHaveBeenCalledWith({
       accountId: '69c217dc9728d1ee7fcb8ea5',
-      comment: mockSaveResult,
+      comment: saved,
       hasImage: true,
     });
   });
 
-  test('getCommentsByEventId returns public comments only', async () => {
-    const createdAt = new Date('2026-06-17T02:00:00.000Z');
-    const updatedAt = new Date('2026-06-17T02:00:00.000Z');
+  test('createComment leaves out empty content, and posts anonymously without an account', async () => {
     mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
-    Comment.find.mockReturnValue(createFindChain([
-      {
-        commentId: 'report-1',
-        _id: 'internal-id',
-        eventId: '69c217dc9728d1ee7fcb8ea6',
-        accountId: '69c217dc9728d1ee7fcb8ea5',
-        username: 'Anonymous',
-        content: 'Felt shaking.',
-        helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
-        status: 'approved',
-        createdAt,
-        updatedAt,
-      },
-    ]));
-    Comment.countDocuments.mockResolvedValue(1);
+    CommentsRepo.create.mockResolvedValue(storedComment({ content: undefined, imageURL: '/uploads/only.jpg' }));
+
+    await CommentsService.createComment({ eventId: '69c217dc9728d1ee7fcb8ea6', content: '   ', imageURL: '/uploads/only.jpg' });
+
+    expect(CommentsRepo.create).toHaveBeenCalledWith({
+      eventId: '69c217dc9728d1ee7fcb8ea6',
+      eventPublicID: 'gfz2025tean',
+      accountId: null,
+      username: 'Anonymous',
+      imageURL: '/uploads/only.jpg',
+      status: 'approved',
+    });
+  });
+
+  test('getCommentsByEventId returns public comments only', async () => {
+    const event = { _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' };
+    mockEventLookup(event);
+    CommentsRepo.listVisibleForEvent.mockResolvedValue({
+      comments: [storedComment({ accountId: '69c217dc9728d1ee7fcb8ea5', helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'] })],
+      hasMore: false,
+      total: 1,
+    });
 
     const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', {
       limit: 20,
@@ -153,102 +148,91 @@ describe('comments.service', () => {
       viewerAccountId: '69c217dc9728d1ee7fcb8ea5',
     });
 
-    expect(result.comments).toEqual([
-      {
-        commentId: 'report-1',
-        username: 'Anonymous',
-        content: 'Felt shaking.',
-        helpfulCount: 1,
-        viewerHasMarkedHelpful: true,
-        createdAt,
-        updatedAt,
-      },
-    ]);
-    expect(result.comments[0]).not.toHaveProperty('accountId');
-    expect(result.comments[0]).not.toHaveProperty('eventId');
-    expect(result.comments[0]).not.toHaveProperty('_id');
-    expect(result.hasMore).toBe(false);
-    expect(result.nextCursor).toBeNull();
-    expect(Comment.find).toHaveBeenCalledWith({
-      $and: [
+    expect(result).toEqual({
+      comments: [
         {
-          $or: [
-            { eventId: '69c217dc9728d1ee7fcb8ea6' },
-            { eventPublicID: 'gfz2025tean' },
-          ],
-        },
-        {
-          $or: [
-            { status: 'approved' },
-            { status: { $exists: false } },
-          ],
+          commentId: 'report-1',
+          username: 'Anonymous',
+          content: 'Felt shaking.',
+          helpfulCount: 1,
+          viewerHasMarkedHelpful: true,
+          createdAt: new Date('2026-06-17T04:00:00.000Z'),
+          updatedAt: new Date('2026-06-17T04:00:00.000Z'),
         },
       ],
+      total: 1,
+      limit: 20,
+      offset: 0,
+      nextCursor: null,
+      hasMore: false,
     });
+    expect(CommentsRepo.listVisibleForEvent).toHaveBeenCalledWith(event, { limit: 20, offset: 0, after: null });
   });
 
   test('getCommentsByEventId returns a next cursor when more reports exist', async () => {
     mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
-    Comment.find.mockReturnValue(createFindChain([
-      {
-        commentId: 'report-2',
-        username: 'Anonymous',
-        content: 'Second report.',
-        createdAt: new Date('2026-06-17T03:00:00.000Z'),
-        updatedAt: new Date('2026-06-17T03:00:00.000Z'),
-      },
-      {
-        commentId: 'report-1',
-        username: 'Anonymous',
-        content: 'First report.',
-        createdAt: new Date('2026-06-17T02:00:00.000Z'),
-        updatedAt: new Date('2026-06-17T02:00:00.000Z'),
-      },
-    ]));
-    Comment.countDocuments.mockResolvedValue(2);
-
-    const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', {
-      limit: 1,
-      offset: 0,
+    CommentsRepo.listVisibleForEvent.mockResolvedValue({
+      comments: [storedComment({ commentId: 'report-2', createdAt: new Date('2026-06-17T03:00:00.000Z') })],
+      hasMore: true,
+      total: 2,
     });
 
-    expect(result.comments).toHaveLength(1);
-    expect(result.comments[0].commentId).toBe('report-2');
+    const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', { limit: 1, offset: 0 });
+
+    expect(result.comments.map((comment) => comment.commentId)).toEqual(['report-2']);
     expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toEqual(expect.any(String));
+    expect(CommentsService.decodePaginationCursor(result.nextCursor)).toEqual({
+      createdAt: new Date('2026-06-17T03:00:00.000Z'),
+      commentId: 'report-2',
+    });
+  });
+
+  test('getCommentsByEventId passes a decoded cursor, and ignores the offset with one', async () => {
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
+    CommentsRepo.listVisibleForEvent.mockResolvedValue({ comments: [], hasMore: false, total: 0 });
+    const cursor = CommentsService.encodePaginationCursor({ createdAt: new Date('2026-06-17T03:00:00.000Z'), commentId: 'report-2' });
+
+    const result = await CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', { limit: 5, offset: 3, cursor });
+
+    expect(CommentsRepo.listVisibleForEvent).toHaveBeenCalledWith(expect.anything(), {
+      limit: 5,
+      offset: 0,
+      after: { createdAt: new Date('2026-06-17T03:00:00.000Z'), commentId: 'report-2' },
+    });
+    expect(result.offset).toBe(0);
+  });
+
+  test('getCommentsByEventId rejects a malformed cursor', async () => {
+    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
+
+    await expect(CommentsService.getCommentsByEventId('69c217dc9728d1ee7fcb8ea6', { cursor: 'not-a-cursor' }))
+      .rejects.toMatchObject({ name: 'ValidationError' });
+    expect(CommentsRepo.listVisibleForEvent).not.toHaveBeenCalled();
   });
 
   test('updateCommentStatus stores moderation metadata', async () => {
     const moderatedAtBefore = Date.now();
-    Comment.findOneAndUpdate.mockResolvedValue({
-      commentId: 'report-1',
-      eventId: '69c217dc9728d1ee7fcb8ea6',
+    CommentsRepo.setStatus.mockResolvedValue(storedComment({
       accountId: '69c217dc9728d1ee7fcb8ea5',
-      username: 'Anonymous',
-      content: 'Felt shaking.',
       status: 'rejected',
       moderatedBy: 'admin-user',
       moderatedAt: new Date('2026-06-17T04:00:00.000Z'),
-    });
+    }));
 
     const result = await CommentsService.updateCommentStatus('report-1', 'rejected', 'admin-user');
 
-    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
-      { commentId: 'report-1' },
-      expect.objectContaining({
-        $set: expect.objectContaining({
-          status: 'rejected',
-          moderatedBy: 'admin-user',
-          moderatedAt: expect.any(Date),
-        }),
-      }),
-      { new: true },
-    );
-    const moderatedAt = Comment.findOneAndUpdate.mock.calls[0][1].$set.moderatedAt.getTime();
-    expect(moderatedAt).toBeGreaterThanOrEqual(moderatedAtBefore);
+    expect(CommentsRepo.setStatus).toHaveBeenCalledWith('report-1', {
+      status: 'rejected',
+      moderatedBy: 'admin-user',
+      moderatedAt: expect.any(Date),
+    });
+    const { moderatedAt } = CommentsRepo.setStatus.mock.calls[0][1];
+    expect(moderatedAt.getTime()).toBeGreaterThanOrEqual(moderatedAtBefore);
     expect(result).toEqual(
       expect.objectContaining({
         commentId: 'report-1',
+        eventId: '69c217dc9728d1ee7fcb8ea6',
+        eventPublicID: 'gfz2025tean',
         accountId: '69c217dc9728d1ee7fcb8ea5',
         status: 'rejected',
         moderatedBy: 'admin-user',
@@ -256,31 +240,18 @@ describe('comments.service', () => {
     );
   });
 
+  test('updateCommentStatus rejects an unknown status without writing', async () => {
+    expect(await CommentsService.updateCommentStatus('report-1', 'hidden', 'admin-user')).toEqual({ invalidStatus: true });
+    expect(CommentsRepo.setStatus).not.toHaveBeenCalled();
+  });
+
   test('markCommentHelpful adds the viewer account once and returns public counts', async () => {
-    const updatedComment = {
-      commentId: 'report-1',
-      username: 'Anonymous',
-      content: 'Felt shaking.',
-      helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
-      createdAt: new Date('2026-06-17T04:00:00.000Z'),
-      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
-    };
-    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(updatedComment));
+    const comment = storedComment({ helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'] });
+    CommentsRepo.addHelpfulMark.mockResolvedValue({ comment, added: true });
 
     const result = await CommentsService.markCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
 
-    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
-      {
-        commentId: 'report-1',
-        helpfulAccountIds: { $ne: '69c217dc9728d1ee7fcb8ea5' },
-        $or: [
-          { status: 'approved' },
-          { status: { $exists: false } },
-        ],
-      },
-      { $addToSet: { helpfulAccountIds: '69c217dc9728d1ee7fcb8ea5' } },
-      { new: true },
-    );
+    expect(CommentsRepo.addHelpfulMark).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5');
     expect(result).toEqual(expect.objectContaining({
       commentId: 'report-1',
       helpfulCount: 1,
@@ -288,21 +259,15 @@ describe('comments.service', () => {
     }));
     expect(ContributionsService.recordHelpfulMarked).toHaveBeenCalledWith({
       actorAccountId: '69c217dc9728d1ee7fcb8ea5',
-      comment: updatedComment,
+      comment,
     });
   });
 
   test('markCommentHelpful returns existing helpful state without scoring duplicates', async () => {
-    const existingComment = {
-      commentId: 'report-1',
-      username: 'Anonymous',
-      content: 'Felt shaking.',
-      helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'],
-      createdAt: new Date('2026-06-17T04:00:00.000Z'),
-      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
-    };
-    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(null));
-    Comment.findOne.mockReturnValue(createSelectChain(existingComment));
+    CommentsRepo.addHelpfulMark.mockResolvedValue({
+      comment: storedComment({ helpfulAccountIds: ['69c217dc9728d1ee7fcb8ea5'] }),
+      added: false,
+    });
 
     const result = await CommentsService.markCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
 
@@ -314,30 +279,19 @@ describe('comments.service', () => {
     expect(ContributionsService.recordHelpfulMarked).not.toHaveBeenCalled();
   });
 
+  test('markCommentHelpful returns null for a hidden or unknown comment', async () => {
+    CommentsRepo.addHelpfulMark.mockResolvedValue(null);
+
+    expect(await CommentsService.markCommentHelpful('missing', '69c217dc9728d1ee7fcb8ea5')).toBeNull();
+    expect(ContributionsService.recordHelpfulMarked).not.toHaveBeenCalled();
+  });
+
   test('unmarkCommentHelpful removes the viewer account and returns public counts', async () => {
-    const updatedComment = {
-      commentId: 'report-1',
-      username: 'Anonymous',
-      content: 'Felt shaking.',
-      helpfulAccountIds: [],
-      createdAt: new Date('2026-06-17T04:00:00.000Z'),
-      updatedAt: new Date('2026-06-17T04:00:00.000Z'),
-    };
-    Comment.findOneAndUpdate.mockReturnValue(createSelectChain(updatedComment));
+    CommentsRepo.removeHelpfulMark.mockResolvedValue(storedComment());
 
     const result = await CommentsService.unmarkCommentHelpful('report-1', '69c217dc9728d1ee7fcb8ea5');
 
-    expect(Comment.findOneAndUpdate).toHaveBeenCalledWith(
-      {
-        commentId: 'report-1',
-        $or: [
-          { status: 'approved' },
-          { status: { $exists: false } },
-        ],
-      },
-      { $pull: { helpfulAccountIds: '69c217dc9728d1ee7fcb8ea5' } },
-      { new: true },
-    );
+    expect(CommentsRepo.removeHelpfulMark).toHaveBeenCalledWith('report-1', '69c217dc9728d1ee7fcb8ea5');
     expect(result).toEqual(expect.objectContaining({
       commentId: 'report-1',
       helpfulCount: 0,
@@ -345,33 +299,29 @@ describe('comments.service', () => {
     }));
   });
 
+  test('helpful marks need a signed-in account', async () => {
+    expect(await CommentsService.markCommentHelpful('report-1', null)).toEqual({ unauthenticated: true });
+    expect(await CommentsService.unmarkCommentHelpful('report-1', null)).toEqual({ unauthenticated: true });
+    expect(CommentsRepo.addHelpfulMark).not.toHaveBeenCalled();
+    expect(CommentsRepo.removeHelpfulMark).not.toHaveBeenCalled();
+  });
+
   test('reportCommentIssue stores one private issue report per account', async () => {
-    const comment = {
-      commentId: 'report-1',
-      issueReports: [],
-      save: jest.fn().mockResolvedValue(undefined),
-    };
-    Comment.findOne.mockResolvedValue(comment);
+    const comment = storedComment({
+      issueReports: [{ accountId: '69c217dc9728d1ee7fcb8ea5', reason: 'not_related', createdAt: new Date() }],
+    });
+    CommentsRepo.saveIssueReport.mockResolvedValue(comment);
 
     const result = await CommentsService.reportCommentIssue('report-1', {
       accountId: '69c217dc9728d1ee7fcb8ea5',
       reason: 'not_related',
     });
 
-    expect(Comment.findOne).toHaveBeenCalledWith({
-      commentId: 'report-1',
-      $or: [
-        { status: 'approved' },
-        { status: { $exists: false } },
-      ],
-    });
-    expect(comment.issueReports).toHaveLength(1);
-    expect(comment.issueReports[0]).toEqual(expect.objectContaining({
+    expect(CommentsRepo.saveIssueReport).toHaveBeenCalledWith('report-1', {
       accountId: '69c217dc9728d1ee7fcb8ea5',
       reason: 'not_related',
       createdAt: expect.any(Date),
-    }));
-    expect(comment.save).toHaveBeenCalled();
+    });
     expect(result).toEqual({
       commentId: 'report-1',
       issueReported: true,
@@ -384,32 +334,11 @@ describe('comments.service', () => {
     });
   });
 
-  test('reportCommentIssue updates an existing issue from the same account', async () => {
-    const existingIssue = {
-      accountId: '69c217dc9728d1ee7fcb8ea5',
-      reason: 'unclear',
-      createdAt: new Date('2026-06-17T01:00:00.000Z'),
-    };
-    const comment = {
-      commentId: 'report-1',
-      issueReports: [existingIssue],
-      save: jest.fn().mockResolvedValue(undefined),
-    };
-    Comment.findOne.mockResolvedValue(comment);
+  test('reportCommentIssue returns null for a hidden or unknown comment', async () => {
+    CommentsRepo.saveIssueReport.mockResolvedValue(null);
 
-    const result = await CommentsService.reportCommentIssue('report-1', {
-      accountId: '69c217dc9728d1ee7fcb8ea5',
-      reason: 'duplicate',
-    });
-
-    expect(comment.issueReports).toHaveLength(1);
-    expect(existingIssue.reason).toBe('duplicate');
-    expect(existingIssue.createdAt).toEqual(expect.any(Date));
-    expect(result).toEqual(expect.objectContaining({
-      commentId: 'report-1',
-      issueReported: true,
-      reason: 'duplicate',
-    }));
+    expect(await CommentsService.reportCommentIssue('missing', { accountId: '69c217dc9728d1ee7fcb8ea5', reason: 'unclear' })).toBeNull();
+    expect(ContributionsService.recordIssueSubmitted).not.toHaveBeenCalled();
   });
 
   test('reportCommentIssue rejects unsupported reasons', async () => {
@@ -419,6 +348,13 @@ describe('comments.service', () => {
     });
 
     expect(result).toEqual({ invalidReason: true });
-    expect(Comment.findOne).not.toHaveBeenCalled();
+    expect(CommentsRepo.saveIssueReport).not.toHaveBeenCalled();
+  });
+
+  test('deleteComment deletes through the repository', async () => {
+    CommentsRepo.remove.mockResolvedValue(storedComment());
+
+    expect(await CommentsService.deleteComment('report-1')).toEqual(expect.objectContaining({ commentId: 'report-1' }));
+    expect(CommentsRepo.remove).toHaveBeenCalledWith('report-1');
   });
 });
