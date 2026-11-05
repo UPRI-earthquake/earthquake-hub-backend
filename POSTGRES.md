@@ -1,6 +1,6 @@
 # PostgreSQL: Local Setup, Migrations & GUI Clients
 
-The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, push subscriptions, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes were deprecated and removed (migration `20261105000000`).
+The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes and push notifications were deprecated and removed (migrations `20261105000000` and `20261105000100`).
 
 Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.js` holds the connection pool, `src/db/migrations/` the versioned schema changes.
 
@@ -213,7 +213,6 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 | Area | Repository | Setting | Database in dev |
 |---|---|---|---|
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
-| Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | PostgreSQL |
@@ -257,7 +256,6 @@ Each moved area has a setting in `.env` that picks its database:
 
 ```env
 JOB_LOCKS_DB=postgres            # mongodb | postgres
-PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
 PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
 EARTHQUAKES_DB=postgres          # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
 COMMUNITY_DB=postgres            # mongodb | postgres; comments and points; needs PEOPLE_AND_SENSORS_DB and EARTHQUAKES_DB=postgres
@@ -268,7 +266,6 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 ```
 [db] accounts: postgres (PEOPLE_AND_SENSORS_DB)
 [db] devices: postgres (PEOPLE_AND_SENSORS_DB)
-[db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
 [db] job locks: postgres (JOB_LOCKS_DB)
 [db] earthquake events: postgres (EARTHQUAKES_DB)
 [db] comments: postgres (COMMUNITY_DB)
@@ -334,7 +331,7 @@ Set its setting to `mongodb` and restart the backend. MongoDB still has the data
   done
   ```
 
-  Each one is ingested as SeisComP would send it: an event MongoDB doesn't have is created (with a new `_id`, its nearest stations, a station check and pending enrichment), and one it has is updated if the replayed `last_modification` is newer. Place names, summaries and catalog matches made in PostgreSQL aren't replayed; they're worked out again. **Replaying also sends what a live event sends:** an SSE message, and a push notification for magnitude above 5.5, so don't replay against an environment with real subscribers. A SeisComP admin can resend events from SeisComP itself instead (`scxmldump` the events, then `scdispatch` them), which the proxy forwards like any update.
+  Each one is ingested as SeisComP would send it: an event MongoDB doesn't have is created (with a new `_id`, its nearest stations, a station check and pending enrichment), and one it has is updated if the replayed `last_modification` is newer. Place names, summaries and catalog matches made in PostgreSQL aren't replayed; they're worked out again. **Replaying also sends what a live event sends:** an SSE message to every open map, so don't replay against an environment with real users watching. A SeisComP admin can resend events from SeisComP itself instead (`scxmldump` the events, then `scdispatch` them), which the proxy forwards like any update.
 - **Comments on events created after the switch** keep those events' new ObjectIds. If SeisComP sends such an event again on MongoDB, it gets another `_id`, so those comments no longer list under it; they still list under the `publicID` (comments store `eventPublicID` too).
 - **Moving forward again:** run `db:pg:copy-earthquakes` again before switching back. Events changed in PostgreSQL since the first copy are kept with their rows.
 
@@ -362,35 +359,7 @@ The differences between the two databases that stay after a switch (none of them
 
 On dev nothing is live, so a rollback only loses test data.
 
-### Copying push subscriptions
-
-[`scripts/copy-subscriptions-to-postgres.js`](scripts/copy-subscriptions-to-postgres.js) copies MongoDB `subscriptions` into `push_subscriptions`. It reaches MongoDB as `mongodb`, so run it inside the backend container:
-
-```sh
-docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-subscriptions -- --dry-run
-docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-subscriptions
-```
-
-What it does:
-
-- Rows are matched by `legacy_mongo_id` (the MongoDB `_id`), so it's **safe to run again**: nothing is duplicated, and MongoDB changes since the last run are copied.
-- A row changed in PostgreSQL since it was copied (newer `updated_at`) is **kept**, so a re-run after the switch never overwrites newer data.
-- Skipped and listed by `_id`: documents that can't be stored (no endpoint, missing keys, unknown status), and endpoints PostgreSQL already has under another row (the browser subscribed again after the switch).
-- Ends by checking that every copyable subscription has its row and the counts add up. Exit code `0` = done, `1` = validation failed, `2` = error.
-
-Example output:
-
-```
-MongoDB subscriptions: 42
-  inserted: 40
-  updated: 0
-  kept (changed in PostgreSQL since copied): 0
-  skipped, endpoint already in PostgreSQL under another row: 0
-  skipped, can't be stored: 2
-    6512...: missing keys
-    6513...: no endpoint
-Validation passed: all 40 copyable subscriptions are in PostgreSQL.
-```
+### Job locks
 
 Job locks aren't copied: a lock only lives as long as a job run, so a fresh table is fine.
 
@@ -534,7 +503,6 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | Table | Replaces (MongoDB) | Migration | Copy script |
 |---|---|---|---|
 | `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` | none (temporary data) |
-| `push_subscriptions` | `subscriptions` | `20261022000200_create_push_subscriptions.js` | `db:pg:copy-subscriptions` |
 | `accounts` | `accounts` | `20261026000000_create_accounts.js` | `db:pg:copy-people-and-sensors` |
 | `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
 | `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js`, `20261028000000_add_device_legacy_id_to_device_releases.js` | `db:pg:copy-people-and-sensors` |
@@ -548,7 +516,7 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`, and `push_subscriptions` (`20261022000200`) by `20261105000100`: significant earthquakes and push notifications are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -564,29 +532,6 @@ A mutex for background jobs (e.g. the nightly catalog enrichment), so only one b
 | `updated_at` | `timestamptz` | |
 
 Taking a lock is one atomic statement: `INSERT … ON CONFLICT (name) DO UPDATE … WHERE` the lock has expired or already belongs to the caller. If two processes race, one gets the row and the other gets nothing back, so only one runs the job.
-
-### `push_subscriptions`
-
-One browser subscribed to web-push earthquake notifications.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | `uuid`, primary key | `uuidv7()` |
-| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row; null for rows created in PostgreSQL |
-| `account_id` | `uuid` | optional; foreign key added when accounts move (Step 2) |
-| `endpoint` | `text`, unique | subscribing again with the same endpoint updates the row |
-| `expiration_time` | `bigint` | epoch ms, from the browser |
-| `key_auth`, `key_p256dh` | `text` | push encryption keys |
-| `status` | `subscription_status` enum | `active` or `invalid` |
-| `last_seen_at` | `timestamptz` | last (re-)subscribe |
-| `last_delivered_at` | `timestamptz` | |
-| `last_failure_at`, `last_failure_code` | `timestamptz`, `int` | last failed push and its HTTP status |
-| `consecutive_failures` | `int` | reset by a successful push or re-subscribe |
-| `invalidated_at`, `cleanup_after` | `timestamptz` | when it went invalid; deleted after `cleanup_after` |
-| `source_sw_script`, `client_user_agent`, `client_app_version`, `client_time` | | what the browser reported |
-| `created_at`, `updated_at` | `timestamptz` | |
-
-Indexes: `(status, last_seen_at)` and `cleanup_after`.
 
 ### `accounts`
 
@@ -801,10 +746,10 @@ Indexes: `(account_id, created_at)` for an account's points over time, `(event_i
 
 ### Scheduled deletes (instead of TTL indexes)
 
-PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/subscriptionCleanup.service.js`, every `NOTIF_CLEANUP_INTERVAL_MIN`, default 60 minutes) deletes expired job locks and invalid push subscriptions past `cleanup_after`, and logs the counts:
+PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/jobLockCleanup.service.js`, every `JOB_LOCK_CLEANUP_INTERVAL_MIN`, default 60 minutes; off with `JOB_LOCK_CLEANUP_ENABLED=false`) deletes expired job locks, and logs the count:
 
 ```
-[notif-cleanup] expired=0 stale=0 removed=1 expiredLocks=0
+[job-lock-cleanup] expiredLocks=0
 ```
 
 ---
@@ -823,6 +768,5 @@ PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/subscription
 | `permission denied to create extension "postgis"` | Migrations run as a non-superuser | Run them as the `PG_USER` the container created (a superuser) |
 | `npm run test:integration` fails with `Could not find a working container runtime strategy` | Docker isn't running (or you ran it inside a container) | Start Docker Desktop and run it on your machine |
 | `earthquake-hub-postgres` never becomes healthy | Usually an init error on first start | `docker logs earthquake-hub-postgres`; if the volume is half-initialized, [start over](#starting-over) |
-| `relation "push_subscriptions" does not exist` (or `job_locks`) | The area is switched to PostgreSQL but the migrations haven't run | `npm run db:pg:migrate`, or set the area back to `mongodb` |
+| `relation "job_locks" does not exist` (or another table) | The area is switched to PostgreSQL but the migrations haven't run | `npm run db:pg:migrate`, or set the area back to `mongodb` |
 | Backend exits with `JOB_LOCKS_DB must be "mongodb" or "postgres"` | Typo in an area setting | Fix the value in `.env` |
-| Subscriptions missing after switching to PostgreSQL | The copy script wasn't run | Run [the copy](#copying-push-subscriptions); it skips anything already there |

@@ -1,5 +1,5 @@
 // Replaces the MongoDB `joblocks` collection. Not copied over: locks only live as long as a job run.
-// Expired locks are deleted by the cleanup scheduler (subscriptionCleanup.service.js), which replaces
+// Expired locks are deleted by the cleanup scheduler (jobLockCleanup.service.js), which replaces
 // MongoDB's TTL index; acquiring already treats an expired lock as free.
 
 exports.up = async (knex) => {

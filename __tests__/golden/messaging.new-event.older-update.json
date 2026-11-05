@@ -22,7 +22,7 @@
     },
     "body": {
       "status": 0,
-      "message": "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+      "message": "New event sent to SSE and added to DB"
     }
   }
 }

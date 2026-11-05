@@ -65,7 +65,7 @@ The backend does **no seismic processing**. Magnitude, location and origin time 
 | `devices` | `device.model.js` | `Device` | One Raspberry Shake sensor | Device linking, ringserver stream status, alert-credential setup |
 | `comments` | `comments.model.js` | `Comment` | One community report on an earthquake | Public report form, helpful/issue buttons, admin moderation |
 | `contributionevents` | `contributionEvent.model.js` | `ContributionEvent` | One points-earning action (ledger entry) | Comments service |
-| `subscriptions` | `subscription.model.js` | `Subscription` | One browser's web-push subscription | Notifications service, cleanup scheduler |
+| `subscriptions` | (removed) | `Subscription` | One browser's web-push subscription (deprecated: no longer read or written) | Nobody (push notifications were removed) |
 | `significant-eqs` | (removed) | `significant-eq` | One hand-curated notable earthquake (deprecated: no longer read) | Nobody in the app (curated directly in the database) |
 | `joblocks` | `jobLock.model.js` | `JobLock` | One lock held by a background job | Enrichment job |
 
@@ -335,7 +335,7 @@ Anonymous reports and marking your own report helpful earn nothing. Points live 
 
 ### 4.6 `subscriptions`
 
-> **Moved to PostgreSQL in dev** (`push_subscriptions`) when `PUSH_SUBSCRIPTIONS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#push_subscriptions).
+> **Deprecated:** the backend no longer sends push notifications or accepts subscriptions (the `/notifications` endpoints were removed), and this collection has no PostgreSQL table. The records stay here, and in the final MongoDB dump.
 
 One browser that opted in to **web push** earthquake notifications. Not linked to accounts (anyone can subscribe).
 

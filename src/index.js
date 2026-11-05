@@ -3,7 +3,7 @@ const os = require('os');
 const http = require('http');
 const app = require('./app');
 const MessagingService = require('./services/messaging.service');
-const SubscriptionCleanupService = require('./services/subscriptionCleanup.service');
+const JobLockCleanupService = require('./services/jobLockCleanup.service');
 const logger = require('./middlewares/logger.middleware');
 
 // cron setup
@@ -15,14 +15,14 @@ const port = process.env.NODE_ENV === 'production'
 
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
 const mongodb = require('./services/mongodb.service');
-mongodb.connect(); // Required by notifs router
+mongodb.connect();
 const postgres = require('./db/knex');
 postgres.connect(); // Alongside MongoDB during the PostgreSQL migration; no feature uses it yet
 
 // start cron enrichment
 startEnrichmentScheduler();
 
-SubscriptionCleanupService.startSubscriptionCleanupScheduler();
+JobLockCleanupService.startJobLockCleanupScheduler();
 
 // Run Server
 if (process.env.NODE_ENV === 'production'){

@@ -57,7 +57,6 @@
     "puppeteer-core": "^24.40.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
-    "web-push": "^3.4.5",
     "winston": "^3.10.0"
   },
   "devDependencies": {

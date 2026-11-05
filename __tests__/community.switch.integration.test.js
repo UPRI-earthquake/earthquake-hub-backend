@@ -20,7 +20,7 @@ const ANA_ID = oid('6d0000000000000000000a02');
 const EVENT_ID = oid('6d0000000000000000000e01');
 const COPIED_COMMENT = 'd0000000-0000-4000-8000-000000000001';
 const ALL_ON_POSTGRES = {
-  JOB_LOCKS_DB: 'postgres', PUSH_SUBSCRIPTIONS_DB: 'postgres', PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', COMMUNITY_DB: 'postgres',
+  JOB_LOCKS_DB: 'postgres', PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', COMMUNITY_DB: 'postgres',
 };
 
 const account = (_id, username) => ({
