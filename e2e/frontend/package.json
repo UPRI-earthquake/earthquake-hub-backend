@@ -1,0 +1,11 @@
+{
+  "name": "ehub-e2e-frontend",
+  "private": true,
+  "description": "End-to-end check (Phase 4 - Part 1): the frontend against the MongoDB and the PostgreSQL backend. See docs/e2e/README.md.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}

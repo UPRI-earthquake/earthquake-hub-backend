@@ -77,7 +77,8 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/__tests__/fixtures/",
-      "\\.integration\\.test\\.js$"
+      "\\.integration\\.test\\.js$",
+      "<rootDir>/e2e/"
     ]
   }
 }
