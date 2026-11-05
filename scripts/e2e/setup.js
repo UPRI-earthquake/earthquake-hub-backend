@@ -10,6 +10,8 @@
 //   4. Copies it to PostgreSQL with the real copy scripts, in order: accounts and devices, earthquakes,
 //      comments and points.
 //   5. Checks every table and link (table-checks.js).
+//   6. Saves the baseline: a pg_dump of PostgreSQL right after the copy (baseline/postgres.dump), so the
+//      re-run after Part 4, when the copy scripts are gone, can restore the same data.
 //
 // Reports go to the output folder, outside the repos (they hold production data):
 // import-report.json, mongo-migrate-*.log, copy-*.log, table-checks.json. Exit code 0 when every copy validated and every
@@ -80,6 +82,12 @@ async function setup(exportDir = DEFAULT_EXPORT_DIR, outputDir = DEFAULT_OUTPUT_
   fs.writeFileSync(path.join(outputDir, 'table-checks.json'), `${JSON.stringify(tables, null, 2)}\n`);
   tables.counts.forEach((c) => console.log(`   ${c.addsUp ? 'ok  ' : 'FAIL'} ${c.table}: MongoDB ${c.mongodb ?? '-'}, PostgreSQL ${c.postgresql} ${JSON.stringify(c.copyReport)}`));
   Object.entries(tables.links).forEach(([name, l]) => console.log(`   ${l.failed.length === 0 ? 'ok  ' : 'FAIL'} ${name}: ${l.checked} checked, ${l.failed.length} failed`));
+
+  console.log('6. Saving the PostgreSQL baseline (pg_dump)');
+  fs.mkdirSync(path.join(outputDir, 'baseline'), { recursive: true });
+  const dump = execFileSync('docker', ['compose', '-f', compose, 'exec', '-T', 'postgres', 'pg_dump', '-U', 'ehub_e2e', '-d', 'ehub_e2e', '--format=custom'], { maxBuffer: 1024 * 1024 * 1024 });
+  fs.writeFileSync(path.join(outputDir, 'baseline', 'postgres.dump'), dump);
+  console.log(`   baseline/postgres.dump (${Math.round(dump.length / 1024)} KB)`);
 
   await mongoose.disconnect();
   await db.destroy();
