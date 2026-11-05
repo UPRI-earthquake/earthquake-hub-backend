@@ -2,20 +2,27 @@
 //
 //   1. Starts the throwaway MongoDB, PostgreSQL and mail catcher (e2e/docker-compose.yml).
 //   2. Migrates PostgreSQL and empties every table.
-//   3. Imports the export into MongoDB (import-prod-json.js).
+//   3. Imports the export into MongoDB (import-prod-json.js), then runs this branch's MongoDB migrations
+//      (scripts/migrate-*.js), as deploying the branch on MongoDB would: e.g. migrate-event-indexes
+//      backfills the GeoJSON location on events and devices, which production's data predates. The
+//      MongoDB side of the comparison is this branch on MongoDB, as PostgreSQL's is this branch on
+//      PostgreSQL.
 //   4. Copies it to PostgreSQL with the real copy scripts, in order: accounts and devices, earthquakes,
 //      comments and points.
 //   5. Checks every table and link (table-checks.js).
 //
 // Reports go to the output folder, outside the repos (they hold production data):
-// import-report.json, copy-*.log, table-checks.json. Exit code 0 when every copy validated and every
+// import-report.json, mongo-migrate-*.log, copy-*.log, table-checks.json. Exit code 0 when every copy validated and every
 // check passed.
 //
 //   node scripts/e2e/setup.js [export folder] [output folder]
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { BACKEND_ROOT, DEFAULT_EXPORT_DIR, DEFAULT_OUTPUT_DIR, DATABASE_ENV, MAIL_ENV } = require('./env');
+const { BACKEND_ROOT, DEFAULT_EXPORT_DIR, DEFAULT_OUTPUT_DIR, DATABASE_ENV, MAIL_ENV, e2eEnv } = require('./env');
+
+// This branch's MongoDB migrations, in the order they were added
+const MONGO_MIGRATIONS = ['migrate-unique-indexes', 'migrate-event-indexes', 'migrate-catalog-info-to-array'];
 
 // Before anything reads them: the copy scripts, Knex and Mongoose use these, never the dev databases
 Object.assign(process.env, DATABASE_ENV, MAIL_ENV);
@@ -41,6 +48,21 @@ async function setup(exportDir = DEFAULT_EXPORT_DIR, outputDir = DEFAULT_OUTPUT_
 
   console.log('3. Importing the export into MongoDB');
   const importReport = await importExport(exportDir, outputDir);
+  for (const script of MONGO_MIGRATIONS) {
+    let output;
+    try {
+      output = execFileSync(process.execPath, [path.join('scripts', `${script}.js`)], { cwd: BACKEND_ROOT, env: e2eEnv(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      output = `${err.stdout || ''}${err.stderr || ''}`;
+      fs.writeFileSync(path.join(outputDir, `mongo-${script}.log`), output);
+      // A migration that stops on blockers in the data changes nothing: record it and go on
+      if (!/Nothing was changed/.test(output)) throw new Error(`${script} failed (exit ${err.status}): see mongo-${script}.log`);
+      console.log(`   ${script}: BLOCKED by the data, nothing changed (mongo-${script}.log)`);
+      continue;
+    }
+    fs.writeFileSync(path.join(outputDir, `mongo-${script}.log`), output);
+    console.log(`   ${script}: done (mongo-${script}.log)`);
+  }
 
   console.log('4. Copying to PostgreSQL');
   const { connectOrThrow } = require('../find-duplicates');

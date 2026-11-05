@@ -175,7 +175,9 @@ function pickSampleAccounts(accounts) {
 async function load(name, docs, Model) {
   const existing = await mongoose.connection.db.listCollections({ name }).toArray();
   if (existing.length > 0) await mongoose.connection.db.dropCollection(name);
-  await Model.init(); // creates the collection with the app's indexes (unique ones included)
+  // The app's indexes (unique ones included), built before anything is inserted
+  await Model.createCollection();
+  await Model.createIndexes();
   if (docs.length === 0) return { imported: 0, rejected: [] };
   try {
     const result = await mongoose.connection.db.collection(name).insertMany(docs, { ordered: false });
@@ -218,7 +220,9 @@ async function importExport(exportDir = DEFAULT_EXPORT_DIR, outputDir = DEFAULT_
   const samples = pickSampleAccounts(data.accounts);
   report.sampleAccounts = samples.map(({ username, ...rest }) => rest);
 
-  await mongoose.connect(mongoUri());
+  // Indexes are built explicitly per collection, after it's emptied: Mongoose's own build on connect
+  // would race the drop
+  await mongoose.connect(mongoUri(), { autoIndex: false, autoCreate: false });
   try {
     for (const name of Object.keys(COLLECTIONS)) {
       Object.assign(report.collections[name], await load(name, data[name], models[name]));
