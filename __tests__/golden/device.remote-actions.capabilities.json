@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/remote-actions/capabilities"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 83,
+      "message": "Remote action capabilities retrieved.",
+      "payload": {
+        "capabilities": [
+          {
+            "deviceId": "AM_R3B2D",
+            "canExecute": false,
+            "reason": "not_mapped",
+            "status": null,
+            "listener": null,
+            "remotePort": null
+          },
+          {
+            "deviceId": "AM_R9999",
+            "canExecute": false,
+            "reason": "not_mapped",
+            "status": null,
+            "listener": null,
+            "remotePort": null
+          }
+        ],
+        "availableActions": [
+          "UNLINK",
+          "RELINK",
+          "ADD_SERVER",
+          "REMOVE_SERVER"
+        ]
+      }
+    }
+  }
+}

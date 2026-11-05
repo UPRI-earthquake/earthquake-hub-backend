@@ -12,6 +12,7 @@
 // ingested event's legacy fields are null (as ingest writes them), not missing.
 //
 // The test file must mock axios and puppeteer-core with the fakes (see earthquakesExternal.js).
+const http = require('http');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
@@ -409,6 +410,34 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
       await check('messaging.new-event.older-update.then-get', getEvent('upri2026knew'), { replace });
     });
     test('an invalid message', () => check('messaging.new-event.invalid', post({ latitude_value: 95 })));
+
+    // The live feed the map listens to (Server-Sent Events): what it sends when a new event arrives.
+    // Only this event's messages are recorded, without their time-based ids. (Read with http, since
+    // fetch is faked for USGS here.)
+    test('the live feed (GET /messaging) sends the new event', async () => {
+      const server = app.listen(0);
+      try {
+        const chunks = [];
+        const res = await new Promise((resolve, reject) => {
+          const req = http.get(`http://127.0.0.1:${server.address().port}/messaging`, resolve);
+          req.on('error', reject);
+        });
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => chunks.push(chunk));
+        await send(post());
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        res.destroy();
+        const messages = chunks.join('').split(/\n\n+/)
+          .map((block) => Object.fromEntries(block.split('\n').filter((line) => /^(event|data):/.test(line))
+            .map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1).trim()])))
+          .filter((message) => message.data && message.data.includes('upri2026knew'))
+          .map((message) => ({ event: message.event, data: JSON.parse(message.data) }));
+        expectGolden('messaging.live-feed.new-event', { method: 'GET', path: '/messaging', body: 'messages after POST /messaging/restricted/new-event' },
+          { status: res.statusCode, headers: { 'content-type': res.headers['content-type'] }, body: messages });
+      } finally {
+        server.close();
+      }
+    });
   });
 
   describe('station check (which nearby stations recorded each event)', () => {

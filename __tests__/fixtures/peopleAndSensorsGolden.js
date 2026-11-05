@@ -484,6 +484,32 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
     test('GET /device/status of an unknown device', () => check('device.status.not-found', { method: 'GET', path: '/device/status?network=AM&station=R7777' }));
     test('GET /device/status with invalid parameters', () => check('device.status.invalid', { method: 'GET', path: '/device/status?network=am' }));
   });
+
+  // Frontend calls the goldens didn't cover until the end-to-end check (Phase 4 - Part 1). The test file
+  // fakes the device tunnel lookup (no device is reachable from a test), so remote actions record
+  // which devices the account owns, the part that reads the database.
+  describe('more frontend calls', () => {
+    test('POST /accounts/acquire-brgy-token, as a signed-in brgy', async () => {
+      const { agent } = await signIn('golden_brgy', 'brgy', { Origin: webOrigin() });
+      await check('accounts.acquire-brgy-token', { method: 'POST', path: '/accounts/acquire-brgy-token' }, { agent });
+    });
+    test('POST /device/add: the dashboard calls it, but the backend has no such route', async () => {
+      const { agent } = await signIn('golden_citizen');
+      await check('device.add.no-such-route', {
+        method: 'POST', path: '/device/add', body: { network: 'AM', station: 'R1234', longitude: '121.06', latitude: '14.64', elevation: '55' },
+      }, { agent });
+    });
+    test("GET /device/remote-actions/capabilities: the account's devices and released ones, none mapped", async () => {
+      const { agent } = await signIn('golden_citizen');
+      await check('device.remote-actions.capabilities', { method: 'GET', path: '/device/remote-actions/capabilities' }, { agent });
+      await check('device.remote-actions.capabilities.not-owned', { method: 'GET', path: '/device/remote-actions/capabilities?deviceIds=AM_R0001' }, { agent });
+    });
+    test('GET /device/remote-actions/servers: an owned device not mapped, and one not owned', async () => {
+      const { agent } = await signIn('golden_citizen');
+      await check('device.remote-actions.servers.not-mapped', { method: 'GET', path: '/device/remote-actions/servers?deviceId=AM_R3B2D' }, { agent });
+      await check('device.remote-actions.servers.not-owned', { method: 'GET', path: '/device/remote-actions/servers?deviceId=AM_R0001' }, { agent });
+    });
+  });
 });
 
 module.exports = { describePeopleAndSensorsGolden };

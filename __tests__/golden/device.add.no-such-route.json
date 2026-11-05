@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/add",
+    "body": {
+      "network": "AM",
+      "station": "R1234",
+      "longitude": "121.06",
+      "latitude": "14.64",
+      "elevation": "55"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": {}
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/remote-actions/capabilities?deviceIds=AM_R0001"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 83,
+      "message": "Remote action capabilities retrieved.",
+      "payload": {
+        "capabilities": [
+          {
+            "deviceId": "AM_R0001",
+            "canExecute": false,
+            "reason": "not_owned",
+            "status": null,
+            "listener": null,
+            "remotePort": null
+          }
+        ],
+        "availableActions": [
+          "UNLINK",
+          "RELINK",
+          "ADD_SERVER",
+          "REMOVE_SERVER"
+        ]
+      }
+    }
+  }
+}
