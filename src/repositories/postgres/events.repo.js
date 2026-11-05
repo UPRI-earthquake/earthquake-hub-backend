@@ -65,9 +65,8 @@ const createEventsRepo = (db, {
       const status = statusOf.get(source);
       return !status || (status.status === 'pending' && status.attempts < maxEnrichmentAttempts);
     });
-    const hasLocation = row.latitude !== null && row.longitude !== null
-      && row.latitude >= -90 && row.latitude <= 90 && row.longitude >= -180 && row.longitude <= 180;
-
+    // The `location` column (the PostGIS point) isn't sent, as the MongoDB version leaves out its
+    // GeoJSON point: the frontend reads an event's `location` as a place name
     const event = {
       _id: (row.legacy_mongo_id || '').trim() || row.id,
       publicID: row.public_id,
@@ -78,7 +77,6 @@ const createEventsRepo = (db, {
       OT: row.origin_time,
       latitude_value: row.latitude,
       longitude_value: row.longitude,
-      location: hasLocation ? { type: 'Point', coordinates: [row.longitude, row.latitude] } : null,
       depth_value: row.depth_km,
       magnitude_value: row.magnitude,
       type: row.seiscomp_type,

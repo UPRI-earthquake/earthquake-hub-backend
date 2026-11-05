@@ -99,14 +99,7 @@
           "longitude_value": 121.06,
           "magnitude_value": 4.5,
           "place": "3 km N of Quezon City, Metro Manila, Philippines",
-          "last_modification": "2026-05-01T08:05:00.000Z",
-          "location": {
-            "type": "Point",
-            "coordinates": [
-              121.06,
-              14.67
-            ]
-          }
+          "last_modification": "2026-05-01T08:05:00.000Z"
         },
         {
           "_id": "69000000000000000000e105",
@@ -151,13 +144,6 @@
           "longitude_value": 120.9,
           "magnitude_value": 3.8,
           "last_modification": "2026-05-09T00:03:00.000Z",
-          "location": {
-            "type": "Point",
-            "coordinates": [
-              120.9,
-              14.1
-            ]
-          },
           "place": "66 km SW of Metro Manila, Philippines"
         },
         {
@@ -209,13 +195,6 @@
           "OT": "2026-05-05T10:00:00.000Z",
           "latitude_value": 16.3,
           "longitude_value": 120.7,
-          "location": {
-            "type": "Point",
-            "coordinates": [
-              120.7,
-              16.3
-            ]
-          },
           "depth_value": 5,
           "text": "Northern Luzon, Philippines",
           "isLegacyRecord": true,
@@ -306,13 +285,6 @@
           "magnitude_value": 3.2,
           "recordingAvailabilityCheckedAt": "2026-05-03T02:35:00.000Z",
           "last_modification": "2026-05-03T02:04:00.000Z",
-          "location": {
-            "type": "Point",
-            "coordinates": [
-              125.5,
-              7.1
-            ]
-          },
           "place": "13 km NW of Davao Region, Philippines"
         }
       ]

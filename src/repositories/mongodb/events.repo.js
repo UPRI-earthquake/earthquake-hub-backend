@@ -12,7 +12,15 @@ const { Types } = require('mongoose');
 const EQEvents = require('../../models/events.model');
 const { toGeoPoint } = require('../../models/geoPoint');
 
-const toEvent = (doc) => (doc ? doc.toObject({ flattenMaps: true }) : null);
+// The GeoJSON `location` (behind the 2dsphere index) stays in the database and out of the API: the
+// API never sent it before, and the frontend reads an event's `location` as a place name (its title
+// falls back to it when there's no place), so an object there shows as "[object Object]"
+const toEvent = (doc) => {
+  if (!doc) return null;
+  const event = doc.toObject({ flattenMaps: true });
+  delete event.location;
+  return event;
+};
 
 const isObjectId = (id) => /^[0-9a-f]{24}$/i.test(String(id)) && Types.ObjectId.isValid(String(id));
 
@@ -64,8 +72,8 @@ async function findIngestState(publicID) {
   *     fields      OT, latitude_value, longitude_value, depth_value, magnitude_value, type, text,
   *                 sourceCatalog, sourceServer, sourceSeiscompVersion, last_modification, and the
   *                 station lists and status ingest computed: candidateStations, onlineStations,
-  *                 recordingAvailabilityStatus. `location` follows latitude/longitude, and is removed
-  *                 when they're invalid.
+  *                 recordingAvailabilityStatus. The stored `location` follows latitude/longitude, and
+  *                 is removed when they're invalid (reads leave it out, see toEvent).
   *     options.clearPlace       remove the stored place name (the event moved; it's recomputed on read)
   *     options.catalogSources   for a new event: the catalogs to look it up in (all start pending)
   *

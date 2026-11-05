@@ -473,6 +473,8 @@ The two `onlineStations` differences are the same stations in another order: the
 
 Also: `onlineStations` is worked out on read, so after an UPDATE for an event that already has recording stations it shows what the recording status implies, where MongoDB stored recording and candidate stations merged until the next station check.
 
+Neither backend sends an event's stored point (`location`, the GeoJSON point in MongoDB and the PostGIS column in PostgreSQL): it's only for location queries. The API never sent it before this branch, and the frontend reads an event's `location` as a place name. Its title and summary fall back to it when there's no place name, so a point there showed as "[object Object]" (found by the end-to-end check, [`docs/e2e/E2E_RESULTS.md`](docs/e2e/E2E_RESULTS.md)).
+
 ### Copying comments and points
 
 [`scripts/copy-community-to-postgres.js`](scripts/copy-community-to-postgres.js) copies MongoDB `comments` into `comments`, the lists each comment embedded into `comment_helpful_marks` and `comment_issue_reports`, and `contributionevents` (the points ledger) into `contribution_events`. Copy accounts and devices, then earthquakes, first: comments and points point to both.

@@ -78,13 +78,6 @@
         "magnitude_value": 3.2,
         "recordingAvailabilityCheckedAt": "2026-05-03T02:35:00.000Z",
         "last_modification": "2026-05-03T02:04:00.000Z",
-        "location": {
-          "type": "Point",
-          "coordinates": [
-            125.5,
-            7.1
-          ]
-        },
         "place": "13 km NW of Davao Region, Philippines"
       }
     }

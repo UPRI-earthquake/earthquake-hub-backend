@@ -70,7 +70,9 @@ const backends = [
           return String(insertedId);
         },
         stored: async (publicID) => {
-          const row = await pg.db('events').where({ public_id: publicID }).first();
+          const row = await pg.db('events')
+            .select('place', 'summary_override_text', pg.db.raw('ST_AsGeoJSON(location)::json AS location'))
+            .where({ public_id: publicID }).first();
           return { place: row.place ?? undefined, location: row.location ?? undefined, summaryOverride: row.summary_override_text ?? undefined };
         },
         pg,
@@ -163,9 +165,13 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
     test('a new event is stored with its location, and every catalog starts pending', async () => {
       await expect(ingest('ev-1')).resolves.toBe(true);
 
-      expect(await Events.findByPublicID('ev-1')).toMatchObject({
+      // The point is stored for location queries, but reads leave it out: the API never sent it, and
+      // the frontend reads an event's `location` as a place name
+      expect((await backend.stored('ev-1')).location).toMatchObject({ type: 'Point', coordinates: [121.05, 14.6] });
+      const event = await Events.findByPublicID('ev-1');
+      expect(event).not.toHaveProperty('location');
+      expect(event).toMatchObject({
         publicID: 'ev-1',
-        location: { type: 'Point', coordinates: [121.05, 14.6] },
         candidateStations: ['R3B2D', 'R0001'],
         recordingStations: [],
         recordingAvailabilityAttempts: 0,

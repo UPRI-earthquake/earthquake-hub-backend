@@ -57,13 +57,6 @@
         "magnitude_value": 4.5,
         "place": "3 km N of Quezon City, Metro Manila, Philippines",
         "last_modification": "2026-05-01T08:05:00.000Z",
-        "location": {
-          "type": "Point",
-          "coordinates": [
-            121.06,
-            14.67
-          ]
-        },
         "recordingAvailabilityCheckedAt": "<now>"
       }
     }

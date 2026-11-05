@@ -37,18 +37,6 @@
  *             type: number
  *           longitude_value:
  *             type: number
- *           location:
- *             type: object
- *             description: GeoJSON Point derived from latitude_value/longitude_value (absent when coordinates are invalid)
- *             properties:
- *               type:
- *                 type: string
- *                 enum: [Point]
- *               coordinates:
- *                 type: array
- *                 items:
- *                   type: number
- *                 description: "[longitude, latitude]"
  *           depth_value:
  *             type: number
  *           magnitude_value:
@@ -267,6 +255,7 @@ const eventSchema = new mongoose.Schema(
     latitude_value:        Number,
     longitude_value:       Number,
     // Derived from latitude_value/longitude_value on write (see addEQEvent); unset if they're invalid.
+    // For location queries only: the API leaves it out (repositories/mongodb/events.repo.js, toEvent).
     location:              { type: pointSchema, default: undefined },
     depth_value:           Number,
     magnitude_value:       Number,

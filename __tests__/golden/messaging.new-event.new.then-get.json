@@ -35,13 +35,6 @@
         "latitude_value": 14.62,
         "legacyImportedAt": null,
         "legacySourcePublicID": null,
-        "location": {
-          "type": "Point",
-          "coordinates": [
-            121.1,
-            14.62
-          ]
-        },
         "longitude_value": 121.1,
         "magnitude_value": 4.6,
         "onlineStations": [

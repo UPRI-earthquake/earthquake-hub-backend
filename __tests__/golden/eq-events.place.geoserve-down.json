@@ -25,13 +25,6 @@
         "OT": "2026-05-05T10:00:00.000Z",
         "latitude_value": 16.3,
         "longitude_value": 120.7,
-        "location": {
-          "type": "Point",
-          "coordinates": [
-            120.7,
-            16.3
-          ]
-        },
         "depth_value": 5,
         "text": "Northern Luzon, Philippines",
         "isLegacyRecord": true,
