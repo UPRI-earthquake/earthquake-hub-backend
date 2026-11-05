@@ -1,6 +1,6 @@
 # PostgreSQL: Local Setup, Migrations & GUI Clients
 
-The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). On PostgreSQL so far: **job locks**, **push subscriptions** and **significant earthquakes**, the whole Step 1 pilot ([section 7](#7-tables)).
+The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, push subscriptions, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes were deprecated and removed (migration `20261105000000`).
 
 Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.js` holds the connection pool, `src/db/migrations/` the versioned schema changes.
 
@@ -214,7 +214,6 @@ An area that has moved has both versions, in `src/repositories/mongodb/` and `sr
 |---|---|---|---|
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
 | Push subscriptions | `src/repositories/pushSubscriptions.repo.js` | `PUSH_SUBSCRIPTIONS_DB` | PostgreSQL |
-| Significant earthquakes | `src/repositories/significantEqs.repo.js` | `SIGNIFICANT_EQS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Devices (and each account's device list and release history) | `src/repositories/devices.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
 | Earthquake events (with their stations, catalog matches and enrichment status) | `src/repositories/events.repo.js` | `EARTHQUAKES_DB` | PostgreSQL |
@@ -259,7 +258,6 @@ Each moved area has a setting in `.env` that picks its database:
 ```env
 JOB_LOCKS_DB=postgres            # mongodb | postgres
 PUSH_SUBSCRIPTIONS_DB=postgres   # mongodb | postgres
-SIGNIFICANT_EQS_DB=postgres      # mongodb | postgres
 PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
 EARTHQUAKES_DB=postgres          # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
 COMMUNITY_DB=postgres            # mongodb | postgres; comments and points; needs PEOPLE_AND_SENSORS_DB and EARTHQUAKES_DB=postgres
@@ -272,7 +270,6 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 [db] devices: postgres (PEOPLE_AND_SENSORS_DB)
 [db] push subscriptions: postgres (PUSH_SUBSCRIPTIONS_DB)
 [db] job locks: postgres (JOB_LOCKS_DB)
-[db] significant earthquakes: postgres (SIGNIFICANT_EQS_DB)
 [db] earthquake events: postgres (EARTHQUAKES_DB)
 [db] comments: postgres (COMMUNITY_DB)
 [db] contribution points: postgres (COMMUNITY_DB)
@@ -396,33 +393,6 @@ Validation passed: all 40 copyable subscriptions are in PostgreSQL.
 ```
 
 Job locks aren't copied: a lock only lives as long as a job run, so a fresh table is fine.
-
-### Copying significant earthquakes
-
-[`scripts/copy-significant-eqs-to-postgres.js`](scripts/copy-significant-eqs-to-postgres.js) copies MongoDB `significant-eqs` into `significant_eqs`. Run it inside the backend container, like the subscriptions copy:
-
-```sh
-docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-significant-eqs -- --dry-run
-docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-significant-eqs
-```
-
-- Matched by `legacy_mongo_id` and **safe to run again**, with the same rule as above: a row edited in PostgreSQL since it was copied is kept.
-- Each record is checked against [the table's rules](#significant_eqs) first. A record that breaks one is **not copied**: it's listed with its `_id`, title and every reason, so you can fix it in MongoDB (e.g. in Compass) and run the copy again. Numbers stored as text (`"6.9"`) are accepted, as Mongoose would have cast them.
-- Ends by checking that every valid record has its row and the counts add up. Exit code `0` = done (skipped records alone don't fail it), `1` = validation failed, `2` = error.
-
-Example output:
-
-```
-MongoDB significant earthquakes: 12
-  inserted: 11
-  updated: 0
-  kept (changed in PostgreSQL since copied): 0
-  skipped, breaks the table's rules (fix in MongoDB, then run again): 1
-    6512... "Magnitude 6.1, Surigao": missing magnitude; latitude 500 not between -90 and 90
-Validation passed: all 11 valid records are in PostgreSQL.
-```
-
-**Old links keep working.** The API returns a copied record's MongoDB id as `_id`, and `POST /significant-eqs` finds a record by that old id as well as by its new uuid, so links like `/significant-eq-info?id=<old id>` still open the right page. The list keeps the order the records were added in, as on MongoDB.
 
 ### Copying accounts and devices
 
@@ -565,7 +535,6 @@ Dev had no comments or points when this was written (November 2026), so the copy
 |---|---|---|---|
 | `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` | none (temporary data) |
 | `push_subscriptions` | `subscriptions` | `20261022000200_create_push_subscriptions.js` | `db:pg:copy-subscriptions` |
-| `significant_eqs` | `significant-eqs` | `20261023000000_create_significant_eqs.js` | `db:pg:copy-significant-eqs` |
 | `accounts` | `accounts` | `20261026000000_create_accounts.js` | `db:pg:copy-people-and-sensors` |
 | `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` | `db:pg:copy-people-and-sensors` |
 | `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js`, `20261028000000_add_device_legacy_id_to_device_releases.js` | `db:pg:copy-people-and-sensors` |
@@ -579,7 +548,7 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). Migration `20261029000400` links `significant_eqs.event_id` to `events`. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -618,41 +587,6 @@ One browser subscribed to web-push earthquake notifications.
 | `created_at`, `updated_at` | `timestamptz` | |
 
 Indexes: `(status, last_seen_at)` and `cleanup_after`.
-
-### `significant_eqs`
-
-Hand-curated notable earthquakes, shown on the significant earthquakes page. The API returns them in the same JSON as before: column names in brackets are the API field names.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | `uuid`, primary key | `uuidv7()`; the API's `_id` for rows created in PostgreSQL |
-| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row; the API's `_id` for those rows |
-| `event_id` | `uuid` → `events`, indexed | optional link to the detected event; **cleared if the event is deleted** (`ON DELETE SET NULL`) |
-| `title` | `text`, required | [`title`] |
-| `magnitude` | `double precision`, required | [`magnitude`] |
-| `depth_km` | `double precision` | [`depth`] |
-| `latitude`, `longitude` | `double precision`, required | [`latitude`, `longitude`] |
-| `location` | `geography(Point, 4326)` | **generated** from latitude/longitude, GiST index; not in the API |
-| `location_text` | `text` | place name [`location`] |
-| `event_time` | `timestamptz`, required, indexed | [`eventTime`] |
-| `event_summary` | `text` | HTML [`eventSummary`] |
-| `instrument_recordings` | `jsonb` list, default `[]` | station codes [`instrumentRecordings`] |
-| `reference_links` | `jsonb` list, default `[]` | URLs [`references`]; renamed because `REFERENCES` is reserved in SQL |
-| `created_at`, `updated_at` | `timestamptz` | copied rows: the time the MongoDB record was created |
-
-**Validation rules.** MongoDB accepted any document in this collection. The table rejects, on every write:
-
-| Rule | Constraint |
-|---|---|
-| `title`, `magnitude`, `latitude`, `longitude`, `event_time` must be present | `NOT NULL` |
-| `title` not blank | `significant_eqs_title_not_blank` |
-| `latitude` between -90 and 90 | `significant_eqs_latitude_range` |
-| `longitude` between -180 and 180 | `significant_eqs_longitude_range` |
-| `magnitude` between -2 and 10 | `significant_eqs_magnitude_range` |
-| `depth_km` between -10 and 1000 (when set) | `significant_eqs_depth_range` |
-| `instrument_recordings` and `reference_links` are lists | `significant_eqs_recordings_is_array`, `significant_eqs_references_is_array` |
-
-An optional field that's empty is left out of the API response, as it was when a MongoDB document lacked it.
 
 ### `accounts`
 
@@ -892,5 +826,3 @@ PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/subscription
 | `relation "push_subscriptions" does not exist` (or `job_locks`) | The area is switched to PostgreSQL but the migrations haven't run | `npm run db:pg:migrate`, or set the area back to `mongodb` |
 | Backend exits with `JOB_LOCKS_DB must be "mongodb" or "postgres"` | Typo in an area setting | Fix the value in `.env` |
 | Subscriptions missing after switching to PostgreSQL | The copy script wasn't run | Run [the copy](#copying-push-subscriptions); it skips anything already there |
-| Significant earthquakes page empty, or a record missing, after switching | The copy wasn't run, or it skipped the record | Run [the copy](#copying-significant-earthquakes) and check its "skipped" list; fix those records in MongoDB and run it again |
-| `new row for relation "significant_eqs" violates check constraint ...` | A write broke one of [the table's rules](#significant_eqs) | Fix the value named in the constraint |

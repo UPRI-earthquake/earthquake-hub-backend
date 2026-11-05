@@ -45,7 +45,7 @@ describe('reset-link for a device with earthquake history (PEOPLE_AND_SENSORS_DB
   beforeAll(async () => {
     [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
     Object.assign(process.env, pg.env, {
-      PEOPLE_AND_SENSORS_DB: 'postgres', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb', SIGNIFICANT_EQS_DB: 'mongodb',
+      PEOPLE_AND_SENSORS_DB: 'postgres', JOB_LOCKS_DB: 'mongodb', PUSH_SUBSCRIPTIONS_DB: 'mongodb',
     });
     app = require('../src/app');
     await Promise.all(Object.values(mongoose.models).map((model) => model.init()));

@@ -167,26 +167,16 @@ describe('earthquake tables', () => {
     });
   });
 
-  test('deleting an event deletes its stations, matches and status, and unlinks its significant earthquake', async () => {
+  test('deleting an event deletes its stations, matches and status', async () => {
     const event = await insertEvent();
     const device = await insertDevice();
     await pg.db('event_stations').insert({ event_id: event.id, device_id: device.id, kind: 'candidate', position: 0 });
     await pg.db('event_catalog_matches').insert({ event_id: event.id, source: 'phivolcs' });
     await pg.db('event_catalog_status').insert([{ event_id: event.id, source: 'phivolcs', status: 'done' }, { event_id: event.id, source: 'usgs' }]);
-    const [significant] = await pg.db('significant_eqs').insert({
-      event_id: event.id, title: 'Magnitude 4.5, Quezon City', magnitude: 4.5, latitude: 14.67, longitude: 121.06, event_time: new Date('2026-05-01T08:00:00.000Z'),
-    }).returning('*');
 
     await pg.db('events').where({ id: event.id }).del();
 
     expect([await count('event_stations'), await count('event_catalog_matches'), await count('event_catalog_status')]).toEqual([0, 0, 0]);
     expect(await count('devices')).toBe(1);
-    expect((await pg.db('significant_eqs').where({ id: significant.id }).first()).event_id).toBeNull();
-  });
-
-  test('a significant earthquake can only link to an existing event', async () => {
-    await expect(pg.db('significant_eqs').insert({
-      event_id: '01890000-0000-7000-8000-000000000000', title: 'Unknown', magnitude: 5, latitude: 14, longitude: 121, event_time: new Date(),
-    })).rejects.toThrow(/significant_eqs_event_id_foreign/);
   });
 });

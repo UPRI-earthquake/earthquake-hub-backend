@@ -3,4 +3,3 @@ require('./account.model.js');
 require('./contributionEvent.model.js');
 require('./device.model.js');
 require('./events.model.js');
-require('./significantEQ.model.js');

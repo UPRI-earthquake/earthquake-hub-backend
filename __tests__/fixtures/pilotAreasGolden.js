@@ -1,5 +1,5 @@
-// Golden-file tests for the Pilot areas of the PostgreSQL migration (significant earthquakes, push
-// subscriptions). They run the real app against seeded databases and compare each response with its
+// Golden-file tests for the Pilot areas of the PostgreSQL migration (push subscriptions; significant
+// earthquakes were removed). They run the real app against seeded databases and compare each response with its
 // recording in __tests__/golden/. Each pilotAreas.golden.*.integration.test.js runs these cases with
 // one combination of area settings, so every setting must give identical responses.
 const request = require('supertest');
@@ -7,38 +7,6 @@ const mongoose = require('mongoose');
 const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
-const { copySignificantEqs } = require('../../scripts/copy-significant-eqs-to-postgres');
-
-// Inserted as raw documents, the way curated records are added (no Mongoose defaults such as __v)
-const SIGNIFICANT_EQS = [
-  {
-    _id: new mongoose.Types.ObjectId('650000000000000000000001'),
-    title: 'Magnitude 6.9 Earthquake, Davao del Sur',
-    magnitude: 6.9,
-    longitude: 125.18,
-    latitude: 6.71,
-    depth: 22,
-    location: 'Matanao, Davao del Sur',
-    eventTime: new Date('2019-12-15T06:11:51.000Z'),
-    instrumentRecordings: ['R3B2D', 'RE722'],
-    eventSummary: '<p>Strong shaking was felt across Mindanao.</p>',
-    references: ['https://example.org/reports/davao-del-sur-2019'],
-  },
-  {
-    _id: new mongoose.Types.ObjectId('650000000000000000000002'),
-    title: 'Magnitude 7.0 Earthquake, Abra',
-    magnitude: 7,
-    longitude: 120.63,
-    latitude: 17.53,
-    depth: 17,
-    location: 'Tayum, Abra',
-    eventTime: new Date('2022-07-27T00:43:24.000Z'),
-    instrumentRecordings: [],
-    eventSummary: '<p>Felt across northern Luzon.</p>',
-    references: [],
-  },
-];
-const UNKNOWN_ID = '650000000000000000000099';
 
 const SUBSCRIPTION = {
   endpoint: 'https://push.example.org/wpush/v2/golden-subscriber',
@@ -86,48 +54,6 @@ const describePilotAreasGolden = (settings) => describe(`Pilot areas: recorded A
   afterAll(async () => {
     await require('../../src/db/knex').db.destroy();
     await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
-  });
-
-  // Seeds MongoDB; when the area is on PostgreSQL, copies them over with the real copy script, the way
-  // dev moves its data, so these responses also check what the copy produces
-  const seedSignificantEqs = async () => {
-    await mongoose.connection.collection('significant-eqs').insertMany(SIGNIFICANT_EQS);
-    if (settings.SIGNIFICANT_EQS_DB === 'postgres') {
-      const { ok } = await copySignificantEqs({ db: pg.db, log: () => {} });
-      if (!ok) throw new Error('Copying significant earthquakes to PostgreSQL failed');
-    }
-  };
-
-  describe('GET /significant-eqs/all', () => {
-    test('lists every significant earthquake', async () => {
-      await seedSignificantEqs();
-      const req = { method: 'GET', path: '/significant-eqs/all' };
-      expectGolden('significant-eqs.all', req, await send(req));
-    });
-
-    test('with none stored', async () => {
-      const req = { method: 'GET', path: '/significant-eqs/all' };
-      expectGolden('significant-eqs.all.empty', req, await send(req));
-    });
-  });
-
-  describe('POST /significant-eqs (by id)', () => {
-    test('returns the earthquake', async () => {
-      await seedSignificantEqs();
-      const req = { method: 'POST', path: '/significant-eqs', body: { id: '650000000000000000000001' } };
-      expectGolden('significant-eqs.by-id', req, await send(req));
-    });
-
-    test('with an unknown id', async () => {
-      await seedSignificantEqs();
-      const req = { method: 'POST', path: '/significant-eqs', body: { id: UNKNOWN_ID } };
-      expectGolden('significant-eqs.by-id.not-found', req, await send(req));
-    });
-
-    test('with a malformed id', async () => {
-      const req = { method: 'POST', path: '/significant-eqs', body: { id: 'not-an-id' } };
-      expectGolden('significant-eqs.by-id.invalid', req, await send(req));
-    });
   });
 
   describe('POST /notifications/subscribe', () => {

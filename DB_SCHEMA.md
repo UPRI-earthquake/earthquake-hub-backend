@@ -66,7 +66,7 @@ The backend does **no seismic processing**. Magnitude, location and origin time 
 | `comments` | `comments.model.js` | `Comment` | One community report on an earthquake | Public report form, helpful/issue buttons, admin moderation |
 | `contributionevents` | `contributionEvent.model.js` | `ContributionEvent` | One points-earning action (ledger entry) | Comments service |
 | `subscriptions` | `subscription.model.js` | `Subscription` | One browser's web-push subscription | Notifications service, cleanup scheduler |
-| `significant-eqs` | `significantEQ.model.js` | `significant-eq` | One hand-curated notable earthquake | Nobody in the app (curated directly in the database) |
+| `significant-eqs` | (removed) | `significant-eq` | One hand-curated notable earthquake (deprecated: no longer read) | Nobody in the app (curated directly in the database) |
 | `joblocks` | `jobLock.model.js` | `JobLock` | One lock held by a background job | Enrichment job |
 
 Rough sizes on a copy of real data (Oct 2026): ~900 events, ~85 accounts, ~26 devices. All collections are small today; the indexes are there so they stay fast as they grow.
@@ -363,7 +363,7 @@ One browser that opted in to **web push** earthquake notifications. Not linked t
 
 ### 4.7 `significant-eqs`
 
-> **Moved to PostgreSQL in dev** (`significant_eqs`) when `SIGNIFICANT_EQS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#significant_eqs).
+> **Deprecated:** the backend no longer reads this collection (the `/significant-eqs` endpoints were removed), and it has no PostgreSQL table. The records stay here, and in the final MongoDB dump.
 
 Hand-curated notable earthquakes for the "Significant Earthquakes" page. **The app only reads this collection**; records are added directly in the database by the team.
 
