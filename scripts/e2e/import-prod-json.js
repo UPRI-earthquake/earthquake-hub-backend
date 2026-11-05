@@ -134,7 +134,7 @@ function caseClashes(docs, field) {
 
 // --- 3. Making it safe for testing ---
 
-// Every email becomes user-<hash>@example.invalid; emails that clash ignoring case get the same
+// Every email becomes user-<hash>@example.org; emails that clash ignoring case get the same
 // address in different cases, so they still clash ignoring case (and only then)
 function fakeEmails(accounts) {
   const byLower = new Map();
@@ -145,7 +145,7 @@ function fakeEmails(accounts) {
   byLower.forEach((group, lower) => {
     const local = `user-${sha(lower).slice(0, 12)}`;
     group.sort((a, b) => (idOf(a._id) < idOf(b._id) ? -1 : 1)).forEach((doc, i) => {
-      doc.email = `${local.slice(0, i).toUpperCase()}${local.slice(i)}@example.invalid`;
+      doc.email = `${local.slice(0, i).toUpperCase()}${local.slice(i)}@example.org`;
     });
   });
 }

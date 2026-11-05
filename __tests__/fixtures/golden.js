@@ -92,4 +92,8 @@ const expectGolden = (name, request, res, { replace = {} } = {}) => {
   expect(actual).toEqual(JSON.parse(fs.readFileSync(file, 'utf8')));
 };
 
-module.exports = { expectGolden };
+// The same stable form outside a golden file (e.g. scripts/e2e/compare-writes.js): replace is
+// { [value]: placeholder }, as for expectGolden
+const stabilized = (value, replace = {}) => stabilize(value, new Map(Object.entries(replace)));
+
+module.exports = { expectGolden, stabilized };

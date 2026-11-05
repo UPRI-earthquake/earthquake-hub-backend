@@ -32,7 +32,7 @@ The run starts from scratch every time:
 3. **Imports the export into MongoDB** (`scripts/e2e/import-prod-json.js`):
     - Reads Extended JSON, so `$oid` and `$date` become ObjectIds and Dates again.
     - Builds the app's indexes first, so duplicates are rejected as production would.
-    - Changes only what keeps the test safe: every email becomes `user-<hash>@example.invalid` (two that clash ignoring case still clash), and one sample account per kind gets a known test password. The kinds are sensor owner, citizen, brgy and admin.
+    - Changes only what keeps the test safe: every email becomes `user-<hash>@example.org` (two that clash ignoring case still clash), and one sample account per kind gets a known test password. The kinds are sensor owner, citizen, brgy and admin.
     - Records what it finds, structure only, in `import-report.json`.
 4. **Copies to PostgreSQL** with the real copy scripts: accounts and devices, then earthquakes, then comments and points (`copy-*.log`).
 5. **Checks every table and link** (`table-checks.json`):
