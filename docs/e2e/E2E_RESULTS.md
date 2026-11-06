@@ -184,16 +184,102 @@ The documented differences are the ones `POSTGRES.md` lists ("What the API shows
 
 ## API writes
 
-`scripts/e2e/compare-writes.js`: every write flow, step by step with the same input on both backends, compared after the goldens' normalization. 49 steps, 49 the same, 0 different.
+`scripts/e2e/compare-writes.js` runs every write flow the frontend and the sensors use. **49 steps: 49 the same on both backends, 0 different.**
 
-| Flow | Steps |
-|---|---|
-| Accounts | register, sign in, profile, alert preferences, change username, email and password, sign out, forgot and reset password (through the mail catcher), sign in again, delete |
-| Sensors | register an owner, link a sensor, station status as the ringserver sends it, my devices, unlink, link again, reset the link, delete the owner |
-| Brgy | forward a sensor, the brgy's list, stop forwarding |
-| Reports | post (text, anonymous, image only), list, mark helpful (twice), unmark, report an issue (twice), reject, delete, list again |
-| Summary | edit, read, clear, read |
-| SeisComP | a new event, its live-feed message, the event after its station check, an older update (dropped), a newer update, the event after |
+How each step runs:
+1. The same request goes to the MongoDB backend, then to the PostgreSQL backend.
+2. Values that change on every run are normalized, as the goldens do:
+    - sign-in tokens become what they say (username, role, account id)
+    - this run's times become `<now>`
+    - ids the run created become placeholders: `<new account id>`, `<new device id>`, `<new comment 1>`, `<uploaded image>`, `<new event id>`
+3. The status code and the whole body are compared, as strictly as the reads.
+
+The test data:
+- **Throwaway accounts:** named `e2e_<run>`, with `@example.org` emails.
+- **A made-up sensor:** a Raspberry Shake MAC address (`B8:27:EB:…`), with its station code derived from it.
+- **The sample accounts from the import:**
+  - the citizen posts reports and edits the summary
+  - the sensor owner marks and flags the reports, as a second account
+  - the brgy forwards the sensor
+- **An admin session:** made with the backends' own signing secret, so no admin password is needed.
+- **The earthquake:** reports and the summary go on the newest earthquake with no edited summary.
+- **Cleanup:**
+  - The accounts are deleted, the admin deletes the reports, and the summary is cleared.
+  - The test earthquake (`e2e<run>`) stays, because the API can't delete earthquakes. The frontend tests skip it.
+
+**Accounts** (12 steps)
+
+| # | Step | Request | As | Status |
+|---|---|---|---|---|
+| 1 | Register a citizen | `POST /accounts/register` | signed out | 200 |
+| 2 | Sign in, keeping the session cookie | `POST /accounts/authenticate` | the new account | 200 |
+| 3 | Read the profile | `GET /accounts/profile` | the new account | 200 |
+| 4 | Turn on sensor alert emails | `PATCH /accounts/alert-preferences` | the new account | 200 |
+| 5 | Change the username (with the current password) | `PATCH /accounts/username` | the new account | 200 |
+| 6 | Change the email | `PATCH /accounts/email` | the new account | 200 |
+| 7 | Change the password | `PATCH /accounts/password` | the new account | 200 |
+| 8 | Sign out | `POST /accounts/signout` | the new account | 200 |
+| 9 | Ask for a password reset; the mail lands in Mailpit | `POST /accounts/forgot-password` | signed out | 200 |
+| 10 | Reset the password with the link from that backend's own mail | `POST /accounts/reset-password` | signed out | 200 |
+| 11 | Sign in with the new username and password | `POST /accounts/authenticate` | signed out | 200 |
+| 12 | Delete the account | `DELETE /accounts` | the new account | 200 |
+
+**Sensors and brgy forwarding** (13 steps)
+
+| # | Step | Request | As | Status |
+|---|---|---|---|---|
+| 13 | Register the sensor's owner | `POST /accounts/register` | signed out | 200 |
+| 14 | Link a new sensor: it sends its owner's username and password, MAC address, stream ID and coordinates, as a Raspberry Shake does, and gets back its tokens and alert credential | `POST /device/link` | the sensor | 200 |
+| 15 | Report the station as streaming, as the ringserver does | `POST /messaging/restricted/station-status` | the ringserver | 200 |
+| 16 | Read the station's status | `GET /device/status` | signed out | 200 |
+| 17 | The owner's device list | `GET /device/my-devices` | the owner | 200 |
+| 18 | Forward the sensor through the brgy: the brgy's ringserver checks the sensor's token | `POST /accounts/verify-sensor-token` | the brgy | 200 |
+| 19 | The brgy's device list | `GET /device/my-devices` | the brgy | 200 |
+| 20 | Stop forwarding | `POST /accounts/brgy/remove-device` | the sensor | 200 |
+| 21 | Unlink the sensor | `POST /device/unlink` | the sensor | 200 |
+| 22 | Link it again | `POST /device/link` | the sensor | 200 |
+| 23 | Reset the link | `POST /device/reset-link` | the sensor | 200 |
+| 24 | The full device list | `GET /device/all` | signed out | 200 |
+| 25 | Delete the owner | `DELETE /accounts` | the owner | 200 |
+
+After step 14 the sensor signs in with the `sensor` role and gets a token, as a Raspberry Shake does, and the owner signs in on the web. Those sign-ins are set-up, not compared steps.
+
+**Reports** (14 steps)
+
+| # | Step | Request | As | Status |
+|---|---|---|---|---|
+| 26 | Post a text report | `POST /comments` | the citizen | 201 |
+| 27 | Post a report signed out (anonymous) | `POST /comments` | signed out | 201 |
+| 28 | Post an image only (a 1×1 PNG) | `POST /comments` (file upload) | the citizen | 201 |
+| 29 | List the earthquake's reports | `GET /comments` | signed out | 200 |
+| 30 | Mark the first report helpful | `PUT /comments/:id/helpful` | the sensor owner | 200 |
+| 31 | Mark it again: it still counts once | `PUT /comments/:id/helpful` | the sensor owner | 200 |
+| 32 | Unmark it | `DELETE /comments/:id/helpful` | the sensor owner | 200 |
+| 33 | Flag it as unclear | `POST /comments/:id/issues` | the sensor owner | 200 |
+| 34 | Flag it again, as a duplicate | `POST /comments/:id/issues` | the sensor owner | 200 |
+| 35 | Reject it | `PATCH /comments/:id/status` | the admin | 200 |
+| 36–38 | Delete each of the 3 reports | `DELETE /comments/:id` | the admin | 200 |
+| 39 | List the reports again | `GET /comments` | signed out | 200 |
+
+**Earthquake summary** (4 steps)
+
+| # | Step | Request | As | Status |
+|---|---|---|---|---|
+| 40 | Edit the summary | `PATCH /eq-events/:publicID/summary` | the citizen | 200 |
+| 41 | Read the earthquake | `GET /eq-events/:publicID` | signed out | 200 |
+| 42 | Clear the summary | `DELETE /eq-events/:publicID/summary` | the citizen | 200 |
+| 43 | Read the earthquake | `GET /eq-events/:publicID` | signed out | 200 |
+
+**SeisComP earthquake** (6 steps)
+
+| # | Step | Request | As | Status |
+|---|---|---|---|---|
+| 44 | Send a new M4.6 earthquake, as the messaging proxy does | `POST /messaging/restricted/new-event` | SeisComP | 200 |
+| 45 | The live-feed message each backend sent to open browsers | `GET /messaging` (opened before step 44) | signed out | |
+| 46 | Read the earthquake once both backends have finished its station check (FDSN is unreachable on both) | `GET /eq-events/:publicID` | signed out | 200 |
+| 47 | Send an update a minute older than the stored one (M3.0), which is dropped | `POST /messaging/restricted/new-event` | SeisComP | 200 |
+| 48 | Send a newer update (M4.8) | `POST /messaging/restricted/new-event` | SeisComP | 200 |
+| 49 | Read the earthquake: M4.8 on both | `GET /eq-events/:publicID` | signed out | 200 |
 
 ## Frontend
 
