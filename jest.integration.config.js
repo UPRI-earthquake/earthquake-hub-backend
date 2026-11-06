@@ -3,7 +3,7 @@
 module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.integration.test.js'],
-  // Area settings start as mongodb in every file, whatever the developer's .env says. After-env, so the
+  // Area settings start empty (postgres) in every file, whatever the developer's .env says. After-env, so the
   // --setupFiles dotenv/config of npm run test:integration (which replaces setupFiles) can't drop it
   setupFilesAfterEnv: ['<rootDir>/__tests__/fixtures/integrationEnv.js'],
   testTimeout: 30_000,
