@@ -16,6 +16,8 @@ const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILA
 const ONLINE_STATIONS_BATCH_SIZE = _positiveNumberEnv('ONLINE_STATIONS_BATCH_SIZE', 50);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
 const GEOSERVE_PLACE_REFRESH_DISTANCE_KM = _positiveNumberEnv('GEOSERVE_PLACE_REFRESH_DISTANCE_KM', 1);
+const GEOSERVE_MAX_CONCURRENT = _positiveNumberEnv('GEOSERVE_MAX_CONCURRENT', 2);
+const GEOSERVE_RETRY_AFTER_MS = _positiveNumberEnv('GEOSERVE_RETRY_AFTER_MS', 60 * 1000);
 const EVENT_SOURCE_CATALOG = process.env.EVENT_SOURCE_CATALOG || 'upri-current';
 const EVENT_SOURCE_SERVER = process.env.EVENT_SOURCE_SERVER || 'earthquake.up.edu.ph';
 const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION || '';
@@ -212,7 +214,55 @@ function direction(lat, lon, ref_lat, ref_lon){
   *       approximate location description (e.g., distance and direction from a reference point) of the earthquake event.
   *     - The function then returns the updatedData array, where each event object contains the 'place' attribute.
   *     - In case the geoserve API request fails, the function will use 'Unavailable' as the place attribute value for the event.
+  *     - At most GEOSERVE_MAX_CONCURRENT requests run at once, and after GeoServe can't be reached (no
+  *       response) none are sent for GEOSERVE_RETRY_AFTER_MS: those events show 'Unavailable' (see geoserveLookups).
  ***************************************************************************/
+// Each GeoServe request first resolves GEOSERVE_HOST on Node's small DNS thread pool (4 threads), which
+// new PostgreSQL connections share. A list with many events missing a place used to send every request
+// at once; against an unresolvable host each lookup took seconds to fail, the pool stayed busy for
+// minutes, and new database connections timed out. So: a few requests at a time, and a pause after
+// GeoServe couldn't be reached (an error response, e.g. a 400, doesn't count).
+const geoserveLookups = { active: 0, waiting: [], unreachableUntil: 0 };
+
+const geoserveUnreachable = () => Date.now() < geoserveLookups.unreachableUntil;
+
+// Runs fn in one of GEOSERVE_MAX_CONCURRENT slots; a freed slot goes straight to the next caller waiting
+async function withGeoserveSlot(fn) {
+  if (geoserveLookups.active < GEOSERVE_MAX_CONCURRENT) geoserveLookups.active += 1;
+  else await new Promise((resolve) => geoserveLookups.waiting.push(resolve));
+  try {
+    return await fn();
+  } finally {
+    const next = geoserveLookups.waiting.shift();
+    if (next) next();
+    else geoserveLookups.active -= 1;
+  }
+}
+
+// null when GeoServe is paused (unreachable recently)
+function requestGeoservePlace(eventData) {
+  return withGeoserveSlot(async () => {
+    if (geoserveUnreachable()) return null;
+    try {
+      return await axios.get(
+        `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
+         +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
+         +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`,
+        {
+          timeout: GEOSERVE_REQUEST_TIMEOUT_MS,
+        }
+      );
+    } catch (err) {
+      if (!err.response) geoserveLookups.unreachableUntil = Date.now() + GEOSERVE_RETRY_AFTER_MS;
+      throw err;
+    }
+  });
+}
+
+function resetGeoserveLookups() {
+  geoserveLookups.unreachableUntil = 0;
+}
+
 async function addPlacesAttribute(eventsList){
   var updatedData = [];
 
@@ -223,16 +273,8 @@ async function addPlacesAttribute(eventsList){
     }
 
     try{
-      const result = await axios.get(
-        // `https://earthquake.usgs.gov`
-        `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
-        //`http://localhost:8080`
-         +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
-         +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`,
-        {
-          timeout: GEOSERVE_REQUEST_TIMEOUT_MS,
-        }
-      );
+      const result = await requestGeoservePlace(eventData);
+      if (result === null) throw new Error('GeoServe paused after being unreachable');
       var address = '';
       let shouldPersistAddress = false;
       if (result.data.error){ address = result.data.error }
@@ -1358,5 +1400,6 @@ module.exports = {
     resolveRecordingAvailabilityStatus,
     resolveRecordingDisplayStations,
     hasMeaningfulCoordinateChange: _hasMeaningfulCoordinateChange,
+    resetGeoserveLookups,
   },
 };

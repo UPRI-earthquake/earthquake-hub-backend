@@ -320,6 +320,7 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
     jest.spyOn(process.stdout, 'write').mockImplementation(() => true); // the enrichment job's progress lines
     jest.spyOn(global, 'fetch').mockImplementation(External.usgsFetch);
     External.setGeoserveDown(false);
+    EQEventsService._test.resetGeoserveLookups(); // a test with GeoServe down pauses its lookups
     await Promise.all([mongo.clear(), pg.clear()]);
     await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
     await mongoose.connection.collection('devices').insertMany(DEVICES);

@@ -32,8 +32,11 @@ const geoserve = (url) => {
   const params = new URL(url).searchParams;
   const latitude = Number(params.get('latitude'));
   const longitude = Number(params.get('longitude'));
-  if (geoserveDown || !params.get('latitude') || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return Promise.reject(new Error('GeoServe unavailable'));
+  // Down: no response (as axios rejects on a network error). Bad coordinates: an error response, which
+  // axios rejects with err.response set
+  if (geoserveDown) return Promise.reject(new Error('GeoServe unavailable'));
+  if (!params.get('latitude') || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return Promise.reject(Object.assign(new Error('Request failed with status code 400'), { response: { status: 400, data: {} } }));
   }
   const nearest = [...PLACES].sort((a, b) => (
     Math.hypot(a.latitude - latitude, a.longitude - longitude) - Math.hypot(b.latitude - latitude, b.longitude - longitude)
