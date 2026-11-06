@@ -1,16 +1,13 @@
-// The per-area database settings: defaults, typos, and areas that can only move after the areas they
-// point to (src/db/areaDatabase.js)
+// The per-area database settings (src/db/areaDatabase.js): every area is on PostgreSQL. Unset means
+// postgres, and anything else, mongodb included, stops the backend at startup.
 const { areaDatabase, selectRepository } = require('../src/db/areaDatabase');
 
 describe('area database settings', () => {
   const saved = { ...process.env };
-  const implementations = { mongodb: () => 'mongodb repo', postgres: () => 'postgres repo' };
 
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     delete process.env.EARTHQUAKES_DB;
-    delete process.env.PEOPLE_AND_SENSORS_DB;
-    delete process.env.COMMUNITY_DB;
   });
 
   afterEach(() => {
@@ -18,51 +15,34 @@ describe('area database settings', () => {
     jest.restoreAllMocks();
   });
 
-  test('unset means mongodb; a value in another case or with spaces is accepted', () => {
-    expect(areaDatabase('EARTHQUAKES_DB')).toBe('mongodb');
+  test('unset or empty means postgres; a value in another case or with spaces is accepted', () => {
+    expect(areaDatabase('EARTHQUAKES_DB')).toBe('postgres');
+    process.env.EARTHQUAKES_DB = '';
+    expect(areaDatabase('EARTHQUAKES_DB')).toBe('postgres');
     process.env.EARTHQUAKES_DB = ' Postgres ';
     expect(areaDatabase('EARTHQUAKES_DB')).toBe('postgres');
   });
 
-  test('an unknown value stops the backend', () => {
+  test('mongodb, or a typo, stops the backend', () => {
+    process.env.EARTHQUAKES_DB = 'mongodb';
+    expect(() => areaDatabase('EARTHQUAKES_DB')).toThrow('EARTHQUAKES_DB must be "postgres" (got "mongodb")');
     process.env.EARTHQUAKES_DB = 'postgress';
-    expect(() => areaDatabase('EARTHQUAKES_DB')).toThrow('EARTHQUAKES_DB must be "mongodb" or "postgres" (got "postgress")');
+    expect(() => areaDatabase('EARTHQUAKES_DB')).toThrow('EARTHQUAKES_DB must be "postgres" (got "postgress")');
   });
 
-  test('an area can be on PostgreSQL only when the areas it points to are too', () => {
-    const select = () => selectRepository('earthquake events', 'EARTHQUAKES_DB', implementations, { dependsOn: ['PEOPLE_AND_SENSORS_DB'] });
+  test('a repository loads only its PostgreSQL implementation', () => {
+    const implementations = { mongodb: jest.fn(() => 'mongodb repo'), postgres: jest.fn(() => 'postgres repo') };
 
-    expect(select()).toBe('mongodb repo');
-    process.env.PEOPLE_AND_SENSORS_DB = 'postgres';
-    expect(select()).toBe('mongodb repo');
-    process.env.EARTHQUAKES_DB = 'postgres';
-    expect(select()).toBe('postgres repo');
-    process.env.PEOPLE_AND_SENSORS_DB = 'mongodb';
-    expect(select).toThrow('EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres: earthquake events point to that data in PostgreSQL');
+    expect(selectRepository('earthquake events', 'EARTHQUAKES_DB', implementations)).toBe('postgres repo');
+    expect(implementations.mongodb).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith('[db] earthquake events: postgres (EARTHQUAKES_DB)');
   });
 
-  test('the events repository refuses EARTHQUAKES_DB=postgres while accounts and devices are on MongoDB', () => {
-    process.env.EARTHQUAKES_DB = 'postgres';
-    process.env.PEOPLE_AND_SENSORS_DB = 'mongodb';
-
-    jest.isolateModules(() => {
-      expect(() => require('../src/repositories/events.repo')).toThrow(/EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres/);
-    });
-  });
-
-  test('the comments and points repositories refuse COMMUNITY_DB=postgres until accounts and events are on PostgreSQL', () => {
-    process.env.COMMUNITY_DB = 'postgres';
-    process.env.PEOPLE_AND_SENSORS_DB = 'postgres';
+  test('a repository refuses to load with its area set to mongodb', () => {
     process.env.EARTHQUAKES_DB = 'mongodb';
 
     jest.isolateModules(() => {
-      expect(() => require('../src/repositories/comments.repo')).toThrow('COMMUNITY_DB=postgres needs EARTHQUAKES_DB=postgres: comments point to that data in PostgreSQL');
-      expect(() => require('../src/repositories/contributions.repo')).toThrow(/COMMUNITY_DB=postgres needs EARTHQUAKES_DB=postgres/);
-    });
-
-    process.env.PEOPLE_AND_SENSORS_DB = 'mongodb';
-    jest.isolateModules(() => {
-      expect(() => require('../src/repositories/comments.repo')).toThrow(/needs PEOPLE_AND_SENSORS_DB=postgres and EARTHQUAKES_DB=postgres/);
+      expect(() => require('../src/repositories/events.repo')).toThrow('EARTHQUAKES_DB must be "postgres" (got "mongodb")');
     });
   });
 });
