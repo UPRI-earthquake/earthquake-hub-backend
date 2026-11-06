@@ -763,7 +763,7 @@ Every area runs on PostgreSQL in dev, and the backend sends MongoDB nothing. Bef
 
 ### Where it is
 
-**Stored at:** `C:\Cursor\UPRI-Seismo\mongo-final-dump\` on the dev machine, outside both repos. Only one Windows account can open the folder.
+**Stored at:** `C:\Cursor\UPRI-Seismo\mongo-final-dump\`, in the root of the `UPRI-Seismo` folder on the dev machine, outside both repos. As agreed with the team, it stays local for now. Only one Windows account can open the folder.
 
 | File | What it is |
 |---|---|
