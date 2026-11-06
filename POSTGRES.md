@@ -11,7 +11,8 @@ Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.j
 5. [Repositories and golden files](#5-repositories-and-golden-files)
 6. [Moving an area: the per-area switch](#6-moving-an-area-the-per-area-switch)
 7. [Tables](#7-tables)
-8. [Troubleshooting](#8-troubleshooting)
+8. [The final MongoDB dump](#8-the-final-mongodb-dump)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -756,7 +757,128 @@ PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/jobLockClean
 
 ---
 
-## 8. Troubleshooting
+## 8. The final MongoDB dump
+
+Every area runs on PostgreSQL in dev, and the backend sends MongoDB nothing. Before MongoDB leaves the dev setup, its `latestEQs` database was dumped one last time. **After Phase 4, this archive is the only fallback** for a rollback and for any later question about the old data.
+
+### Where it is
+
+**Stored at:** `C:\Cursor\UPRI-Seismo\mongo-final-dump\` on the dev machine, outside both repos. Only one Windows account can open the folder.
+
+| File | What it is |
+|---|---|
+| `latestEQs-dev-2026-11-06.archive.gz` | the archive (`mongodump --archive --gzip`), 255 KB |
+| `latestEQs-dev-2026-11-06.manifest.json` | when and how it was made, the count per collection, and its SHA-256 |
+| `latestEQs-dev-2026-11-06.mongodump.log` | mongodump's output |
+
+**It holds personal data** (emails, password hashes):
+- Keep access restricted.
+- Never commit it.
+
+This is the dev database. The production export used by the end-to-end check is a separate file, with its own storage and deletion rules.
+
+### The manifest
+
+| | |
+|---|---|
+| Dumped | 2026-11-06 02:49 UTC, from the dev `mongodb` container, as the app user |
+| MongoDB | 8.0.32 (mongodump 100.19.1) |
+| Backend | `feat/postgres-migration` at `5c37108` |
+| SHA-256 | `a0a9e1b9a140735d1c6acc82804860320ef4f7a2d2168ec467d10beac72580e6` |
+
+| Collection | Documents |
+|---|---|
+| `accounts` | 85 |
+| `devices` | 26 |
+| `events` | 906 |
+| `comments` | 0 |
+| `contributionevents` | 0 |
+| `joblocks` | 0 |
+| `significant-eqs` | 0 |
+| `subscriptions` | 0 |
+
+How it was made (inside the `mongodb` container, so nothing needs installing):
+
+```sh
+docker exec mongodb mongodump --host localhost --port 27017 \
+  -u <MONGO_USER> -p <MONGO_PASSWORD> --authenticationDatabase <MONGO_AUTH_SOURCE> \
+  --db latestEQs --excludeCollection=system.profile --archive --gzip \
+  > latestEQs-dev-2026-11-06.archive.gz
+```
+
+`system.profile` is left out: it's the profiler's own log, which was on while the dump was taken (below).
+
+### How it was checked
+
+1. **Nothing missing in PostgreSQL:** every copy script's dry run found nothing to insert and nothing to skip, and exited with 0:
+    - `db:pg:copy-people-and-sensors`
+    - `db:pg:copy-earthquakes`
+    - `db:pg:copy-community`
+
+    (`db:pg:copy-subscriptions` no longer exists: push notifications were removed, and dev has no subscriptions.)
+2. **A consistent snapshot:** each collection's count was the same just before and just after the dump.
+3. **It restores:**
+    - It was restored into a throwaway MongoDB 8.0.32 container with no network: 1,017 documents restored, 0 failed.
+    - Every collection's count matches the manifest.
+    - Every collection's documents and indexes are identical to dev MongoDB's.
+    - Spot checks on an account, an event with 2 catalog matches, and a device: identical. Dev has no comments to check.
+4. **It agrees with PostgreSQL:**
+    - Every account (85), device (26) and event (906) in the dump has its PostgreSQL row, and PostgreSQL has none that the dump lacks.
+    - Event stations (6,548) and catalog matches (1,204) are the same on both. There are 1,812 catalog status rows: 2 per event.
+    - Comments and points: 0 on both.
+5. **MongoDB is idle:**
+    - The profiler logs every operation on `latestEQs`. It has been on since 2026-11-06 02:49 UTC, for a full day of dev use, including the 02:00 Manila enrichment run.
+    - The backend's operations are the ones from its container's address, `172.22.0.3`; there must be none.
+    - **Result: to be added after 2026-11-07 03:00 UTC.**
+
+    To check (as the root user):
+
+    ```sh
+    docker exec mongodb mongosh --quiet -u <root user> -p <root password> --authenticationDatabase admin --eval '
+      const d = db.getSiblingDB("latestEQs");
+      print("profiler level:", d.getProfilingStatus().was);  // still 2, so MongoDB wasn't restarted
+      printjson(d.system.profile.aggregate([
+        { $group: { _id: { client: "$client", user: "$user", op: "$op" }, ops: { $sum: 1 }, first: { $min: "$ts" }, last: { $max: "$ts" } } },
+      ]).toArray())'
+    ```
+
+    Operations from `127.0.0.1` are the checks above, run inside the container. Afterwards, turn the profiler off and drop its log:
+
+    ```sh
+    db.getSiblingDB("latestEQs").setProfilingLevel(0); db.getSiblingDB("latestEQs").system.profile.drop()
+    ```
+
+### How to restore it
+
+1. Check the archive against the manifest:
+
+    ```sh
+    sha256sum latestEQs-dev-2026-11-06.archive.gz
+    ```
+
+2. Restore it into a throwaway MongoDB with no network, and count each collection:
+
+    ```sh
+    docker run -d --name mongo-restore --network none mongo:8.0.32
+    docker exec -i mongo-restore mongorestore --archive --gzip < latestEQs-dev-2026-11-06.archive.gz
+    docker exec mongo-restore mongosh --quiet latestEQs --eval '
+      db.getCollectionNames().sort().forEach((c) => print(c, db.getCollection(c).countDocuments()))'
+    ```
+
+3. Look things up with `mongosh` (`docker exec -it mongo-restore mongosh latestEQs`), then remove it:
+
+    ```sh
+    docker rm -f mongo-restore
+    ```
+
+**To roll back to MongoDB** instead, restore into the dev `mongodb` container with the app user:
+- Add `--drop`, which replaces each collection with the archive's version.
+- Then follow [Rolling an area back](#rolling-an-area-back).
+- Anything written to PostgreSQL after 2026-11-06 is not in the archive.
+
+---
+
+## 9. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
