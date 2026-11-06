@@ -123,7 +123,7 @@ E2E_RUN=<any new name> npx playwright test
 cd ../.. && node scripts/e2e/compare-frontend.js
 ```
 
-The tests (`e2e/frontend/tests/pages.spec.js`) visit the home page, five kinds of earthquake page, the removed significant earthquakes page and the reset password page. They sign in as each sample account to see its dashboard and account settings, register an account, post a report and mark it helpful.
+The tests (`e2e/frontend/tests/pages.spec.js`) visit the home page, five kinds of earthquake page, the removed significant earthquakes page and the reset password page. They sign in as each sample account to see its dashboard and account settings, fill in the registration form (up to its confirmation dialog), post a report and mark it helpful.
 
 For each page they save to `frontend/<backend>/` in the output folder:
 - the visible text, with times relative to now normalized

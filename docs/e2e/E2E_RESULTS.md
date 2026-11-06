@@ -294,7 +294,55 @@ After step 14 the sensor signs in with the `sensor` role and gets a token, as a 
 
 ## Frontend
 
-The browser tests (`e2e/frontend`, Playwright) ran the unchanged frontend once against each backend and compared what each page showed: its visible text, console errors and failed requests. Personal data was blanked before each screenshot. 13 tests on each backend: 24 passed, 2 skipped (the edited-summary page, finding 9).
+The browser tests (`e2e/frontend`, Playwright) ran the unchanged frontend once against each backend and compared what each page showed. **13 tests on each backend: 24 passed, 2 skipped** (the edited-summary page, finding 9). **16 pages recorded: 13 the same, 3 the same content in another order, 0 different.**
+
+How each test runs:
+1. **The browser:** Chromium opens the frontend's production build twice, once on the copy that talks to the MongoDB backend, then on the copy that talks to PostgreSQL.
+    - Both runs use the same settings: a 1366×900 window, the Asia/Manila time zone, one test at a time.
+2. **Blocked requests:** every request that isn't to localhost is blocked, such as map tiles and analytics. Nothing reaches production, and the map is blank on both runs.
+3. **Recording:** after each page or action, the test lets the page settle, then records:
+    - **the visible text.** Relative times ("5 minutes ago") and times within 30 minutes of the run are replaced by placeholders.
+    - **a full-page screenshot.**
+    - **the console errors.**
+    - **the failed requests to the backend:** server errors, and requests that didn't complete. The removed endpoints and the dead sensor-feed address are left out.
+4. **Blanking personal data:** before recording, the test blanks the sample accounts' and reporters' usernames, every email, and reporters' initials.
+5. **Comparing:** `scripts/e2e/compare-frontend.js` compares the two runs page by page and gives each one a verdict:
+    - **same:** the same text in the same order, with the same errors.
+    - **same content, other order:** the same lines, but some moved.
+    - **DIFF:** anything else.
+
+The earthquakes are picked the same way on both runs, since the two event lists are identical. The test earthquake from the write flows is left out.
+
+| # | Test | What it does | Signed in as | Pages recorded |
+|---|---|---|---|---|
+| 1 | Home | Opens `/` and waits for the map's legend | signed out | Home |
+| 2 | Earthquake page: matched | Opens the first earthquake matched in both PHIVOLCS and USGS | signed out | Earthquake page: matched |
+| 3 | Earthquake page: edited summary | Opens the first earthquake with an edited summary | signed out | skipped: none in the data (finding 9) |
+| 4 | Earthquake page: legacy record | Opens the first record imported from the old catalog | signed out | Earthquake page: legacy |
+| 5 | Earthquake page: no place name | Opens the first earthquake with no usable place name (finding 1) | signed out | Earthquake page: no place name |
+| 6 | Earthquake page: with a report | Opens the first earthquake that has reports | signed out | Earthquake page: with a report |
+| 7 | Significant earthquakes | Opens the removed `/significant-eqs` page, which shows 0 events and the 404 (finding 5) | signed out | Significant earthquakes |
+| 8 | Reset password | Opens `/reset-password` with an invalid link; the page shows its new-password form | signed out | Reset password |
+| 9 | Citizen | Signs in from the Account button, which opens the dashboard ("Your devices"), then opens Account settings | the citizen | Citizen: dashboard, account settings |
+| 10 | Sensor owner | The same, ending on a dashboard with the device overview (streaming, not streaming, unlinked) | the sensor owner | Sensor owner: dashboard, account settings |
+| 11 | Brgy | The same, ending on the "Managed devices" dashboard with the forwarded sensors | the brgy | Brgy: dashboard, account settings |
+| 12 | Register | Fills in the registration form (email, username, password twice) and clicks "Create account". The frontend then asks for confirmation ("For contributors only"), and **the test stops there**: no account was created on either backend, and signing out wasn't reached | signed out | Register (the confirmation dialog) |
+| 13 | Post a report, then mark it helpful | On the matched earthquake: <br>1. The citizen signs in and posts a text report. It's posted anonymously, the form's default, and appears in the list ("Showing 1 of 1 report"). <br>2. The sensor owner signs in and marks it helpful; the count shows 1. | the citizen, then the sensor owner | Post a report, Mark a report helpful |
+
+Not tested in the browser:
+- **Covered by the API write comparison instead:**
+  - creating an account (test 12 stops before it)
+  - posting an image, and reporting an issue
+  - changing account settings, and deleting an account
+  - linking a device
+  - editing a summary
+  - the live-feed message for a new earthquake (the browser's live update isn't tested)
+- **Not covered by either:**
+  - the home page's time range and filters
+  - "load more" on reports (the data has only 2)
+  - remote device actions
+
+The verdict for each page:
 
 | Page | Verdict | Console errors and failed requests (same on both) |
 |---|---|---|
@@ -311,7 +359,7 @@ The browser tests (`e2e/frontend`, Playwright) ran the unchanged frontend once a
 | Sensor owner: account settings | same | `Failed to load resource: net::ERR_FAILED`<br>`GET /overlays/faults` |
 | Brgy: dashboard | same content, other order (Plate Boundaries, Fault Lines) | `Failed to load resource: net::ERR_FAILED`<br>`GET /overlays/faults` |
 | Brgy: account settings | same content, other order (Plate Boundaries, Fault Lines) | `Failed to load resource: net::ERR_FAILED`<br>`GET /overlays/faults` |
-| Register a new account | same | `Failed to load resource: net::ERR_FAILED`<br>`GET /overlays/faults` |
+| Register a new account (up to its confirmation dialog) | same | `Failed to load resource: net::ERR_FAILED`<br>`GET /overlays/faults` |
 | Post a report | same | `Failed to load resource: net::ERR_FAILED`<br>`Failed to load resource: net::ERR_UNSAFE_PORT`<br>`GET /messaging` |
 | Mark a report helpful (another account) | same | `Failed to load resource: net::ERR_FAILED`<br>`Failed to load resource: net::ERR_UNSAFE_PORT`<br>`GET /messaging` |
 
