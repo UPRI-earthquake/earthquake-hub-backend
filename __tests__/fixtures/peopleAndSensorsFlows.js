@@ -1,13 +1,11 @@
-// End-to-end flows for accounts and devices through the real app, run once per database setting
-// (peopleAndSensors.flows.*.integration.test.js): the same flows must work on MongoDB and PostgreSQL.
+// End-to-end flows for accounts and devices through the real app, with every area on PostgreSQL
+// (peopleAndSensors.flows.postgres.integration.test.js).
 // Covers sign-up and sign-in, linking/unlinking a device and its history, deleting an account, a failed
 // step inside link/unlink rolling everything back, and the other areas that look devices up (station
 // status updates, nearest stations for a new earthquake).
 //
 // The test file must mock src/services/email.service and axios (place-name lookups).
 const request = require('supertest');
-const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { generateAMStationCode } = require('../../src/controllers/helpers');
 
@@ -16,8 +14,7 @@ const MAC = 'B8:27:EB:12:AB:CD';
 const STATION = generateAMStationCode(MAC);
 const STREAM_ID = `AM_${STATION}_.*/MSEED`;
 
-const describePeopleAndSensorsFlows = (database) => describe(`accounts and devices end to end (PEOPLE_AND_SENSORS_DB=${database})`, () => {
-  let mongo;
+const describePeopleAndSensorsFlows = () => describe('accounts and devices end to end (every area on PostgreSQL)', () => {
   let pg;
   let app;
   let DevicesRepo;
@@ -44,18 +41,17 @@ const describePeopleAndSensorsFlows = (database) => describe(`accounts and devic
   const myDevices = async (username) => (await (await signedIn(username)).get('/device/my-devices')).body;
 
   beforeAll(async () => {
-    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
-    Object.assign(process.env, pg.env, { PEOPLE_AND_SENSORS_DB: database });
+    pg = await startPostgres();
+    Object.assign(process.env, pg.env);
     app = require('../../src/app');
     DevicesRepo = require('../../src/repositories/devices.repo');
     EQEventsService = require('../../src/services/EQevents.service');
-    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
-  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
+  }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    await Promise.all([mongo.clear(), pg.clear()]);
+    await pg.clear();
     await register('juan', 'juan@example.org');
   });
 
@@ -65,7 +61,7 @@ const describePeopleAndSensorsFlows = (database) => describe(`accounts and devic
 
   afterAll(async () => {
     await require('../../src/db/knex').db.destroy();
-    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
+    if (pg) await pg.stop();
   });
 
   describe('register and sign in', () => {
@@ -79,8 +75,8 @@ const describePeopleAndSensorsFlows = (database) => describe(`accounts and devic
       expect((await register('maria', 'Juan@EXAMPLE.org')).body.message).toBe('Email address already in use');
     });
 
-    test(`signing in by username in another case: ${database === 'postgres' ? 'works (citext)' : 'fails (MongoDB matches usernames exactly)'}`, async () => {
-      expect((await signIn('JUAN')).status).toBe(database === 'postgres' ? 200 : 401);
+    test('signing in by username in another case works (citext)', async () => {
+      expect((await signIn('JUAN')).status).toBe(200);
     });
   });
 
@@ -153,13 +149,13 @@ const describePeopleAndSensorsFlows = (database) => describe(`accounts and devic
       expect((await request(app).get(`/device/status?network=AM&station=${STATION}`)).body.payload).toMatchObject({ activity: 'active', status: 'Streaming' });
     });
 
-    test("a new earthquake lists the nearest active station (events are still on MongoDB)", async () => {
+    test('a new earthquake lists the nearest active station', async () => {
       await link('juan');
       await request(app).post('/messaging/restricted/station-status').send({ network: 'AM', station: STATION, status: 'streaming' });
 
       await EQEventsService.addEQEvent('flows2026abcd', new Date().toISOString(), 14.6, 121.0, 10, 4.5, 'NEW', 'Test event', new Date().toISOString());
 
-      const event = await mongoose.connection.collection('events').findOne({ publicID: 'flows2026abcd' });
+      const event = (await request(app).get('/eq-events/flows2026abcd')).body.payload;
       expect(event.onlineStations).toContain(STATION);
     });
   });

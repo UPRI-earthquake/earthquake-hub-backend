@@ -5,8 +5,6 @@ jest.mock('../src/services/email.service', () => ({ sendMail: jest.fn().mockReso
 jest.mock('axios', () => ({ get: () => Promise.reject(new Error('no network in tests')) }));
 
 const request = require('supertest');
-const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 const { generateAMStationCode } = require('../src/controllers/helpers');
 
@@ -16,7 +14,6 @@ const STATION = generateAMStationCode(MAC);
 const STREAM_ID = `AM_${STATION}_.*/MSEED`;
 
 describe('reset-link for a device with earthquake history (PEOPLE_AND_SENSORS_DB=postgres)', () => {
-  let mongo;
   let pg;
   let app;
 
@@ -43,18 +40,15 @@ describe('reset-link for a device with earthquake history (PEOPLE_AND_SENSORS_DB
   };
 
   beforeAll(async () => {
-    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
-    Object.assign(process.env, pg.env, {
-      PEOPLE_AND_SENSORS_DB: 'postgres', JOB_LOCKS_DB: 'mongodb',
-    });
+    pg = await startPostgres();
+    Object.assign(process.env, pg.env);
     app = require('../src/app');
-    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
-  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
+  }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    await Promise.all([mongo.clear(), pg.clear()]);
+    await pg.clear();
     await register('juan');
     await register('maria');
   });
@@ -65,7 +59,7 @@ describe('reset-link for a device with earthquake history (PEOPLE_AND_SENSORS_DB
 
   afterAll(async () => {
     await require('../src/db/knex').db.destroy();
-    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
+    if (pg) await pg.stop();
   });
 
   test('without history the device is deleted, as before', async () => {
