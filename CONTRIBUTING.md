@@ -8,7 +8,7 @@
     ```bash
     git clone git@github.com:UPRI-earthquake/earthquake-hub-backend.git
     ```
-2. Create a file named `.env` and set its values based on `.env.example`. You should be able to use the default values in the example file.
+2. Create a file named `.env` and set its values based on `.env.example`. You can keep most of the default values, but set your own `PG_PASSWORD` (see [POSTGRES.md, 1.1](POSTGRES.md#11-add-the-postgresql-keys-to-your-env)). No MongoDB keys are needed.
 3. Install all dependencies via:
     ```bash
     npm install
@@ -21,13 +21,18 @@
     ```bash
     docker compose up
     ```
-    The above command shall show the logs of all the containers (see the `docker-compose.yml` file to check the container names) spun up by `docker compose`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
+    The above command starts the backend (`earthquake-hub-backend-dev`) and PostgreSQL (`earthquake-hub-postgres`) and shows their logs. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
     
     Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers.
 
     Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
     
     See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
+6. Apply the database migrations, from the repo root in another terminal:
+    ```bash
+    npm run db:pg:migrate
+    ```
+    Docker Compose doesn't run them for you. They create the tables, and the database starts empty. To load the old dev data, or to connect with a GUI client, see [POSTGRES.md](POSTGRES.md).
 
 ## Publishing container image (For admins)
 1. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 
@@ -49,4 +54,4 @@ Please refer to the [contributing guide](https://upri-earthquake.github.io/dev-g
 ## Miscellaneous Notes
 
 1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (as of writing we are running node v18). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
-2. There are test files available in the __test__/ directory, and this repo uses `jest` as test runner.
+2. There are test files available in the __test__/ directory, and this repo uses `jest` as test runner. `npm test` runs the unit tests; `npm run test:integration` runs the `*.integration.test.js` files against throwaway PostgreSQL containers, so it needs Docker (see [POSTGRES.md, section 4](POSTGRES.md#4-integration-tests)).
