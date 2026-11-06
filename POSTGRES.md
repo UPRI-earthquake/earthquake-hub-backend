@@ -827,26 +827,12 @@ docker exec mongodb mongodump --host localhost --port 27017 \
     - Event stations (6,548) and catalog matches (1,204) are the same on both. There are 1,812 catalog status rows: 2 per event.
     - Comments and points: 0 on both.
 5. **MongoDB is idle:**
-    - The profiler logs every operation on `latestEQs`. It has been on since 2026-11-06 02:49 UTC, for a full day of dev use, including the 02:00 Manila enrichment run.
-    - The backend's operations are the ones from its container's address, `172.22.0.3`; there must be none.
-    - **Result: to be added after 2026-11-07 03:00 UTC.**
+    - The profiler logged every operation on `latestEQs` from 2026-11-06 02:49 UTC until MongoDB was stopped, at about 06:01 UTC: 3 hours 12 minutes.
+    - **Result: 0 operations from the backend** (its container's address, `172.22.0.3`). All 73 logged operations came from `127.0.0.1`: the dump and the checks above, run inside the container.
+    - MongoDB's oplog shows no writes to `latestEQs` in that time, so nothing changed after the dump.
+    - **Skipped: a full day of dev use, including the 02:00 Manila enrichment run and the station checks.** The ticket asks for one. It was skipped because this is the dev environment: the dump holds dev data, and dev can't reach the sensors, so the station checks have nothing to check. The full day was there to catch backend writes the dump would miss, and the oplog shows there were none.
 
-    To check (as the root user):
-
-    ```sh
-    docker exec mongodb mongosh --quiet -u <root user> -p <root password> --authenticationDatabase admin --eval '
-      const d = db.getSiblingDB("latestEQs");
-      print("profiler level:", d.getProfilingStatus().was);  // still 2, so MongoDB wasn't restarted
-      printjson(d.system.profile.aggregate([
-        { $group: { _id: { client: "$client", user: "$user", op: "$op" }, ops: { $sum: 1 }, first: { $min: "$ts" }, last: { $max: "$ts" } } },
-      ]).toArray())'
-    ```
-
-    Operations from `127.0.0.1` are the checks above, run inside the container. Afterwards, turn the profiler off and drop its log:
-
-    ```sh
-    db.getSiblingDB("latestEQs").setProfilingLevel(0); db.getSiblingDB("latestEQs").system.profile.drop()
-    ```
+    The log was read after MongoDB stopped, from a copy of its data volume (`earthquake-hub-mongodb-data`), so the volume itself wasn't changed. The profiler switches off when MongoDB restarts. Its log (`system.profile`) stays in the volume, and isn't in the dump.
 
 ### How to restore it
 
