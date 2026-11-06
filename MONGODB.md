@@ -1,6 +1,14 @@
 # MongoDB: Local Setup & Connecting with Compass
 
-The backend uses **MongoDB 8.0** running in Docker, with **authentication** and a **single-node replica set** (needed for transactions). This guide covers:
+> **No longer part of the dev setup.** Since Phase 4 of the PostgreSQL migration (November 2026), dev runs on PostgreSQL only: `docker-compose.yml` has no `mongodb` service, and the backend doesn't connect to MongoDB. To set up dev, see [POSTGRES.md](POSTGRES.md).
+>
+> This guide is kept for:
+> - the shared servers (dep-test, production), which still run MongoDB ([section 3](#3-connecting-to-a-shared-server-dep-test--prod))
+> - going back to MongoDB, which means restoring the final dev dump into a MongoDB container ([POSTGRES.md, Going back to MongoDB](POSTGRES.md#going-back-to-mongodb))
+>
+> Section 1 needs a backend from before Phase 4 (`feat/postgres-migration` at `d94371c`), whose `docker-compose.yml` still has the `mongodb` service.
+
+The backend used **MongoDB 8.0** running in Docker, with **authentication** and a **single-node replica set** (needed for transactions). This guide covers:
 
 1. [First-time local setup](#1-first-time-local-setup)
 2. [Connecting with MongoDB Compass](#2-connecting-with-mongodb-compass)
