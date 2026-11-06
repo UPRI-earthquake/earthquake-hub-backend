@@ -1,14 +1,14 @@
 // During the PostgreSQL migration each area of data lives in exactly one database, chosen by its own
 // setting (e.g. JOB_LOCKS_DB=postgres). Rolling an area back is a config change plus a restart.
-const DATABASES = ['mongodb', 'postgres'];
+const DATABASES = ['postgres'];
 
 // The database an area uses, from its setting. Unset means mongodb, so environments that haven't
 // opted in (production) keep running on MongoDB. Throws on an unknown value so a typo fails at startup.
 const areaDatabase = (settingKey) => {
   const raw = process.env[settingKey];
-  const value = (raw || 'mongodb').trim().toLowerCase();
+  const value = (raw || 'postgres').trim().toLowerCase();
   if (!DATABASES.includes(value)) {
-    throw new Error(`${settingKey} must be "mongodb" or "postgres" (got "${raw}")`);
+    throw new Error(`${settingKey} must be "postgres" (got "${raw}")`);
   }
   return value;
 };
