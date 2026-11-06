@@ -18,8 +18,9 @@ const connectionSettings = () => ({
 module.exports = {
   client: 'pg',
   connection: connectionSettings,
-  // min 0 lets idle connections close instead of holding them open forever
-  pool: { min: 0, max: 10 },
+  // Two connections stay open: a new one needs a DNS lookup of PG_HOST, which can wait behind other
+  // lookups on Node's small DNS thread pool (see geoserveLookups in src/services/EQevents.service.js)
+  pool: { min: 2, max: 10 },
   migrations: {
     directory: path.join(__dirname, 'migrations'),
     tableName: 'knex_migrations',
