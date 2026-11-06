@@ -186,6 +186,17 @@ The documented differences are the ones `POSTGRES.md` lists ("What the API shows
 
 `scripts/e2e/compare-writes.js` runs every write flow the frontend and the sensors use. **49 steps: 49 the same on both backends, 0 different.**
 
+| Flow | Steps |
+|---|---|
+| Accounts | register, sign in, profile, alert preferences, change username, email and password, sign out, forgot and reset password (through the mail catcher), sign in again, delete |
+| Sensors | register an owner, link a sensor, station status as the ringserver sends it, my devices, unlink, link again, reset the link, delete the owner |
+| Brgy | forward a sensor, the brgy's list, stop forwarding |
+| Reports | post (text, anonymous, image only), list, mark helpful (twice), unmark, report an issue (twice), reject, delete, list again |
+| Summary | edit, read, clear, read |
+| SeisComP | a new event, its live-feed message, the event after its station check, an older update (dropped), a newer update, the event after |
+
+Every step in detail follows.
+
 How each step runs:
 1. The same request goes to the MongoDB backend, then to the PostgreSQL backend.
 2. Values that change on every run are normalized, as the goldens do:
