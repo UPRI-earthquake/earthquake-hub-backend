@@ -1,7 +1,7 @@
 // Golden-file tests for Community (comments and contribution points) of the PostgreSQL migration. They
 // run the real app against seeded data and compare each response with its recording in
-// __tests__/golden/. Each community.golden.*.integration.test.js runs these cases with one set of area
-// settings, so every setting must give identical responses.
+// __tests__/golden/, recorded with every area on MongoDB: the app on PostgreSQL must give identical
+// responses (community.golden.postgres.integration.test.js).
 //
 // Points aren't returned by any endpoint: after each request that can write them, the stored entries are
 // recorded the same way (or checked to be unchanged), read from where the area keeps them.
@@ -154,15 +154,11 @@ const COMMENTS = [
 ];
 
 // Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
-const ALL_ON_MONGODB = {
-  PEOPLE_AND_SENSORS_DB: 'mongodb', EARTHQUAKES_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', COMMUNITY_DB: 'mongodb',
+const ALL_ON_POSTGRES = {
+  PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', JOB_LOCKS_DB: 'postgres', COMMUNITY_DB: 'postgres',
 };
 
-// overrides: the area settings that differ from ALL_ON_MONGODB
-const describeCommunityGolden = (overrides = {}) => {
-  const settings = { ...ALL_ON_MONGODB, ...overrides };
-  describeCommunityGoldenWith(settings, Object.entries(overrides).map(([key, value]) => `${key}=${value}`).join(', ') || 'all areas on MongoDB');
-};
+const describeCommunityGolden = () => describeCommunityGoldenWith(ALL_ON_POSTGRES, 'every area on PostgreSQL');
 
 const describeCommunityGoldenWith = (settings, label) => describe(`Community: recorded API responses (${label})`, () => {
   let mongo;

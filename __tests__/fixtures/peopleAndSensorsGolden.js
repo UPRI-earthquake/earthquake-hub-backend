@@ -1,7 +1,7 @@
 // Golden-file tests for People & Sensors (accounts, devices) of the PostgreSQL migration. They run the
-// real app against seeded data and compare each response with its recording in __tests__/golden/.
-// Each peopleAndSensors.golden.*.integration.test.js runs these cases with one set of area settings,
-// so every setting must give identical responses.
+// real app against seeded data and compare each response with its recording in __tests__/golden/,
+// recorded with accounts and devices on MongoDB: the app on PostgreSQL must give identical responses
+// (peopleAndSensors.golden.postgres.integration.test.js).
 //
 // The data is always seeded in MongoDB. With PEOPLE_AND_SENSORS_DB=postgres it is then copied with the
 // real copy script (scripts/copy-people-and-sensors-to-postgres.js) and removed from MongoDB, so the

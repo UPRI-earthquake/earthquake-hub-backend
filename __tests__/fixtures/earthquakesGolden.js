@@ -1,7 +1,7 @@
 // Golden-file tests for Earthquakes (events) of the PostgreSQL migration. They run the real app against
 // seeded data, with the external services faked (fixtures/earthquakesExternal.js), and compare each
-// response with its recording in __tests__/golden/. Each earthquakes.golden.*.integration.test.js runs
-// these cases with one set of area settings, so every setting must give identical responses.
+// response with its recording in __tests__/golden/, recorded with every area on MongoDB: the app on
+// PostgreSQL must give identical responses (earthquakes.golden.postgres.integration.test.js).
 //
 // Two jobs aren't endpoints: the station check of one new event (run by a timer after ingest) is
 // called directly and its result recorded the same way.
@@ -257,15 +257,11 @@ const newEventMessage = (fields = {}) => ({
 });
 
 // Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
-const ALL_ON_MONGODB = {
-  PEOPLE_AND_SENSORS_DB: 'mongodb', EARTHQUAKES_DB: 'mongodb', JOB_LOCKS_DB: 'mongodb', COMMUNITY_DB: 'mongodb',
+const ALL_ON_POSTGRES = {
+  PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', JOB_LOCKS_DB: 'postgres', COMMUNITY_DB: 'postgres',
 };
 
-// overrides: the area settings that differ from ALL_ON_MONGODB
-const describeEarthquakesGolden = (overrides = {}) => {
-  const settings = { ...ALL_ON_MONGODB, ...overrides };
-  describeEarthquakesGoldenWith(settings, Object.entries(overrides).map(([key, value]) => `${key}=${value}`).join(', ') || 'all areas on MongoDB');
-};
+const describeEarthquakesGolden = () => describeEarthquakesGoldenWith(ALL_ON_POSTGRES, 'every area on PostgreSQL');
 
 const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes: recorded API responses (${label})`, () => {
   let mongo;
