@@ -1,6 +1,8 @@
 # PostgreSQL: Local Setup, Migrations & GUI Clients
 
-The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes were deprecated and removed (migration `20261105000000`).
+The backend runs on **PostgreSQL 18 with PostGIS 3.6**. It moved there from MongoDB one area at a time: job locks, accounts and devices, earthquakes, and comments and points ([section 6](#6-moving-an-area-the-per-area-switch), [section 7](#7-tables)). Significant earthquakes were deprecated and removed (migration `20261105000000`).
+
+**Dev runs without MongoDB** (Phase 4): `docker-compose.yml` has no `mongodb` service, the backend doesn't connect to MongoDB, and every area is on PostgreSQL. The only copy of the old dev MongoDB data is the final dump ([section 8](#8-the-final-mongodb-dump)). Going back to MongoDB now means restoring that dump into a MongoDB container ([Going back to MongoDB](#going-back-to-mongodb)).
 
 Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.js` holds the connection pool, `src/db/migrations/` the versioned schema changes.
 
@@ -49,21 +51,20 @@ The backend container doesn't use `PG_HOST`/`PG_PORT` from `.env`: `docker-compo
 
 ```sh
 docker compose up -d
-docker compose ps        # earthquake-hub-postgres and mongodb should both show (healthy)
+docker compose ps        # earthquake-hub-postgres should show (healthy)
 ```
 
-Docker Compose creates the `earthquake-hub-postgres-data` volume on first start. If you haven't set up MongoDB yet, follow [MONGODB.md](MONGODB.md) first: the compose file needs both sets of keys.
+Docker Compose creates the `earthquake-hub-postgres-data` volume on first start. The backend and PostgreSQL are the only services: MongoDB isn't needed, and `.env` needs no `MONGO_*` keys.
 
 On the first start of an **empty** volume, PostgreSQL creates the `PG_USER` user (a superuser inside this container) and the `PG_DATABASE` database. The image's own PostGIS init script is skipped on purpose, so the database starts with no extensions: the first migration adds them.
 
 The backend waits until PostgreSQL is healthy, then logs:
 
 ```
-Connected to MongoDB at mongodb:27017/latestEQs
 Connected to PostgreSQL 18.6 (...) at postgres:5432/earthquake_hub
 ```
 
-It starts fine on an empty, unmigrated database. If PostgreSQL can't be reached, it logs the error and keeps running, since no feature uses PostgreSQL yet.
+It starts on an empty, unmigrated database, but requests that read or write data fail until you apply the migrations (1.3). If PostgreSQL can't be reached, it logs the error and keeps running, and those requests fail until it's back.
 
 ### 1.3 Apply the migrations
 
@@ -71,7 +72,7 @@ It starts fine on an empty, unmigrated database. If PostgreSQL can't be reached,
 npm run db:pg:migrate
 ```
 
-See [section 2](#2-running-migrations).
+See [section 2](#2-running-migrations). The migrations create the tables, not the data: a new database is empty. To load the old dev data into it, see [Loading it into PostgreSQL](#loading-it-into-postgresql).
 
 ### 1.4 Check it works
 
@@ -201,17 +202,17 @@ npm run test:integration
 
 The first run pulls the `postgis/postgis` image, which takes a minute. They can't run inside the backend container, which has no access to Docker.
 
-A MongoDB fixture, [`__tests__/fixtures/mongo.fixture.js`](__tests__/fixtures/mongo.fixture.js), does the same for areas still on MongoDB.
+A MongoDB fixture, [`__tests__/fixtures/mongo.fixture.js`](__tests__/fixtures/mongo.fixture.js), does the same for MongoDB. Some tests still use it although dev has no MongoDB: the golden tests seed their data there and copy it with the copy scripts, the copy tests check those scripts, and the repository tests also run the MongoDB versions ([section 5](#5-repositories-and-golden-files)).
 
 ---
 
 ## 5. Repositories and golden files
 
-Each area moves to PostgreSQL behind a **repository**: a module in `src/repositories/` that holds all of that area's database calls. Services call the repository, never a Mongoose model or Knex directly, so moving an area means writing a PostgreSQL version of its repository and nothing above it.
+Each area moved to PostgreSQL behind a **repository**: a module in `src/repositories/` that holds all of that area's database calls. Services call the repository, never a Mongoose model or Knex directly, so moving an area meant writing a PostgreSQL version of its repository and nothing above it.
 
-An area that has moved has both versions, in `src/repositories/mongodb/` and `src/repositories/postgres/`. `src/repositories/<area>.repo.js` loads the one its setting picks ([section 6](#6-moving-an-area-the-per-area-switch)).
+Every area has both versions, in `src/repositories/mongodb/` and `src/repositories/postgres/`, and `src/repositories/<area>.repo.js` loads the PostgreSQL one: its setting only accepts `postgres` ([section 6](#6-moving-an-area-the-per-area-switch)). The backend never loads the MongoDB versions now; only the repository tests still run them.
 
-| Area | Repository | Setting | Database in dev |
+| Area | Repository | Setting | Database |
 |---|---|---|---|
 | Job locks | `src/repositories/jobLocks.repo.js` | `JOB_LOCKS_DB` | PostgreSQL |
 | Accounts | `src/repositories/accounts.repo.js` | `PEOPLE_AND_SENSORS_DB` | PostgreSQL |
@@ -231,16 +232,16 @@ Repositories return plain objects with an `id`, never database documents, and se
 - `src/repositories/errors.js`: a write that breaks a unique rule throws `DuplicateKeyError` (with the colliding `fields`), whichever database rejected it.
 - `src/repositories/transactions.js`: `withTransaction(async (tx) => { ... })` runs writes together; repository functions join it when passed `{ tx }`.
 
-Comments come back with their helpful marks (`helpfulAccountIds`) and issue reports (`issueReports`) as lists, and event and account ids as MongoDB-style strings, so the PostgreSQL version keeps marks and reports in their own tables without changing `comments.service.js`. An account marks a comment helpful once and has one issue report per comment (a second replaces the first); a points entry is stored once per `dedupeKey`, and a repeated action leaves the first one as it was. Posting a report, marking one helpful and reporting an issue each write the comment change and its points in **one transaction** (`src/repositories/communityTransactions.js`, which follows `COMMUNITY_DB`), so a failed points write leaves no half-done mark; a MongoDB without a replica set falls back to plain writes.
+Comments come back with their helpful marks (`helpfulAccountIds`) and issue reports (`issueReports`) as lists, and event and account ids as MongoDB-style strings, so the PostgreSQL version keeps marks and reports in their own tables without changing `comments.service.js`. An account marks a comment helpful once and has one issue report per comment (a second replaces the first); a points entry is stored once per `dedupeKey`, and a repeated action leaves the first one as it was. Posting a report, marking one helpful and reporting an issue each write the comment change and its points in **one transaction** (`src/repositories/communityTransactions.js`), so a failed points write leaves no half-done mark.
 
 Two kinds of integration tests check that a move changes nothing:
 
 - **Repository tests** (`__tests__/<area>.repo.integration.test.js`) describe what each repository function does with real data. They run the same cases against the MongoDB and the PostgreSQL version.
-- **Golden files** (`__tests__/golden/*.json`) are recorded API responses: status, key headers (including `Set-Cookie`) and body. The `*.golden.*.integration.test.js` files run the real app against seeded data and compare each response with its recording: `pilotAreas`, `peopleAndSensors` (accounts and devices) and `earthquakes` each once with their areas on PostgreSQL and once on MongoDB, against the same recordings; `earthquakes` fakes GeoServe, FDSN, PHIVOLCS and USGS (`__tests__/fixtures/earthquakesExternal.js`). `community` (comments and points) runs three times: every area on MongoDB, community on PostgreSQL, and community rolled back to MongoDB while accounts and events stay on PostgreSQL; no endpoint returns points, so the points stored after each request are recorded too (or checked unchanged). On PostgreSQL, the data is seeded in MongoDB and copied with the real copy scripts, then removed from MongoDB, so the responses also show that copied data keeps its ids. Seeded records hold only what both databases can represent (PostgreSQL can't tell a missing field from a null one), e.g. an ingested event's legacy fields are null, as ingest writes them.
+- **Golden files** (`__tests__/golden/*.json`) are API responses recorded while the areas ran on MongoDB: status, key headers (including `Set-Cookie`) and body. The `*.golden.postgres.integration.test.js` files (`peopleAndSensors` for accounts and devices, `earthquakes`, and `community` for comments and points) run the real app with every area on PostgreSQL against seeded data, and compare each response with its recording. `earthquakes` fakes GeoServe, FDSN, PHIVOLCS and USGS (`__tests__/fixtures/earthquakesExternal.js`). No endpoint returns points, so `community` also records the points stored after each request (or checks them unchanged). The data is seeded in MongoDB and copied with the real copy scripts, then removed from MongoDB, so the responses also show that copied data keeps its ids. Seeded records hold only what both databases can represent (PostgreSQL can't tell a missing field from a null one), e.g. an ingested event's legacy fields are null, as ingest writes them. The runs with areas on MongoDB, and the community rollback run, were removed with MongoDB in Phase 4.
 
 Values that change on every run are made stable before comparing (see `__tests__/fixtures/golden.js`): a JWT is recorded as its decoded claims (`iat` as `<now>`, `exp` as `<now + Ns>`), timestamps from the current run as `<now>`, and random secrets and newly generated ids as placeholders. Seeded data uses fixed past dates, which are recorded as they are.
 
-Integration tests never follow your `.env`'s area settings: `__tests__/fixtures/integrationEnv.js` (a `setupFilesAfterEnv` entry, so the `--setupFiles` of `npm run test:integration` can't replace it) sets every area setting to `mongodb` before each test file, and the app's dotenv call never overrides a variable that's already set. A test runs an area on PostgreSQL only when it sets that itself.
+Integration tests never follow your `.env`'s area settings: `__tests__/fixtures/integrationEnv.js` (a `setupFilesAfterEnv` entry, so the `--setupFiles` of `npm run test:integration` can't replace it) empties every area setting before each test file, so each area takes its default, `postgres`. The app's dotenv call never overrides a variable that's already set, even an empty one.
 
 Re-record golden files only when a response is meant to change, and review the diff in the PR:
 
@@ -253,16 +254,20 @@ UPDATE_GOLDEN=1 npm run test:integration
 
 ## 6. Moving an area: the per-area switch
 
-Each moved area has a setting in `.env` that picks its database:
+**Done in dev:** every area moved to PostgreSQL (Steps 1–4), and since Phase 4 the switch only accepts `postgres`. This section is the record of how the areas moved. The copy scripts in it are still how MongoDB data gets into PostgreSQL.
+
+Each area has a setting that picked its database during the move:
 
 ```env
-JOB_LOCKS_DB=postgres            # mongodb | postgres
-PEOPLE_AND_SENSORS_DB=postgres   # mongodb | postgres; accounts and devices together
-EARTHQUAKES_DB=postgres          # mongodb | postgres; needs PEOPLE_AND_SENSORS_DB=postgres
-COMMUNITY_DB=postgres            # mongodb | postgres; comments and points; needs PEOPLE_AND_SENSORS_DB and EARTHQUAKES_DB=postgres
+JOB_LOCKS_DB=postgres            # job locks
+PEOPLE_AND_SENSORS_DB=postgres   # accounts and devices together
+EARTHQUAKES_DB=postgres          # earthquake events
+COMMUNITY_DB=postgres            # comments and points
 ```
 
-Unset means `mongodb`, so an environment that doesn't set it (production) stays on MongoDB. An unknown value stops the backend at startup, and so does an area set to `postgres` before an area its tables point to: `EARTHQUAKES_DB=postgres` with `PEOPLE_AND_SENSORS_DB=mongodb` fails with `EARTHQUAKES_DB=postgres needs PEOPLE_AND_SENSORS_DB=postgres`, since event stations point to devices (`dependsOn` in `src/db/areaDatabase.js`); likewise `COMMUNITY_DB=postgres` needs both `PEOPLE_AND_SENSORS_DB` and `EARTHQUAKES_DB=postgres`, since comments and points point to accounts and events. The backend reads these on startup and logs its choice:
+Unset now means `postgres`, and `postgres` is the only value accepted (`src/db/areaDatabase.js`): anything else, `mongodb` included, stops the backend at startup with `JOB_LOCKS_DB must be "postgres" (got "mongodb")`. So `.env` doesn't need these settings, and `.env.example` no longer lists them.
+
+During the move, unset meant `mongodb`, so production stayed on MongoDB. An area could only move after the areas its tables point to (`dependsOn` in `src/db/areaDatabase.js`): earthquakes after accounts and devices, since event stations point to devices; comments and points after both, since they point to accounts and events. The backend logs its choice on startup:
 
 ```
 [db] accounts: postgres (PEOPLE_AND_SENSORS_DB)
@@ -273,9 +278,7 @@ Unset means `mongodb`, so an environment that doesn't set it (production) stays 
 [db] contribution points: postgres (COMMUNITY_DB)
 ```
 
-With every area on PostgreSQL (dev since Step 4), the backend still connects to MongoDB at startup but sends it nothing: the MongoDB profiler shows no operations from the backend.
-
-While an area is on PostgreSQL, the backend doesn't read or write its MongoDB collection at all (it doesn't even load the Mongoose model). An area is never written to both databases.
+Since Phase 4 the backend doesn't connect to MongoDB at all, and loads no Mongoose model. Before that, with every area on PostgreSQL (dev since Step 4), it connected but sent MongoDB nothing: the profiler showed no operations from the backend ([section 8](#how-it-was-checked)). An area was never written to both databases.
 
 ### Ids the API shows: MongoDB-style
 
@@ -292,21 +295,32 @@ Why: until Step 4, comments and contributions stayed on MongoDB and stored accou
 
 - **Comments and points name accounts and events by those ids:** a copied comment keeps its event and author, and admin responses show `eventId`, `eventPublicID` (the event's `public_id`) and `accountId` as before. A comment's own `commentId` was always a UUID and stays the same.
 
-`__tests__/peopleAndSensors.switch.integration.test.js` checks the session rules against the real app, `__tests__/earthquakes.switch.integration.test.js` the event ids (comments before and after the switch, a contribution on a new event), `__tests__/community.switch.integration.test.js` a session from before the switch posting and marking comments on PostgreSQL (and that the backend sends MongoDB nothing meanwhile), and the golden files on PostgreSQL check the ids in every recorded response.
+`__tests__/community.switch.integration.test.js` checks a session from before the switch posting and marking comments on PostgreSQL (and that the backend sends MongoDB nothing meanwhile), and the golden files check the ids in every recorded response. The accounts and earthquakes switch tests ran areas half on MongoDB, and were removed in Phase 4.
 
 ### Switching an area to PostgreSQL
+
+Dev went through these steps for each area. Step 4 can't be repeated now, since every area is already on PostgreSQL, but step 6's flows still check a PostgreSQL-only backend.
 
 1. Apply the migrations: `npm run db:pg:migrate`.
 2. Save a few of the area's responses to compare later (e.g. `curl -s localhost:5000/device/all > before.json`).
 3. Copy the area's data, if it has a copy script (see below). Do a dry run first. The copy must end with `Validation passed`.
 4. Set the area's setting to `postgres` in `.env` and restart the backend: `docker restart earthquake-hub-backend-dev`.
 5. Check the `[db]` line in `docker logs earthquake-hub-backend-dev`.
-6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account. For earthquakes: compare `GET /eq-events` over all time and a few event pages, field by field per `publicID` (the list order can differ, since place names are filled in as GeoServe answers); post a test event to `/messaging/restricted/new-event` (and an older update of it, which must be dropped), comment on it, then delete it from `events` and the comment from MongoDB. For comments and points: register two throwaway accounts; post a report as one; as the other, list it, mark it helpful twice, unmark and mark again, and report an issue twice; check `contribution_events` has each action once; as an admin, reject the report, then delete it; delete both accounts (their points go with them).
-7. Optionally, run the MongoDB profiler (`db.setProfilingLevel(2)`) while you do step 6: the moved area's collection should show no operations from the backend (since Step 4, no collection at all).
+6. Verify: the saved responses come back the same, and the area's main flows work. For accounts and devices: register a throwaway account, sign in by email and by username in another case, open my devices, delete the account. For earthquakes: compare `GET /eq-events` over all time and a few event pages, field by field per `publicID` (the list order can differ, since place names are filled in as GeoServe answers); post a test event to `/messaging/restricted/new-event` (and an older update of it, which must be dropped), comment on it, then delete the comment from `comments` and the event from `events`. For comments and points: register two throwaway accounts; post a report as one; as the other, list it, mark it helpful twice, unmark and mark again, and report an issue twice; check `contribution_events` has each action once; as an admin, reject the report, then delete it; delete both accounts (their points go with them).
+7. Optionally, run the MongoDB profiler (`db.setProfilingLevel(2)`) while you do step 6: the moved area's collection should show no operations from the backend (since Step 4, no collection at all). Dev has no MongoDB now, so this no longer applies.
 
-### Rolling an area back
+The step 6 flows were last run on 2026-11-06, against dev with no MongoDB: all passed. They found one problem, new database connections stalling after a full event list, since fixed ([Troubleshooting](#9-troubleshooting)).
 
-Set its setting to `mongodb` and restart the backend. MongoDB still has the data as it was at the switch. Anything written to PostgreSQL since then stays there and isn't copied back.
+### Going back to MongoDB
+
+Going back is no longer a setting change: dev has no MongoDB, and the backend no longer accepts `mongodb`. It means:
+
+1. Check out a backend from before Phase 4: `feat/postgres-migration` at `d94371c`. Its `docker-compose.yml` still has the `mongodb` service, and its area settings accept `mongodb` (unset means `mongodb` there).
+2. Set it up as [MONGODB.md](MONGODB.md) describes: the `MONGO_*` keys in `.env`, and `docker volume create earthquake-hub-mongodb-data` (the old volume was deleted).
+3. Start it, and restore the final dump into its `mongodb` container with the app user and `--drop` ([section 8](#going-back-to-mongodb-with-it)).
+4. Remove the area settings from `.env` (or set them to `mongodb`), and restart the backend.
+
+The dump holds the data as of 2026-11-06 02:49 UTC. Anything written to PostgreSQL since then isn't in it, and no script copies PostgreSQL back to MongoDB. What that means for each area follows: read *the switch* as the dump time.
 
 **Accounts and devices** (`PEOPLE_AND_SENSORS_DB`) need more care, because people change them through the app:
 
@@ -365,6 +379,8 @@ On dev nothing is live, so a rollback only loses test data.
 Job locks aren't copied: a lock only lives as long as a job run, so a fresh table is fine.
 
 ### Copying accounts and devices
+
+The three copy scripts read MongoDB through the `MONGO_*` keys. Dev has no MongoDB now, so to run one, first start a MongoDB with the data, such as the final dump ([Loading it into PostgreSQL](#loading-it-into-postgresql)).
 
 [`scripts/copy-people-and-sensors-to-postgres.js`](scripts/copy-people-and-sensors-to-postgres.js) copies MongoDB accounts, devices, each account's released-device history and the brgy forwarding links into `accounts`, `devices`, `device_releases` and `brgy_forwarded_devices`. Run `npm run db:find-duplicates` first, then:
 
@@ -519,7 +535,7 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
+The backend uses all thirteen tables: every area is on PostgreSQL. Production, which still runs on MongoDB, doesn't use them yet. `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records stay in MongoDB (dev had none: see the dump's manifest in [section 8](#the-manifest)).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -759,7 +775,7 @@ PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/jobLockClean
 
 ## 8. The final MongoDB dump
 
-Every area runs on PostgreSQL in dev, and the backend sends MongoDB nothing. Before MongoDB leaves the dev setup, its `latestEQs` database was dumped one last time. **After Phase 4, this archive is the only fallback** for a rollback and for any later question about the old data.
+Before MongoDB left the dev setup, its `latestEQs` database was dumped one last time. Then the `mongodb` service was removed from `docker-compose.yml`, and its data volume (`earthquake-hub-mongodb-data`) was deleted, on 2026-11-06. **This archive is now the only copy of the dev MongoDB data:** the only way back to MongoDB ([Going back to MongoDB](#going-back-to-mongodb)), and the only record of the old data.
 
 ### Where it is
 
@@ -857,10 +873,30 @@ docker exec mongodb mongodump --host localhost --port 27017 \
     docker rm -f mongo-restore
     ```
 
-**To roll back to MongoDB** instead, restore into the dev `mongodb` container with the app user:
+### Loading it into PostgreSQL
+
+To fill a new or emptied dev database with the old dev data, restore the dump into a throwaway MongoDB that your machine can reach, then run the copy scripts against it in order (accounts and devices, then earthquakes, then comments and points):
+
+```sh
+docker run -d --name mongo-load -p 127.0.0.1:27018:27017 mongo:8.0.32
+docker exec -i mongo-load mongorestore --archive --gzip < latestEQs-dev-2026-11-06.archive.gz
+
+export MONGO_CONNX_TYPE=docker MONGO_HOST=localhost MONGO_PORT=27018 MONGO_NAME=latestEQs
+npm run db:pg:copy-people-and-sensors -- --dry-run
+npm run db:pg:copy-people-and-sensors
+npm run db:pg:copy-earthquakes
+npm run db:pg:copy-community
+
+docker rm -f mongo-load
+```
+
+In PowerShell, set the four keys with `$env:MONGO_HOST='localhost'` and so on. Set in the shell, they win over `.env`. Run the migrations first (1.3). Each copy must end with `Validation passed` ([section 6](#copying-accounts-and-devices)). This was tested on 2026-11-06: all three dry runs against dev exit with 0 and find every row already there.
+
+### Going back to MongoDB with it
+
+Restore into the `mongodb` container of a backend from before Phase 4, with the app user, as [Going back to MongoDB](#going-back-to-mongodb) describes:
 - Add `--drop`, which replaces each collection with the archive's version.
-- Then follow [Rolling an area back](#rolling-an-area-back).
-- Anything written to PostgreSQL after 2026-11-06 is not in the archive.
+- Anything written to PostgreSQL after 2026-11-06 02:49 UTC is not in the archive.
 
 ---
 
@@ -878,5 +914,6 @@ docker exec mongodb mongodump --host localhost --port 27017 \
 | `permission denied to create extension "postgis"` | Migrations run as a non-superuser | Run them as the `PG_USER` the container created (a superuser) |
 | `npm run test:integration` fails with `Could not find a working container runtime strategy` | Docker isn't running (or you ran it inside a container) | Start Docker Desktop and run it on your machine |
 | `earthquake-hub-postgres` never becomes healthy | Usually an init error on first start | `docker logs earthquake-hub-postgres`; if the volume is half-initialized, [start over](#starting-over) |
-| `relation "job_locks" does not exist` (or another table) | The area is switched to PostgreSQL but the migrations haven't run | `npm run db:pg:migrate`, or set the area back to `mongodb` |
-| Backend exits with `JOB_LOCKS_DB must be "mongodb" or "postgres"` | Typo in an area setting | Fix the value in `.env` |
+| `relation "job_locks" does not exist` (or another table) | The migrations haven't run | `npm run db:pg:migrate` |
+| Backend exits with `JOB_LOCKS_DB must be "postgres" (got "mongodb")` (or another area) | An old `.env` still sets an area to `mongodb`, or has a typo | Remove the setting from `.env`: unset means `postgres` |
+| `KnexTimeoutError: Knex: Timeout acquiring a connection. The pool is probably full`, while PostgreSQL is up | New connections waited behind slow DNS lookups. Before the fix, a full event list sent a GeoServe request for every event without a place, and an unresolvable `GEOSERVE_HOST` (as in dev) kept Node's 4 DNS threads busy for minutes | Fixed in `a3a96fb` and `4fdf2f5`: at most 2 GeoServe requests at once, none for 60 s after GeoServe can't be reached, and 2 pool connections kept open. If it comes back, check that `GEOSERVE_HOST` resolves inside the backend container |
