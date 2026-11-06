@@ -303,7 +303,7 @@ Every backend call the frontend makes, and where it was compared:
 | `POST /device/add` | none | | | | yes: the route doesn't exist, 404 on both |
 | `GET /messaging` (live feed) | events | | yes | every page | yes |
 | `GET /overlays/*` | none (static files) | | | home | |
-| `GET /significant-eqs/all`, `POST /notifications/subscribe` | removed | | | significant earthquakes page | |
+| `GET /significant-eqs/all` | removed | | | significant earthquakes page | |
 
 Tables no frontend call reaches:
 - `job_locks`: the background jobs' locks, covered by the Step 1 tests.

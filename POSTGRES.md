@@ -1,6 +1,6 @@
 # PostgreSQL: Local Setup, Migrations & GUI Clients
 
-The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes and push notifications were deprecated and removed (migrations `20261105000000` and `20261105000100`).
+The backend is moving from MongoDB to **PostgreSQL 18 with PostGIS 3.6**, one area at a time. During the migration both databases run side by side in Docker, and the backend connects to both on startup. Each area of data lives in exactly one of them at a time, chosen by a setting in `.env` ([section 6](#6-moving-an-area-the-per-area-switch)). In dev, every area is on PostgreSQL: job locks, accounts and devices, earthquakes, and comments and points ([section 7](#7-tables)). Significant earthquakes were deprecated and removed (migration `20261105000000`).
 
 Queries and schema changes go through [Knex](https://knexjs.org): `src/db/knex.js` holds the connection pool, `src/db/migrations/` the versioned schema changes.
 
@@ -518,7 +518,7 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
 
-`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`, and `push_subscriptions` (`20261022000200`) by `20261105000100`: significant earthquakes and push notifications are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
+`accounts`, `devices`, `device_releases` and `brgy_forwarded_devices` are used when `PEOPLE_AND_SENSORS_DB=postgres` (dev); with `mongodb` (production) nothing reads or writes them. The four earthquake tables are used when `EARTHQUAKES_DB=postgres` (dev). `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records remain in MongoDB. The four community tables are used when `COMMUNITY_DB=postgres` (dev).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 

@@ -50,7 +50,7 @@ The database stores four kinds of things:
 | **Earthquakes** and what we know about them | `events`, `significant-eqs` |
 | **People** and their **sensors** | `accounts`, `devices` |
 | **Community input** on earthquakes | `comments`, `contributionevents` |
-| **Infrastructure** state | `subscriptions` (web push), `joblocks` (background job mutex) |
+| **Infrastructure** state | `subscriptions` (web push, deprecated), `joblocks` (background job mutex) |
 
 The backend does **no seismic processing**. Magnitude, location and origin time all come from SeisComP. The backend stores them, enriches them (place names, matching PHIVOLCS/USGS reports, which stations recorded the quake) and serves them.
 
@@ -335,9 +335,9 @@ Anonymous reports and marking your own report helpful earn nothing. Points live 
 
 ### 4.6 `subscriptions`
 
-> **Deprecated:** the backend no longer sends push notifications or accepts subscriptions (the `/notifications` endpoints were removed), and this collection has no PostgreSQL table. The records stay here, and in the final MongoDB dump.
+> **Deprecated:** the backend no longer sends push notifications or accepts subscriptions (the `/notifications` endpoints were removed). The records stay here, and in the final MongoDB dump.
 
-One browser that opted in to **web push** earthquake notifications. Not linked to accounts (anyone can subscribe).
+One browser that had opted in to **web push** earthquake notifications. Not linked to accounts (anyone could subscribe).
 
 | Field | Type | Req / default | Notes |
 |---|---|---|---|
@@ -355,7 +355,7 @@ One browser that opted in to **web push** earthquake notifications. Not linked t
 | `clientMeta.userAgent`, `.appVersion`, `.clientTime` | String, String, Date | | Diagnostics. |
 | `createdAt`, `updatedAt` | Date | auto | |
 
-**Lifecycle:** a push that fails with 400/404/410 marks the subscription `invalid` and sets `cleanupAfter` to `NOTIF_INVALID_TTL_DAYS` (7) days ahead. The cleanup scheduler (every `NOTIF_CLEANUP_INTERVAL_MIN`, 60 min) also invalidates subscriptions not seen for `NOTIF_STALE_DAYS` (90) or with `NOTIF_FAILURE_THRESHOLD` (3)+ failures in a row. A successful re-registration resets everything to `active`.
+**Lifecycle (until push notifications were removed):** a push that failed with 400/404/410 marked the subscription `invalid` and set `cleanupAfter` 7 days ahead. A cleanup scheduler also invalidated subscriptions not seen for 90 days or with 3+ failures in a row, and a re-registration reset everything to `active`. Nothing updates the records now. The TTL index on `cleanupAfter` still deletes the ones already marked invalid once that time passes; the rest stay.
 
 **Indexes:** `endpoint_1` (unique), `status_1`, `lastSeenAt_1`, `{status, lastSeenAt, consecutiveFailures}`, `cleanupAfter_1` (TTL, `expireAfterSeconds: 0`).
 
@@ -414,7 +414,7 @@ SeisComP detects / updates a quake
            on insert also pendingCatalogSources=[phivolcs,usgs], statuses=pending
         4. If the epicenter moved > 1 km, clear `place`
         5. Schedule the recording-availability check (5.2)
-        6. Web push to subscribers (above the minimum magnitude) + SSE update to open browsers
+        6. SSE update to open browsers
 ```
 
 There is exactly **one write path** for event core data: `addEQEvent` in `EQevents.service.js`. That's why `location` is computed there.
