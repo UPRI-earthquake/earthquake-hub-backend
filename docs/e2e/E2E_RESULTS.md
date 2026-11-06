@@ -14,6 +14,17 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
 - Two findings need action before production moves to PostgreSQL: fields only production has, and an email clash.
 - The rest are explained below and accepted.
 
+**Contents**
+1. [Summary](#summary)
+2. [Findings](#findings)
+3. [Data: import and copy](#data-import-and-copy)
+4. [API reads](#api-reads)
+5. [API writes](#api-writes)
+6. [Frontend](#frontend)
+    - [Screenshots](#screenshots)
+7. [Coverage](#coverage)
+8. [Re-run after Part 4](#re-run-after-part-4)
+
 ## Summary
 
 | Stage | What was checked | Result |
