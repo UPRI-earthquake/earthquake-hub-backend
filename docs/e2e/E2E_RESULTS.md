@@ -148,6 +148,8 @@ Links checked in PostgreSQL: 2 comments (event and author), 26 devices (owner), 
 
 `scripts/e2e/compare-api.js`: every read the frontend makes, for every record, on both backends, compared field by field.
 
+**How strict the comparison is.** Each response is compared field by field: status code, every field present on both, the same types (a number is not a string, `null` is not a missing field) and exact values, including date formats and list order. Write flows normalize only what changes every run (new ids, this run's times, token signatures). Not compared: headers, which come from the same code on both backends, and key order, which the frontend doesn't depend on. New account and event ids are checked to be MongoDB-style (24 hex characters) by the integration tests.
+
 | Endpoint | Requests | Identical | Documented differences only | Other differences |
 |---|---|---|---|---|
 | GET /eq-events (each event in the list) | 906 | 50 | 856 (`onlineStations` 2, `createdAt` 721, `__v` 682, `legacyImportedAt` 847, `legacySourcePublicID` 847, `candidateStations` 14, `catalogEnrichmentAttempts` 835, `catalogEnrichmentStatus` 2) | 0 |
