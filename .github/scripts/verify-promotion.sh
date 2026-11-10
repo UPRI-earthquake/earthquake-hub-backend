@@ -81,8 +81,8 @@ if [[ "${DRY_RUN:-true}" == true ]]; then
 fi
 {
   echo "### Promotion preflight"
-  echo "- Mode: `$PROMOTION_MODE`; dry-run: `${DRY_RUN:-true}`"
-  echo "- Source commit: `$SOURCE_SHA` (passed dev push CI)"
-  echo "- Verified artifact: `$IMAGE@$EXPECTED_DIGEST`"
-  echo "- Verified branch: `$target_branch`"
+  printf -- '- Mode: `%s`; dry-run: `%s`\n' "$PROMOTION_MODE" "${DRY_RUN:-true}"
+  printf -- '- Source commit: `%s` (passed dev push CI)\n' "$SOURCE_SHA"
+  printf -- '- Verified artifact: `%s@%s`\n' "$IMAGE" "$EXPECTED_DIGEST"
+  printf -- '- Verified branch: `%s`\n' "$target_branch"
 } >> "$GITHUB_STEP_SUMMARY"

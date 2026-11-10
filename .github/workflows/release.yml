@@ -82,9 +82,6 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_VERSION" --target "$SOURCE_SHA" --title "$RELEASE_VERSION" --notes "Approved Earthquake Hub image: ${IMAGE}@${EXPECTED_DIGEST}
-
-Source commit: ${SOURCE_SHA}
-Previously verified on staging using the same image digest.
-Frontend and Backend companion digest must be recorded separately in the release manifest."
+          notes="$(printf 'Approved Earthquake Hub image: %s@%s\n\nSource commit: %s\nPreviously verified on staging using the same image digest.\nFrontend and Backend companion digest must be recorded separately in the release manifest.\n' "$IMAGE" "$EXPECTED_DIGEST" "$SOURCE_SHA")"
+          gh release create "$RELEASE_VERSION" --target "$SOURCE_SHA" --title "$RELEASE_VERSION" --notes "$notes"
 
