@@ -44,7 +44,7 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
 | 2 | Production's data has fields from the `admin-dashboard` branch, which this branch doesn't have, so PostgreSQL has nowhere to keep them | Accepted on dev; **to handle before production** |
 | 3 | Two production accounts have the same email, ignoring case | Accepted on dev; to fix before production |
 | 4 | 47 entries in accounts' device lists point at devices that don't exist | Accepted |
-| 5 | The significant earthquakes page shows "Request failed with status code 404" | Accepted |
+| 5 | The significant earthquakes page shows "Request failed with status code 404" | Accepted; fixed later (the significance score) |
 | 6 | The map overlays (Fault Lines, Plate Boundaries) are listed in a different order on some pages | Accepted |
 | 7 | Requests the frontend cancels itself, the same on both | Accepted |
 | 8 | One comment's uploaded image isn't in the export | Accepted |
@@ -91,7 +91,7 @@ The fix: neither backend sends the stored point any more. It stays in the databa
 
 **4. Device lists that point at missing devices: accepted.** 47 of the 110 entries in accounts' `devices[]` lists name devices that aren't in the export (removed devices). The copy can only link devices that exist, and it lists the rest. The API and the pages are the same on both backends.
 
-**5. The significant earthquakes page: accepted.** The feature and its table were removed from the backend (the lead's decision). The frontend wasn't changed, so its page still calls the removed endpoint and shows the error. Same on both backends.
+**5. The significant earthquakes page: accepted.** The feature and its table were removed from the backend (the lead's decision). The frontend wasn't changed, so its page still calls the removed endpoint and shows the error. Same on both backends. *Fixed later:* the endpoints came back, with the list picked by a significance score instead of by hand (`POSTGRES.md`, "Significant earthquakes: the significance score"), so the unchanged page works again.
 
 **6. Map overlays in another order: accepted.** The legend lists the overlays in the order their files finish loading. The files are static and read from disk, not the database, so the order changes from run to run on either backend.
 

@@ -381,7 +381,7 @@ Job locks aren't copied: a lock only lives as long as a job run, so a fresh tabl
 
 ### Copying accounts and devices
 
-The three copy scripts read MongoDB through the `MONGO_*` keys. Dev has no MongoDB now, so to run one, first start a MongoDB with the data, such as the final dump ([Loading it into PostgreSQL](#loading-it-into-postgresql)).
+The copy scripts read MongoDB through the `MONGO_*` keys. Dev has no MongoDB now, so to run one, first start a MongoDB with the data, such as the final dump ([Loading it into PostgreSQL](#loading-it-into-postgresql)).
 
 [`scripts/copy-people-and-sensors-to-postgres.js`](scripts/copy-people-and-sensors-to-postgres.js) copies MongoDB accounts, devices, each account's released-device history and the brgy forwarding links into `accounts`, `devices`, `device_releases` and `brgy_forwarded_devices`. Run `npm run db:find-duplicates` first, then:
 
@@ -516,6 +516,24 @@ A comment and its marks and reports are copied **as one unit**, matched by `lega
 
 Dev had no comments or points when this was written (November 2026), so the copy was checked on seeded data (`__tests__/copyCommunity.integration.test.js`). Run it against real data (the server, or a sanitized dump) before production.
 
+### Copying significant earthquake details
+
+The old significant earthquakes (MongoDB `significant-eqs`) were picked by hand, each with a hand-written summary, instrument recordings and references. The list isn't copied: the significance score picks it now ([Significant earthquakes](#significant-earthquakes-the-significance-score)). [`scripts/copy-significant-eq-details-to-postgres.js`](scripts/copy-significant-eq-details-to-postgres.js) carries the hand-written details over to their events. Copy earthquakes first.
+
+```sh
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-significant-eq-details -- --dry-run
+docker exec -w /app earthquake-hub-backend-dev npm run db:pg:copy-significant-eq-details
+```
+
+What it does, in order:
+
+1. **Matches each entry to its event:** within 1 day and 150 km of it, with the closest magnitude (then the nearest, then the lowest `public_id`). Skipped and listed: an entry with no usable latitude, longitude, magnitude or `eventTime`; one with no event near it; a second entry matching an event another entry already matched.
+2. **Summary:** the entry's `eventSummary` becomes the event's `summary_override_text`, **only where the event has none**. A summary an admin wrote is kept.
+3. **Recordings and references:** they become the event's `significant_eq_details` row, **only where the event has none**. Both may be lists or `"[a, b]"` strings (as the original JSON had them), and `eventTime` may be a date or `MM-DD-YYYY…` text. Station codes and links that aren't valid are left out and listed.
+4. **Validation:** every matched entry's summary and details are in PostgreSQL, and every entry is accounted for (matched or listed). Exit code `0` = done, `1` = validation failed, `2` = error.
+
+It only fills in what's missing, so it's safe to run again: a second run writes nothing. Dev had no entries (see the dump's manifest, [section 8](#the-manifest)), so it was checked on seeded data (`__tests__/copySignificantEqDetails.integration.test.js`). Run it wherever the other copy scripts run against real data.
+
 ---
 
 ## 7. Tables
@@ -535,8 +553,9 @@ Dev had no comments or points when this was written (November 2026), so the copy
 | `comment_helpful_marks` | `comments.helpfulAccountIds[]` | `20261104000100_create_comment_helpful_marks.js` | `db:pg:copy-community` |
 | `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` | `db:pg:copy-community` |
 | `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` | `db:pg:copy-community` |
+| `significant_eq_details` | `significant-eqs` (its hand-written recordings and references) | `20261111000000_create_significant_eq_details.js` | `db:pg:copy-significant-eq-details` |
 
-The backend uses all thirteen tables: every area is on PostgreSQL. Production, which still runs on MongoDB, doesn't use them yet. `significant_eqs` (migrations `20261023000000`, `20261029000400`) was dropped by `20261105000000`: significant earthquakes are deprecated, and the backend no longer serves them. Their records stay in MongoDB (dev had none: see the dump's manifest in [section 8](#the-manifest)).
+The backend uses all fourteen tables: every area is on PostgreSQL. Production, which still runs on MongoDB, doesn't use them yet. `significant_eqs` (migrations `20261023000000`, `20261029000400`), which held the hand-picked list, was dropped by `20261105000000`. Significant earthquakes came back without a stored list: the significance score picks them from `events`, and `significant_eq_details` holds only what admins add ([Significant earthquakes](#significant-earthquakes-the-significance-score)).
 
 Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. The copy scripts are the one exception: they set `app.preserve_updated_at = 'on'` for their transaction (in `scripts/lib/pgCopy.js`), so a copied row keeps MongoDB's `updated_at` and a later copy can still tell whether it changed in PostgreSQL (migration `20261026000300`).
 
@@ -764,6 +783,59 @@ The points ledger: one row per action that earns (or records) points. Rows never
 
 Indexes: `(account_id, created_at)` for an account's points over time, `(event_id, created_at)`. Like comments, there's no `eventPublicID` column: it's the event's `public_id`, or `metadata.eventPublicID` for an entry whose event was gone when copied.
 
+### `significant_eq_details`
+
+What admins add to an earthquake for the significant earthquakes page. Which earthquakes are significant isn't stored (see below), and the page's summary is the event's own `summary_override_text`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | `_id` of the MongoDB `significant-eqs` entry a copied row came from |
+| `event_id` | `uuid` → `events`, required, unique | **one row per event, deleted with the event** |
+| `instrument_recordings` | `text[]`, default `{}` | station codes whose recordings the page shows (API: `instrumentRecordings`) |
+| `reference_urls` | `text[]`, default `{}` | links to reports (API: `references`; `references` is a reserved word in SQL) |
+| `edited_by`, `edited_at` | `text`, `timestamptz` | who last set them, and when |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+### Significant earthquakes: the significance score
+
+The significant earthquakes page lists the events this score picks; nothing is picked by hand. It's based on the [USGS significance score](https://earthquake.usgs.gov/earthquakes/statistics/significant.php): its magnitude term and its 600 cut-off are kept; distance and depth weights stand in for its PAGER term (which needs impact estimates we don't have), and our own reports for its "Did You Feel It?" term.
+
+**score = magnitude term × distance weight × depth weight + felt-report bonus**
+
+| Part | Rule |
+|---|---|
+| Magnitude term | `100 × M² / 6.5` (M6.5 = 650, M7.0 = 754), with the event's own magnitude |
+| Distance weight | 1 within 200 km of the Philippines, falling in a straight line to 0 at 1,500 km |
+| Depth weight | 1 down to 70 km, 0.8 down to 300 km, 0.5 deeper; an unknown depth counts as shallow |
+| Felt-report bonus | +25 per signed-in account with an approved report on the event, up to 20 accounts (+500) |
+
+- **Significant:** a score of 600 or more. Without reports, a shallow quake within 200 km of the Philippines qualifies from about M6.25; a shallow M5.5 needs 6 people's reports.
+- **Order:** highest score first, then newest first, then `publicID`. At most 50.
+- **Which events count:** those with a magnitude and a location, legacy records included.
+- **Distance** is measured to this simplified outline of the Philippines (longitude, latitude), with the seas between the islands included, so an event inside it is 0 km away:
+
+  ```
+  121.95 21.15, 122.3 18.6, 122.55 17.0, 122.0 15.5, 124.3 14.1, 125.3 12.6, 125.8 11.0,
+  125.7 10.0, 126.6 8.5, 126.6 6.2, 125.7 5.4, 124.0 5.9, 122.0 6.8, 119.3 4.5, 117.0 7.6,
+  119.2 11.5, 120.0 13.5, 119.7 16.3, 120.3 18.5, 121.3 20.2, (back to) 121.95 21.15
+  ```
+
+The rules and the outline live in [`src/services/significance.js`](src/services/significance.js), as code constants. The events repository's `listSignificanceCandidates` finds the candidates in one query: events within 1,500 km (`ST_DWithin`; farther ones can't reach 600, since the bonus alone is at most 500) whose magnitude term plus bonus reaches 600, each with its distance to the outline and its number of reporters. The score is worked out on each request, behind the endpoint's 5-minute cache; the query took 211 ms on dev's 906 events.
+
+**Checked on dev** (November 2026): 16 of 906 events qualify: 11 in or near the Philippines, 3 in Taiwan (including the April 2024 M7.2) and 2 in the Molucca Sea. Of the 10 old hand-picked quakes, 9 qualify on their own recorded values; the one that doesn't is an M6.4 363 km from the outline and 130 km deep, which scores 441.
+
+**Endpoints** (the frontend's Significant Earthquakes pages read the first two, unchanged):
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /significant-eqs/all` | The ranked list (`200` with `[]` when none qualify): `_id`, `publicID`, `title` ("M7.8 Earthquake, *place*"), `magnitude`, `depth`, `location` (the place name, or the region), `eventTime`, `eventSummary` (the event's `summaryOverride`, or one built from the event) and `significance` (the score, rounded) |
+| `POST /significant-eqs` with `{ "id": "<_id>" }` | One event (any, significant or not) with those fields plus `instrumentRecordings` and `references`; `400` for an invalid id, `404` when not found |
+| `PUT /significant-eqs/<_id>/details` (admins) | Sets `instrumentRecordings` (station codes) and/or `references` (http(s) links), up to 50 each; a list left out keeps its value |
+| `DELETE /significant-eqs/<_id>/details` (admins) | Removes both |
+
+The frontend has no form for recordings and references, so admins call the last two directly with their session cookie (examples in the API docs, `/api-docs`). The summary is edited on the earthquake detail page, as for any event (`PATCH /eq-events/<publicID>/summary`).
+
 ### Scheduled deletes (instead of TTL indexes)
 
 PostgreSQL has no TTL indexes. The cleanup scheduler (`src/services/jobLockCleanup.service.js`, every `JOB_LOCK_CLEANUP_INTERVAL_MIN`, default 60 minutes; off with `JOB_LOCK_CLEANUP_ENABLED=false`) deletes expired job locks, and logs the count:
@@ -876,7 +948,7 @@ docker exec mongodb mongodump --host localhost --port 27017 \
 
 ### Loading it into PostgreSQL
 
-To fill a new or emptied dev database with the old dev data, restore the dump into a throwaway MongoDB that your machine can reach, then run the copy scripts against it in order (accounts and devices, then earthquakes, then comments and points):
+To fill a new or emptied dev database with the old dev data, restore the dump into a throwaway MongoDB that your machine can reach, then run the copy scripts against it in order (accounts and devices, then earthquakes, then comments and points, then the significant earthquake details):
 
 ```sh
 docker run -d --name mongo-load -p 127.0.0.1:27018:27017 mongo:8.0.32
@@ -887,6 +959,7 @@ npm run db:pg:copy-people-and-sensors -- --dry-run
 npm run db:pg:copy-people-and-sensors
 npm run db:pg:copy-earthquakes
 npm run db:pg:copy-community
+npm run db:pg:copy-significant-eq-details
 
 docker rm -f mongo-load
 ```
