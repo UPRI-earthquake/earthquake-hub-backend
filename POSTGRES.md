@@ -72,9 +72,29 @@ It starts on an empty, unmigrated database, but requests that read or write data
 npm run db:pg:migrate
 ```
 
-See [section 2](#2-running-migrations). The migrations create the tables, not the data: a new database is empty. To load the old dev data into it, see [Loading it into PostgreSQL](#loading-it-into-postgresql).
+See [section 2](#2-running-migrations). The migrations create the tables, not the data: a new database is empty.
 
-### 1.4 Check it works
+### 1.4 Load test data
+
+```sh
+npm run db:pg:seed
+```
+
+[`scripts/seed-dev-data.js`](scripts/seed-dev-data.js) fills the database with data to develop and test against:
+
+| Data | Details |
+|---|---|
+| 906 earthquakes (2021–2026) | Dev's events, with their PHIVOLCS/USGS matches, enrichment status and station lists. Public earthquake data only, from [`scripts/seed-data/dev-earthquakes.json.gz`](scripts/seed-data/dev-earthquakes.json.gz). |
+| Test accounts | `qa_citizen_1`, `qa_citizen_2`, `qa_sensor_owner` (citizens) and `qa_brgy` (an approved brgy). Password: `Qa-Password-2026!` |
+| 17 test sensors | One per station code the earthquakes list, placed in Philippine cities. Three belong to `qa_sensor_owner`, and `qa_brgy` forwards two of those; the rest aren't linked. |
+
+- **No personal data:** no real account, email, password or sensor location is included, so the data can live in the repo. The earthquakes show what dev shows: for example, the same 16 significant earthquakes.
+- **It only adds what's missing:** accounts by username, sensors by network and station, earthquakes by `publicID`. It never changes or deletes anything, so it's safe on a database that already has data, and to run again. On one that does, it adds just the test accounts (and the sensors, if their station codes are free).
+- **It refuses to run with `NODE_ENV=production`.**
+
+If you have the final MongoDB dump, you can load the old dev data, accounts included, instead: see [Loading it into PostgreSQL](#loading-it-into-postgresql).
+
+### 1.5 Check it works
 
 ```sh
 docker exec earthquake-hub-postgres psql -U ehub -d earthquake_hub -c "SELECT extname, extversion FROM pg_extension"
@@ -93,6 +113,7 @@ docker compose down
 docker volume rm earthquake-hub-postgres-data
 docker compose up -d
 npm run db:pg:migrate
+npm run db:pg:seed
 ```
 
 Changing `PG_USER`, `PG_PASSWORD` or `PG_DATABASE` in `.env` only takes effect on an empty volume, so do this after changing them.

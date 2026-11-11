@@ -28,11 +28,12 @@
     Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
     
     See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
-6. Apply the database migrations, from the repo root in another terminal:
+6. Apply the database migrations and load the test data, from the repo root in another terminal:
     ```bash
     npm run db:pg:migrate
+    npm run db:pg:seed
     ```
-    Docker Compose doesn't run them for you. They create the tables, and the database starts empty. To load the old dev data, or to connect with a GUI client, see [POSTGRES.md](POSTGRES.md).
+    Docker Compose doesn't run them for you. The migrations create the tables. The seed adds dev's 906 earthquakes and a few test accounts and sensors; the test accounts' password is `Qa-Password-2026!`. For what's in it, or to connect with a GUI client, see [POSTGRES.md](POSTGRES.md#14-load-test-data).
 
 ## Publishing container image (For admins)
 1. Build the image, and tag with the correct [semantic versioning](https://semver.org/): 

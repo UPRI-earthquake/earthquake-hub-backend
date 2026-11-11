@@ -48,7 +48,12 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
    - six `[db] ...: postgres` lines
    - `[db] MongoDB: not used (every area is on PostgreSQL)`
    - `Connected to PostgreSQL ...`
-6. Data: the dev database has 906 events, 85 accounts and 26 devices. If yours is empty, load the old dev data: see [`POSTGRES.md`, "Loading it into PostgreSQL"](POSTGRES.md#loading-it-into-postgresql).
+6. Load the test data: `npm run db:pg:seed` ([`POSTGRES.md`, 1.4](POSTGRES.md#14-load-test-data)). It adds dev's 906 earthquakes and these test accounts, all with the password `Qa-Password-2026!`:
+   - `qa_citizen_1` and `qa_citizen_2` (citizens)
+   - `qa_sensor_owner` (a citizen with three test sensors)
+   - `qa_brgy` (an approved brgy, forwarding two of those sensors)
+
+   You don't need anyone's data: the seed is in the repo, and it has no personal data. On a database that already has data, it adds only what's missing.
 7. Get an admin session. The frontend has no admin sign-in, so mint a token and paste it into the browser as the `accessToken` cookie (see the [Admin session](#admin-session) step below):
    ```sh
    docker exec -w /app earthquake-hub-backend-dev node -r dotenv/config -e "process.stdout.write(require('./src/controllers/helpers').generateAccessToken({ accountId: '6f00000000000000000000ad', username: 'qa_admin', role: 'admin' }, 'web'))"
@@ -72,7 +77,7 @@ Cookies on `localhost` are shared across ports, so the backend on `:5000` receiv
 
 ### Test data rules
 
-- Create **throwaway accounts only**, named `qa_<role>_<n>` with `@example.org` emails. Never sign in as a real person's account.
+- Use the **seeded test accounts** (setup step 6), and name any account you create `qa_<role>_<n>` with an `@example.org` email. Never sign in as a real person's account.
 - Name test earthquakes `qa...` (e.g. `qa2026live01`) so they're easy to remove.
 - Remove everything at the end ([section 6](#6-clean-up)).
 
@@ -121,7 +126,7 @@ curl -X POST http://localhost:5000/messaging/restricted/new-event -H 'Content-Ty
 
 ### C. Reports
 
-Use two throwaway citizens, `qa_citizen_1` and `qa_citizen_2`.
+Use the seeded citizens `qa_citizen_1` and `qa_citizen_2`.
 
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
@@ -144,7 +149,7 @@ Use two throwaway citizens, `qa_citizen_1` and `qa_citizen_2`.
 | D6 | P1 | **(new)** Account settings: change the username, email, password and alert preferences, reloading after each | Each change is saved and stays after a reload | `PATCH /accounts/...` 200 |
 | D7 | P1 | Sign out, then sign back in | Signed out cleanly; signing in works again | |
 | D9 | P1 | **(new)** Delete `qa_citizen_3` (no devices) | It's deleted, and signing in with it fails | `DELETE /accounts` 200 |
-| D10 | P2 | Sign in as a brgy test account. **(API)** Create it first if needed. | The "Managed devices" dashboard loads | |
+| D10 | P2 | Sign in as `qa_brgy` (seeded) | The "Managed devices" dashboard loads, with the two forwarded test sensors (on a freshly seeded database) | |
 
 ### E. Sensors and devices
 
@@ -163,11 +168,11 @@ Device commands. Run them in `earthquake-hub-backend`; the station code comes fr
 ```sh
 docker exec -w /app earthquake-hub-backend-dev node -e "console.log(require('./src/controllers/helpers').generateAMStationCode('B8:27:EB:12:AB:CD'))"
 # link (as the sensor software does):
-curl -X POST http://localhost:5000/device/link -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"<password>","role":"sensor","elevation":"55","latitude":"14.64","longitude":"121.06","macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_<station>_.*/MSEED"}'
+curl -X POST http://localhost:5000/device/link -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor","elevation":"55","latitude":"14.64","longitude":"121.06","macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_<station>_.*/MSEED"}'
 # station status:
 curl -X POST http://localhost:5000/messaging/restricted/station-status -H 'Content-Type: application/json' -d '{"network":"AM","station":"<station>","status":"streaming"}'
 # unlink: sign in as the sensor, then send its token
-TOKEN=$(curl -s -X POST http://localhost:5000/accounts/authenticate -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"<password>","role":"sensor"}' | node -pe "JSON.parse(require('fs').readFileSync(0)).accessToken")
+TOKEN=$(curl -s -X POST http://localhost:5000/accounts/authenticate -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor"}' | node -pe "JSON.parse(require('fs').readFileSync(0)).accessToken")
 curl -X POST http://localhost:5000/device/unlink -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_<station>_.*/MSEED"}'
 ```
 
@@ -254,13 +259,13 @@ SELECT * FROM significant_eq_details;
 
 The backend dev does this at the end:
 
-1. Delete the `qa_` accounts that still exist: as each one in the app, or `DELETE /accounts` with its session. Their points go with them.
+1. Delete the accounts created during the test, such as `qa_citizen_3` if D9 didn't: in the app, or with `DELETE /accounts` and its session. Their points go with them. The seeded `qa_` accounts can stay; if one was deleted, `npm run db:pg:seed` adds it back.
 2. Delete the test earthquakes and their reports:
    ```sql
    DELETE FROM events WHERE public_id LIKE 'qa%';   -- their comments, stations and details go with them
    ```
 3. Revert any summary you edited (B5, F5), and remove any significant earthquake details (F3).
-4. Check the counts are back to where they started (e.g. 906 events, 85 accounts on dev data):
+4. Check the counts are back to where they started (906 events; 4 accounts on a freshly seeded database, or 85 on the old dev data):
    ```sql
    SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM accounts) AS accounts,
           (SELECT count(*) FROM comments) AS comments, (SELECT count(*) FROM significant_eq_details) AS details;
