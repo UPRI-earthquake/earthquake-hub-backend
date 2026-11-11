@@ -14,10 +14,10 @@ const port = process.env.NODE_ENV === 'production'
              : process.env.BACKEND_DEV_PORT;
 
 // Keep side-effectful services (DB, SSE listeners) here so tests can import app without them
-// const mongodb = require('./services/mongodb.service');
-// mongodb.connect();
 const postgres = require('./db/knex');
-postgres.connect(); // Alongside MongoDB during the PostgreSQL migration; no feature uses it yet
+postgres.connect();
+// No MongoDB connection: every area is on PostgreSQL, the only database src/db/areaDatabase.js accepts
+console.log('[db] MongoDB: not used (every area is on PostgreSQL)');
 
 // start cron enrichment
 startEnrichmentScheduler();
