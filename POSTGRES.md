@@ -265,7 +265,7 @@ EARTHQUAKES_DB=postgres          # earthquake events
 COMMUNITY_DB=postgres            # comments and points
 ```
 
-Unset now means `postgres`, and `postgres` is the only value accepted (`src/db/areaDatabase.js`): anything else, `mongodb` included, stops the backend at startup with `JOB_LOCKS_DB must be "postgres" (got "mongodb")`. So `.env` doesn't need these settings, and `.env.example` no longer lists them.
+Unset now means `postgres`, and `postgres` is the only value accepted (`src/db/areaDatabase.js`): anything else, `mongodb` included, stops the backend at startup with `JOB_LOCKS_DB must be "postgres" (got "mongodb")`. `.env.example` sets all four to `postgres`; leaving them out of `.env` has the same effect.
 
 During the move, unset meant `mongodb`, so production stayed on MongoDB. An area could only move after the areas its tables point to (`dependsOn` in `src/db/areaDatabase.js`): earthquakes after accounts and devices, since event stations point to devices; comments and points after both, since they point to accounts and events. The backend logs its choice on startup:
 
@@ -276,9 +276,10 @@ During the move, unset meant `mongodb`, so production stayed on MongoDB. An area
 [db] earthquake events: postgres (EARTHQUAKES_DB)
 [db] comments: postgres (COMMUNITY_DB)
 [db] contribution points: postgres (COMMUNITY_DB)
+[db] MongoDB: not used (every area is on PostgreSQL)
 ```
 
-Since Phase 4 the backend doesn't connect to MongoDB at all, and loads no Mongoose model. Before that, with every area on PostgreSQL (dev since Step 4), it connected but sent MongoDB nothing: the profiler showed no operations from the backend ([section 8](#how-it-was-checked)). An area was never written to both databases.
+Since Phase 4 the backend doesn't connect to MongoDB at all (the last line above), and loads no Mongoose model. Before that, with every area on PostgreSQL (dev since Step 4), it connected but sent MongoDB nothing: the profiler showed no operations from the backend ([section 8](#how-it-was-checked)). An area was never written to both databases.
 
 ### Ids the API shows: MongoDB-style
 
