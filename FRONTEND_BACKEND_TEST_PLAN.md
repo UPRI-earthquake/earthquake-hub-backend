@@ -1,6 +1,8 @@
 # Frontend + Backend Test Plan: PostgreSQL Backend
 
-**Goal:** confirm that the frontend, unchanged, works with the backend on `feat/postgres-migration`. That backend runs on PostgreSQL only, with no MongoDB.
+**Goal:** confirm that the frontend on `enhance/refactor` (the refactored Vite frontend) works with the backend on `feat/postgres-migration`. That backend runs on PostgreSQL only, with no MongoDB.
+
+**This frontend has no screens for:** the significant earthquakes pages, the reset-password page, editing an event summary, or moderating reports. Those tests are API steps here, and the frontend dev checks the result where the frontend shows it. Two tests are expected to fail because of the frontend; see [Known frontend issues](#known-frontend-issues-on-enhancerefactor).
 
 **Who:**
 - The **frontend dev** drives the browser and judges what the pages show.
@@ -54,26 +56,26 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
    - `qa_brgy` (an approved brgy, forwarding two of those sensors)
 
    You don't need anyone's data: the seed is in the repo, and it has no personal data. On a database that already has data, it adds only what's missing.
-7. Get an admin session. The frontend has no admin sign-in, so mint a token and paste it into the browser as the `accessToken` cookie (see the [Admin session](#admin-session) step below):
+7. Get an admin token for the steps marked **(API, admin)** (see [Admin token](#admin-token) below):
    ```sh
    docker exec -w /app earthquake-hub-backend-dev node -r dotenv/config -e "process.stdout.write(require('./src/controllers/helpers').generateAccessToken({ accountId: '6f00000000000000000000ad', username: 'qa_admin', role: 'admin' }, 'web'))"
    ```
 
 ### Frontend dev
 
-1. Use the frontend as it is: no changes for this test.
-2. In the frontend's `.env`, set `REACT_APP_BACKEND_DEV=http://localhost:5000`.
-3. Run `npm start` and open **http://localhost:3000**. The backend accepts requests only from that exact origin (CORS).
-4. Keep DevTools open on the **Console** and **Network** tabs for every test.
+1. Check out `earthquake-hub-frontend` on `enhance/refactor`, at `f2c1f97` or later. Make no changes for this test.
+2. In the frontend's `.env`, set `VITE_APP_BACKEND=http://localhost:5000`.
+3. Run `npm install`. It ends with `patch-package` reporting an error for `react-scripts`: ignore it (the refactor removed `react-scripts` but not its old patch).
+4. Run `npm run dev` (not `npm start`, which needs a script the branch doesn't have) and open **http://localhost:3000**. The backend accepts requests only from that exact origin (CORS).
+5. Keep DevTools open on the **Console** and **Network** tabs for every test.
 
-### Admin session
+### Admin token
 
-Use this when a test needs an admin.
-1. In DevTools, go to Application → Cookies → `http://localhost`.
-2. Add a cookie named `accessToken`, with the token from setup step 7 as its value.
-3. Reload the page.
+The frontend has no admin screens, so admin steps are API calls. Send the token from setup step 7 as a cookie:
 
-Cookies on `localhost` are shared across ports, so the backend on `:5000` receives it. Delete the cookie to go back to being a normal visitor.
+```sh
+curl ... -H 'Cookie: accessToken=<admin token>'
+```
 
 ### Test data rules
 
@@ -101,9 +103,9 @@ Cookies on `localhost` are shared across ports, so the backend on `:5000` receiv
 
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
-| A1 | P1 | Open `/` | The map, events panel and legend load. Events are listed for the default time range. | `GET /eq-events` 200 |
+| A1 | P1 | Open `/` | The map, events panel and legend load. The list covers the last 30 days. On a freshly seeded database that's **empty** (the newest seeded earthquake is from 25 Sep 2026), so the empty state shows. A2 widens the range. | `GET /eq-events?startTime=<30 days ago>&endTime=<today>` 200 |
 | A2 | P1 | **(new)** Change the time range and the filters, including a range with no events | The list and the map follow each change; an empty range shows the empty state | One `GET /eq-events` per change, all 200 |
-| A3 | P1 | **(new)** Keep the home page open. **(API)** Post a test earthquake (command below). | It appears on the map and in the list **without a reload** (live feed) | 200 "New event sent to SSE and added to DB"; row in `events` |
+| A3 | P1 | **(new)** Keep the home page open. **(API)** Post a test earthquake (command below). Then reload. | It appears on the map and in the list **without a reload** (live feed). **Expected to fail on this frontend** ([known issue 1](#known-frontend-issues-on-enhancerefactor)); after the reload it must be listed. | 200 "New event sent to SSE and added to DB"; row in `events` |
 | A4 | P2 | **(API)** Post an *older* update of the same earthquake: same `publicID`, earlier `last_modification`, magnitude 3.0 | Nothing changes on the page; the newer magnitude stays | `events.magnitude` unchanged |
 
 Post a test earthquake (A3). For A4, send it again with `"magnitude_value": 3.0` and `"last_modification": "<an earlier time>"`:
@@ -122,7 +124,14 @@ curl -X POST http://localhost:5000/messaging/restricted/new-event -H 'Content-Ty
 | B1 | P1 | Open an earthquake from the list or map | The title, place, magnitude, depth, local time and PHIVOLCS/USGS matches show | `GET /eq-events/<publicID>` 200 |
 | B2 | P1 | Open an earthquake with no place name | It shows the region name, never "[object Object]" (E2E finding 1, fixed) | |
 | B3 | P2 | Open a legacy record (imported from the old catalog) | It opens normally | |
-| B5 | P1 | **(new)** As an admin, edit the event summary, reload, then revert it | The edit is saved and stays after a reload. Reverting brings back the generated summary. | `PATCH` / `DELETE /eq-events/<publicID>/summary` 200; `events.summary_override_text` |
+| B5 | P1 | **(new)** **(API, admin)** Edit the event summary (command below), reload the detail page, then revert it and reload | The edited summary shows after the reload. Reverting brings back the generated summary. | `PATCH` / `DELETE /eq-events/<publicID>/summary` 200; `events.summary_override_text` |
+
+Edit and revert a summary (B5, F5):
+
+```sh
+curl -X PATCH http://localhost:5000/eq-events/<publicID>/summary -H 'Content-Type: application/json' -H 'Cookie: accessToken=<admin token>' -d '{"text":"QA test summary"}'
+curl -X DELETE http://localhost:5000/eq-events/<publicID>/summary -H 'Cookie: accessToken=<admin token>'
+```
 
 ### C. Reports
 
@@ -135,7 +144,14 @@ Use the seeded citizens `qa_citizen_1` and `qa_citizen_2`.
 | C3 | P1 | As `qa_citizen_2`, mark citizen 1's report helpful, unmark it, then mark it again | The count goes 1 → 0 → 1. Marking your own report isn't possible. | One `report_marked_helpful` and one `report_received_helpful` in `contribution_events` (not duplicated) |
 | C4 | P1 | **(new)** As `qa_citizen_2`, report an issue on the report, then report again with another reason | Both are accepted | One row in `comment_issue_reports`, with the latest reason |
 | C5 | P2 | **(new)** "Load more" on an event with more reports than the first page shows. **(API)** Post about 15 reports on one test event first. | The next page loads, without repeats or gaps | `GET /comments?...&cursor=` 200 |
-| C6 | P1 | **(new)** As an admin, reject a report, then delete another | The rejected one disappears from the list; the deleted one is gone | `PATCH /comments/<id>/status`, `DELETE /comments/<id>` 200 |
+| C6 | P1 | **(new)** **(API, admin)** Reject one report, then delete another (commands below); reload the earthquake page | The rejected one disappears from the list; the deleted one is gone | `PATCH /comments/<id>/status`, `DELETE /comments/<id>` 200 |
+
+Reject and delete a report (C6). `<id>` is the report's `comment_id` (section 4's query lists them):
+
+```sh
+curl -X PATCH http://localhost:5000/comments/<id>/status -H 'Content-Type: application/json' -H 'Cookie: accessToken=<admin token>' -d '{"status":"rejected"}'
+curl -X DELETE http://localhost:5000/comments/<id> -H 'Cookie: accessToken=<admin token>'
+```
 
 ### D. Accounts
 
@@ -145,7 +161,14 @@ Use the seeded citizens `qa_citizen_1` and `qa_citizen_2`.
 | D2 | P1 | Sign in by username, then by email | Both work | `POST /accounts/authenticate` 200 |
 | D3 | P2 | Sign in by username in a different case, e.g. `QA_CITIZEN_3` | **Works now** (section 5) | |
 | D4 | P1 | Sign in with a wrong password | A clear error, and no session | 401 |
-| D5 | P1 | **(new)** Forgot password → open the email in Mailpit → set a new password → sign in with it; then open the same link again | The new password works, and the reused link is refused | `POST /accounts/forgot-password`, `/reset-password` |
+| D5 | P1 | **(new)** Forgot password → the email arrives in Mailpit. Its link opens Not Found on this frontend ([known issue 2](#known-frontend-issues-on-enhancerefactor)), so **(API)** set a new password with the link's `token` (command below), then sign in with it in the app. Send the same token again. | The new password works, and the reused token is refused | `POST /accounts/forgot-password` 200, `/reset-password` 200 then 4xx |
+
+Set a new password (D5). `<token>` is everything after `token=` in the email's link:
+
+```sh
+curl -X POST http://localhost:5000/accounts/reset-password -H 'Content-Type: application/json' \
+  -d '{"token":"<token>","password":"Qa-Password-2026!new","confirmPassword":"Qa-Password-2026!new"}'
+```
 | D6 | P1 | **(new)** Account settings: change the username, email, password and alert preferences, reloading after each | Each change is saved and stays after a reload | `PATCH /accounts/...` 200 |
 | D7 | P1 | Sign out, then sign back in | Signed out cleanly; signing in works again | |
 | D9 | P1 | **(new)** Delete `qa_citizen_3` (no devices) | It's deleted, and signing in with it fails | `DELETE /accounts` 200 |
@@ -180,21 +203,27 @@ curl -X POST http://localhost:5000/device/unlink -H "Authorization: Bearer $TOKE
 
 The list is no longer picked by hand. A score picks it from the earthquakes: [`POSTGRES.md`, "Significant earthquakes: the significance score"](POSTGRES.md#significant-earthquakes-the-significance-score).
 
+**API only:** `enhance/refactor` has no significant earthquakes pages ([known issue 3](#known-frontend-issues-on-enhancerefactor)). The backend dev runs these with the commands below.
+
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
-| F1 | P1 | Open `/significant-eqs` | 16 cards on dev data, highest score first, starting with "M7.8 Earthquake, 24 km SW of Soccsksargen, Philippines". "Events listed: 16". No 404 (E2E finding 5, fixed). | `GET /significant-eqs/all` 200 |
-| F2 | P1 | Click a card | The detail page opens **in a new tab**, with the title, magnitude, depth, location, local time and summary. "No recordings published for this event." when there are none. | `POST /significant-eqs` 200 |
-| F3 | P1 | **(API)** As an admin, set recordings and references on that earthquake (below), then reload the detail page | The stations show with Metadata/Waveform buttons, and the links show as reference cards | `PUT /significant-eqs/<_id>/details` 200 |
-| F4 | P1 | **(API)** Remove them, then reload | Back to "No recordings published", and no references section | `DELETE .../details` 200 |
-| F5 | P1 | As an admin, edit the summary of a listed earthquake on its normal detail page (B5), then reload the significant pages | The edited summary shows on the card and the detail page. **Hard-reload the list**: the browser may cache it for up to 5 minutes. | |
-| F6 | P2 | Open `/significant-eq-info?id=abc`, then `?id=` with an unknown 24-character id | The page shows its error message, with no crash | 400 / 404 |
+| F1 | P1 | **(API)** Get the list | 16 entries on the seeded data, highest `significance` first, starting with "M7.8 Earthquake, 24 km SW of Soccsksargen, Philippines" | `GET /significant-eqs/all` 200 |
+| F2 | P1 | **(API)** Get one entry by its `_id` | 200 with `title`, `magnitude`, `depth`, `location`, `eventTime`, `eventSummary`, and empty `instrumentRecordings` and `references` | `POST /significant-eqs` 200 |
+| F3 | P1 | **(API, admin)** Set recordings and references on that earthquake, then get it again | Both lists come back as set | `PUT /significant-eqs/<_id>/details` 200; row in `significant_eq_details` |
+| F4 | P1 | **(API, admin)** Remove them, then get it again | Both lists are empty again | `DELETE .../details` 200; row gone |
+| F5 | P1 | **(API, admin)** Edit the summary of a listed earthquake (B5's command), then get the list again | That entry's `eventSummary` is the edited text. Revert it afterwards. | |
+| F6 | P2 | **(API)** Get `{"id":"abc"}`, then an unknown 24-character id | 400, then 404 | |
 
-Set and remove details (F3, F4). `<_id>` is the card's id from `GET /significant-eqs/all`:
+Commands (F1–F4, F6). `<_id>` is an entry's `_id` from F1:
 
 ```sh
+curl http://localhost:5000/significant-eqs/all
+curl -X POST http://localhost:5000/significant-eqs -H 'Content-Type: application/json' -d '{"id":"<_id>"}'
 curl -X PUT http://localhost:5000/significant-eqs/<_id>/details -H 'Content-Type: application/json' -H 'Cookie: accessToken=<admin token>' \
   -d '{"instrumentRecordings":["R3B2D","R1382"],"references":["https://earthquake.phivolcs.dost.gov.ph/"]}'
 curl -X DELETE http://localhost:5000/significant-eqs/<_id>/details -H 'Cookie: accessToken=<admin token>'
+curl -X POST http://localhost:5000/significant-eqs -H 'Content-Type: application/json' -d '{"id":"abc"}'
+curl -X POST http://localhost:5000/significant-eqs -H 'Content-Type: application/json' -d '{"id":"000000000000000000000000"}'
 ```
 
 ### G. Database connections under load
@@ -210,10 +239,10 @@ General checks that the app still works. They don't touch the moved data, so ski
 | ID | Steps | Expected |
 |---|---|---|
 | A5 | Turn the map overlays (fault lines, plate boundaries) on and off | They draw and hide. Their order in the menu may differ (section 5). |
-| A6 | Open the "Significant Earthquakes" floating button on the home page | Opens `/significant-eqs` |
+| A6 | ~~Open the "Significant Earthquakes" floating button on the home page~~ | N/A: not on `enhance/refactor` |
 | B4 | On an earthquake with recording stations, open a station's Metadata and Waveform | The buttons respond. Live feeds may fail in dev (section 5). |
 | D8 | Keep a session open, restart the backend (`docker restart earthquake-hub-backend-dev`), then use the page | Still signed in; requests work once the backend is back up |
-| G1 | Open `/reset-password?token=invalid` and submit | The form shows; submitting fails cleanly (4xx, not 500) |
+| G1 | ~~Open `/reset-password?token=invalid` and submit~~ | N/A: no reset-password page on `enhance/refactor`. D5 sends a used token, which covers the 4xx. |
 | G2 | Open an unknown path, e.g. `/nope` | The not-found page |
 | G4 | Restart the backend with the home page open | The page recovers, and the live feed reconnects |
 
@@ -250,8 +279,17 @@ SELECT * FROM significant_eq_details;
 | In dev: places "Unavailable", or region names instead of "N km of ..." | Dev can't reach GeoServe |
 | In dev: errors for live waveforms or sensor feeds; backend log "Error connecting to /sse-connections" | Dev can't reach the sensors or the ringserver |
 | The significant earthquakes list differs from the old hand-picked one | It's chosen by the score now. The old summaries, recordings and references are carried over only by the copy script, and dev had none. |
-| The significant earthquakes list doesn't update right away | The browser may cache it for up to 5 minutes; hard-reload |
 | To admins, a report by a deleted account shows no `accountId` | PostgreSQL removes the link when the account is deleted. MongoDB kept the old id. |
+| `POST /device/add` → **404** if you add a device from the dashboard | The backend has no such route. The old frontend made the same call; not part of this plan. |
+
+### Known frontend issues on `enhance/refactor`
+
+Problems in the refactored frontend, not the backend. Record the affected rows as **Fail (frontend)**, still do their backend checks, and pass the issue to the frontend dev.
+
+1. **The live feed doesn't add a new earthquake (A3).** In `src/features/map/data/local/EarthquakesDataHandler.ts`, `receiveEarthquakeFromStream` uses `if(existingIndex)`. `findIndex` returns `-1` for a new earthquake, and `-1` counts as true, so the new earthquake is never added. And an update to the earthquake at index 0 adds a second copy instead of replacing it. A new earthquake appears only after a reload.
+2. **No reset-password page (D5, G1).** The reset email links to `/reset-password?token=...`, which opens Not Found.
+3. **No significant earthquakes pages (section F, A6).** `/significant-eqs` and `/significant-eq-info` were removed, and the floating button that opens them isn't shown.
+4. **No admin screens (B5, C6).** Summaries can't be edited and reports can't be moderated in the app. The detail page still shows an edited summary.
 
 ---
 
@@ -270,7 +308,7 @@ The backend dev does this at the end:
    SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM accounts) AS accounts,
           (SELECT count(*) FROM comments) AS comments, (SELECT count(*) FROM significant_eq_details) AS details;
    ```
-5. Delete the `accessToken` cookie from the browser, and stop Mailpit.
+5. Stop Mailpit.
 
 ---
 
