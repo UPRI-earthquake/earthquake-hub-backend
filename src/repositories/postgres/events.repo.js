@@ -14,6 +14,9 @@
 // moves the event's updated_at, so the copy script can treat an event and its rows as one unit.
 const { Types } = require('mongoose');
 const { normalizeStations, displayStations, toMatchColumns, toCatalogEntry } = require('./eventMappings');
+const {
+  PHILIPPINES_OUTLINE_WKT, ZERO_WEIGHT_KM, SIGNIFICANT_SCORE, REPORT_POINTS, MAX_REPORTERS,
+} = require('../../services/significance');
 
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -378,10 +381,86 @@ const createEventsRepo = (db, {
     });
   }
 
+  // --- Significant earthquakes ---
+
+  /***************************************************************************
+    * listSignificanceCandidates:
+    *     The events that might be significant (src/services/significance.js scores them), in one
+    *     query: with a magnitude and a location, within ZERO_WEIGHT_KM of the Philippines (farther ones
+    *     can't reach the cut-off: the report bonus alone is at most 500), and whose magnitude term plus
+    *     report bonus reaches the cut-off (the weights only lower it). Each comes with its distance to
+    *     the outline of the Philippines (0 inside) and its number of reporters: signed-in accounts with
+    *     an approved report on it.
+    *     Returns [{ event, distanceKm, reporters }].
+    ***************************************************************************/
+  async function listSignificanceCandidates() {
+    const reporters = db('comments')
+      .where({ status: 'approved' }).whereNotNull('account_id')
+      .groupBy('event_id')
+      .select('event_id', db.raw('count(DISTINCT account_id)::int AS reporters'))
+      .as('f');
+    const rows = await db('events AS e')
+      .leftJoin(reporters, 'f.event_id', 'e.id')
+      .whereNotNull('e.magnitude').whereNotNull('e.location')
+      .whereRaw('ST_DWithin(e.location, ST_GeogFromText(?), ?)', [PHILIPPINES_OUTLINE_WKT, ZERO_WEIGHT_KM * 1000])
+      .whereRaw('100 * e.magnitude ^ 2 / 6.5 + ? * least(coalesce(f.reporters, 0), ?) >= ?', [REPORT_POINTS, MAX_REPORTERS, SIGNIFICANT_SCORE])
+      .select(
+        'e.*',
+        db.raw('ST_Distance(e.location, ST_GeogFromText(?)) / 1000 AS distance_km', [PHILIPPINES_OUTLINE_WKT]),
+        db.raw('coalesce(f.reporters, 0)::int AS reporters'),
+      );
+    const events = await withRows(rows);
+    return events.map((event, index) => ({
+      event, distanceKm: Number(rows[index].distance_km), reporters: rows[index].reporters,
+    }));
+  }
+
+  // The details admins added for the significant earthquakes page (significant_eq_details)
+  const toDetails = (row) => ({
+    instrumentRecordings: row.instrument_recordings || [],
+    references: row.reference_urls || [],
+    ...(row.edited_by ? { editedBy: row.edited_by } : {}),
+    ...(row.edited_at ? { editedAt: row.edited_at } : {}),
+  });
+
+  // An event's details, by the event's `_id`; null when it has none (or there's no such event)
+  async function findSignificantDetails(id) {
+    const eventId = await eventIdOf(id);
+    if (!eventId) return null;
+    const row = await db('significant_eq_details').where({ event_id: eventId }).first();
+    return row ? toDetails(row) : null;
+  }
+
+  // Sets an event's recordings and/or references (a list left out keeps its value).
+  // Returns the details, or null when there's no such event.
+  async function setSignificantDetails(id, { instrumentRecordings, references } = {}, editedBy = null) {
+    const eventId = await eventIdOf(id);
+    if (!eventId) return null;
+    const columns = { edited_by: editedBy, edited_at: db.fn.now() };
+    if (instrumentRecordings !== undefined) columns.instrument_recordings = instrumentRecordings;
+    if (references !== undefined) columns.reference_urls = references;
+    const [row] = await db('significant_eq_details')
+      .insert({ event_id: eventId, ...columns })
+      .onConflict('event_id').merge(columns)
+      .returning('*');
+    return toDetails(row);
+  }
+
+  // Removes an event's details. Returns true when it had some, false when not, null when there's no such event.
+  async function removeSignificantDetails(id) {
+    const eventId = await eventIdOf(id);
+    if (!eventId) return null;
+    return (await db('significant_eq_details').where({ event_id: eventId }).del()) > 0;
+  }
+
   return {
     listByOriginTime,
     findByPublicID,
     findRefById,
+    listSignificanceCandidates,
+    findSignificantDetails,
+    setSignificantDetails,
+    removeSignificantDetails,
     findIngestState,
     saveFromSeiscomp,
     savePlace,
