@@ -22,7 +22,8 @@
     "db:pg:make": "knex --knexfile src/db/knexfile.js migrate:make",
     "db:pg:copy-people-and-sensors": "node scripts/copy-people-and-sensors-to-postgres.js",
     "db:pg:copy-earthquakes": "node scripts/copy-earthquakes-to-postgres.js",
-    "db:pg:copy-community": "node scripts/copy-community-to-postgres.js"
+    "db:pg:copy-community": "node scripts/copy-community-to-postgres.js",
+    "db:pg:copy-significant-eq-details": "node scripts/copy-significant-eq-details-to-postgres.js"
   },
   "repository": {
     "type": "git",
