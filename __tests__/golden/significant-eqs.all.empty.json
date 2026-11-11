@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/significant-eqs/all"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=300"
+    },
+    "body": {
+      "status": 0,
+      "message": "No significant earthquakes yet",
+      "payload": []
+    }
+  }
+}

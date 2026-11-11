@@ -118,6 +118,7 @@ app.use('/accounts', require('./routes/accounts.route'));
 app.use('/device', require('./routes/devices.route'));
 app.use('/messaging', require('./routes/messaging.route'));
 app.use('/eq-events', require('./routes/EQevents.route'));
+app.use('/significant-eqs', require('./routes/significantEQs.route'));
 app.use('/overlays', require('./routes/overlays.route'));
 app.use('/comments', require('./routes/comments.route'));
 
