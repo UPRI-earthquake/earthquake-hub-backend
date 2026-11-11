@@ -7,7 +7,7 @@
 - The **backend dev** watches the backend log and the database, and runs the API calls that have no button in the frontend.
 
 **What's already covered by automated checks:**
-- The end-to-end check ([`docs/e2e/E2E_RESULTS.md`](e2e/E2E_RESULTS.md)) compared every API read and 49 write steps between MongoDB and PostgreSQL. It also ran 13 browser tests. It found no unexplained differences.
+- The end-to-end check ([`docs/e2e/E2E_RESULTS.md`](docs/e2e/E2E_RESULTS.md)) compared every API read and 49 write steps between MongoDB and PostgreSQL. It also ran 13 browser tests. It found no unexplained differences.
 - The backend's tests pass: 20 integration files with 453 tests, plus the unit tests.
 
 This plan covers what those didn't: full flows by hand in a real browser, plus the pages that changed since. Rows marked **(new)** were never tested in a browser before.
@@ -48,7 +48,7 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
    - six `[db] ...: postgres` lines
    - `[db] MongoDB: not used (every area is on PostgreSQL)`
    - `Connected to PostgreSQL ...`
-6. Data: the dev database has 906 events, 85 accounts and 26 devices. If yours is empty, load the old dev data: see [`POSTGRES.md`, "Loading it into PostgreSQL"](../POSTGRES.md#loading-it-into-postgresql).
+6. Data: the dev database has 906 events, 85 accounts and 26 devices. If yours is empty, load the old dev data: see [`POSTGRES.md`, "Loading it into PostgreSQL"](POSTGRES.md#loading-it-into-postgresql).
 7. Get an admin session. The frontend has no admin sign-in, so mint a token and paste it into the browser as the `accessToken` cookie (see the [Admin session](#admin-session) step below):
    ```sh
    docker exec -w /app earthquake-hub-backend-dev node -r dotenv/config -e "process.stdout.write(require('./src/controllers/helpers').generateAccessToken({ accountId: '6f00000000000000000000ad', username: 'qa_admin', role: 'admin' }, 'web'))"
@@ -173,7 +173,7 @@ curl -X POST http://localhost:5000/device/unlink -H "Authorization: Bearer $TOKE
 
 ### F. Significant earthquakes (new: picked by the significance score)
 
-The list is no longer picked by hand. A score picks it from the earthquakes: [`POSTGRES.md`, "Significant earthquakes: the significance score"](../POSTGRES.md#significant-earthquakes-the-significance-score).
+The list is no longer picked by hand. A score picks it from the earthquakes: [`POSTGRES.md`, "Significant earthquakes: the significance score"](POSTGRES.md#significant-earthquakes-the-significance-score).
 
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
