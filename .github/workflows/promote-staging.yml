@@ -29,8 +29,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  promote:
-    name: Verify and tag staging digest
+  verify:
+    name: Preflight staging candidate (dry run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ghcr.io/upri-earthquake/earthquake-hub-backend
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+      PROMOTION_MODE: staging
+      DRY_RUN: 'true'
+      CONFIRMATION: ${{ inputs.confirmation }}
+      RELEASE_VERSION: ${{ inputs.release_version || '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout trusted workflow code and full branch history
+        uses: actions/checkout@v7
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR for registry verification
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify candidate, CI provenance, digest, and branch eligibility
+        run: bash .github/scripts/verify-promotion.sh
+
+  live:
+    name: Approved staging promotion
+    needs: verify
+    if: ${{ !inputs.dry_run }}
+    environment:
+      name: staging-promotion
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,6 +85,16 @@ jobs:
       RELEASE_VERSION: ${{ inputs.release_version || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Require explicit live promotion enablement
+        env:
+          LIVE_PROMOTION_ENABLED: ${{ vars.LIVE_PROMOTION_ENABLED }}
+        run: |
+          set -euo pipefail
+          if [[ "$LIVE_PROMOTION_ENABLED" != "enabled" ]]; then
+            echo "Live promotion is disabled. Configure required reviewers and set the LIVE_PROMOTION_ENABLED environment variable to enabled in the protected staging-promotion environment."
+            exit 1
+          fi
+
       - name: Checkout trusted workflow code and full branch history
         uses: actions/checkout@v7
         with:
