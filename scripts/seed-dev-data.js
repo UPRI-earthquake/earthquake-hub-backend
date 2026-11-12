@@ -9,8 +9,11 @@
 //     linked to qa_sensor_owner (two of them forwarded by qa_brgy), the rest not linked
 //
 // No real account, email, password or sensor location is included. It only adds what's missing (accounts
-// by username, sensors by network + station, earthquakes by publicID) and never changes or deletes
-// anything, so it's safe to run on a database that already has data, and to run again.
+// by username, sensors by network + station, earthquakes by publicID) and never deletes anything, so it's
+// safe to run on a database that already has data, and to run again. The one change it makes: a test
+// account above that has no MongoDB-style id (legacy_mongo_id) gets one, as accounts made by the app do.
+// Session tokens name the account by that id; without it, the account's reports and points aren't
+// linked to it.
 //
 //   npm run db:pg:seed            (after npm run db:pg:migrate)
 //
@@ -20,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const bcrypt = require('bcryptjs');
+const { Types } = require('mongoose');
 
 const DATA_FILE = path.join(__dirname, 'seed-data', 'dev-earthquakes.json.gz');
 const QA_PASSWORD = 'Qa-Password-2026!';
@@ -55,7 +59,8 @@ const readData = () => JSON.parse(zlib.gunzipSync(fs.readFileSync(DATA_FILE)).to
   *
   * Outputs:
   *     { accounts, devices, forwarding, events, catalogMatches, catalogStatus, stations }: each
-  *     { added, existing } (stations: { added, existing, withoutSensor })
+  *     { added, existing } (stations: { added, existing, withoutSensor }); and accountIdsFilled, the
+  *     test accounts already there that were given their missing MongoDB-style id
   ***************************************************************************/
 async function seedDevData({ db, log = console.log }) {
   const data = readData();
@@ -63,20 +68,29 @@ async function seedDevData({ db, log = console.log }) {
   const result = {
     accounts: count(), devices: count(), forwarding: count(), events: count(),
     catalogMatches: count(), catalogStatus: count(), stations: { ...count(), withoutSensor: 0 },
+    accountIdsFilled: 0,
   };
 
   await db.transaction(async (trx) => {
     // Accounts
     const passwordHash = bcrypt.hashSync(QA_PASSWORD, 10);
     const accountIds = new Map();
+    // A MongoDB-style id, as AccountsRepo.create gives an account: sign-in puts it in the session token
+    const newLegacyId = () => new Types.ObjectId().toString();
     for (const account of ACCOUNTS) {
-      const existing = await trx('accounts').where({ username: account.username }).first('id');
+      const existing = await trx('accounts').where({ username: account.username }).first('id', 'legacy_mongo_id');
       if (existing) {
         result.accounts.existing += 1;
         accountIds.set(account.username, existing.id);
+        // Seeded before this seed set the id: without it the account's session carries no accountId
+        if (!existing.legacy_mongo_id) {
+          await trx('accounts').where({ id: existing.id }).update({ legacy_mongo_id: newLegacyId() });
+          result.accountIdsFilled += 1;
+        }
         continue;
       }
       const [row] = await trx('accounts').insert({
+        legacy_mongo_id: newLegacyId(),
         email: `${account.username.replace(/_/g, '.')}@example.org`,
         password_hash: passwordHash,
         password_policy_version: PASSWORD_POLICY_VERSION,
@@ -184,6 +198,9 @@ async function seedDevData({ db, log = console.log }) {
   const line = (label, { added, existing }) => log(`  ${label}: added ${added}, already there ${existing}`);
   log(`Seeded from ${path.basename(DATA_FILE)} (${data.exportedFrom}):`);
   line('accounts (qa_citizen_1, qa_citizen_2, qa_sensor_owner, qa_brgy)', result.accounts);
+  if (result.accountIdsFilled > 0) {
+    log(`  gave ${result.accountIdsFilled} test account(s) the MongoDB-style id their sessions need`);
+  }
   line('sensors', result.devices);
   line('brgy forwarding links', result.forwarding);
   line('earthquakes', result.events);

@@ -54,6 +54,7 @@ describe('npm run db:pg:seed', () => {
     expect(again.accounts).toEqual({ added: 0, existing: 4 });
     expect(again.devices).toEqual({ added: 0, existing: 17 });
     expect(again.forwarding).toEqual({ added: 0, existing: 2 });
+    expect(again.accountIdsFilled).toBe(0);
     expect(await count('event_catalog_matches')).toBe(1204);
   });
 
@@ -64,6 +65,36 @@ describe('npm run db:pg:seed', () => {
 
     expect(citizen.status).toBe(200);
     expect((await owner.get('/device/my-devices')).body.devices).toHaveLength(3);
+  });
+
+  test("a test account's reports and points are linked to it, as the test plan's C tests check", async () => {
+    const citizen = request.agent(app);
+    await citizen.post('/accounts/authenticate').send({ identifier: 'qa_citizen_1', password: QA_PASSWORD, role: 'citizen' });
+    const event = await pg.db('events').whereNotNull('legacy_mongo_id').orderBy('public_id').first('id', 'legacy_mongo_id');
+
+    const posted = await citizen.post('/comments').send({ eventId: event.legacy_mongo_id.trim(), anonymous: false, content: 'Seed check' });
+
+    expect(posted.status).toBe(201);
+    const account = await pg.db('accounts').where({ username: 'qa_citizen_1' }).first('id', 'legacy_mongo_id');
+    expect(account.legacy_mongo_id).toMatch(/^[0-9a-f]{24}$/);
+    const comment = await pg.db('comments').where({ event_id: event.id, content: 'Seed check' }).first('account_id', 'username');
+    expect(comment).toEqual({ account_id: account.id, username: 'qa_citizen_1' });
+    expect(await pg.db('contribution_events').where({ account_id: account.id }).pluck('action_type')).toEqual(['report_posted']);
+  });
+
+  test('gives a test account seeded without a MongoDB-style id one, and changes nothing else', async () => {
+    await pg.db('accounts').where({ username: 'qa_citizen_2' }).update({ legacy_mongo_id: null });
+    const before = await pg.db('accounts').orderBy('username').select('username', 'legacy_mongo_id');
+
+    const again = await seedDevData({ db: pg.db, ...quiet });
+
+    expect(again.accounts).toEqual({ added: 0, existing: 4 });
+    expect(again.accountIdsFilled).toBe(1);
+    const after = await pg.db('accounts').orderBy('username').select('username', 'legacy_mongo_id');
+    after.forEach((row, i) => {
+      if (row.username === 'qa_citizen_2') expect(row.legacy_mongo_id).toMatch(/^[0-9a-f]{24}$/);
+      else expect(row).toEqual(before[i]);
+    });
   });
 
   test('the significant earthquakes page gets the 16 the test plan expects', async () => {
