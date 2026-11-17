@@ -9,10 +9,6 @@ on:
 # Publishing must never run on a PR or on failed CI.
 permissions: {}
 
-concurrency:
-  group: publish-dev
-  cancel-in-progress: true
-
 jobs:
   publish:
     name: Publish to GHCR
@@ -21,6 +17,10 @@ jobs:
           github.event.workflow_run.event == 'push' &&
           github.event.workflow_run.head_branch == 'dev' &&
           github.event.workflow_run.head_repository.full_name == github.repository }}
+    # Only eligible publish jobs share this lock; PR CI completions must not cancel push publishing.
+    concurrency:
+      group: publish-dev-${{ github.event.workflow_run.event }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
