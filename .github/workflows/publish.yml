@@ -84,6 +84,10 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ env.IMAGE }}:sha-${{ env.SOURCE_SHA }}
+          # Preserve existing public-repository provenance detail explicitly.
+          provenance: mode=max
+          annotations: |
+            index:org.opencontainers.image.description=Base docker image for EarthquakeHub backend
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
