@@ -2,7 +2,7 @@
 
 **Goal:** confirm that the frontend on `enhance/refactor` (the refactored Vite frontend) works with the backend on `feat/postgres-migration`. That backend runs on PostgreSQL only, with no MongoDB.
 
-**This frontend has no screens for:** the significant earthquakes pages, the reset-password page, editing an event summary, or moderating reports. Those tests are API steps here, and the frontend dev checks the result where the frontend shows it. Two tests are expected to fail because of the frontend; see [Known frontend issues](#known-frontend-issues-on-enhancerefactor).
+**This frontend has no screens for:** the significant earthquakes pages, the reset-password page, editing an event summary, or moderating reports. Those tests are API steps here, and the frontend dev checks the result where the frontend shows it. Two tests (A3, C5) are expected to fail because of the frontend, and several need a page refresh after signing in; see [Known frontend issues](#known-frontend-issues-on-enhancerefactor).
 
 **Who:**
 - The **frontend dev** drives the browser and judges what the pages show.
@@ -56,10 +56,15 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
    - `qa_brgy` (an approved brgy, forwarding two of those sensors)
 
    You don't need anyone's data: the seed is in the repo, and it has no personal data. On a database that already has data, it adds only what's missing.
+
+   Two things to know:
+   - **On the old dev data, it adds no test sensors.** Their station codes are already taken by dev's real sensors, so `qa_sensor_owner` owns none and `qa_brgy` forwards none (D10 shows an empty list).
+   - **The seeded accounts have the citizen role only.** Linking a device needs the sensor role too, which section E adds to `qa_citizen_1` first. Accounts registered in the app get both roles.
 7. Get an admin token for the steps marked **(API, admin)** (see [Admin token](#admin-token) below):
    ```sh
-   docker exec -w /app earthquake-hub-backend-dev node -r dotenv/config -e "process.stdout.write(require('./src/controllers/helpers').generateAccessToken({ accountId: '6f00000000000000000000ad', username: 'qa_admin', role: 'admin' }, 'web'))"
+   ADMIN=$(docker exec -w /app earthquake-hub-backend-dev node -r dotenv/config -e "process.stdout.write(require('./src/controllers/helpers').generateAccessToken({ accountId: '6f00000000000000000000ad', username: 'qa_admin', role: 'admin' }, 'web'))")
    ```
+   Commands below that say `<admin token>` can use `$ADMIN`. In Git Bash on Windows, put `MSYS_NO_PATHCONV=1` before any `docker exec -w /app ...` command; otherwise Git Bash turns `/app` into a Windows path and the command fails.
 
 ### Frontend dev
 
@@ -141,7 +146,7 @@ Use the seeded citizens `qa_citizen_1` and `qa_citizen_2`.
 |---|---|---|---|---|
 | C1 | P1 | As `qa_citizen_1`, post a text report, once named and once anonymous | Both appear. The named one shows the username; the other shows "Anonymous". | `POST /comments` 201; rows in `comments`; `contribution_events` has `report_posted` |
 | C2 | P1 | **(new)** Post a report with only an image | The image shows in the report | Row with `image_url`; the file is in the upload folder |
-| C3 | P1 | As `qa_citizen_2`, mark citizen 1's report helpful, unmark it, then mark it again | The count goes 1 → 0 → 1. Marking your own report isn't possible. | One `report_marked_helpful` and one `report_received_helpful` in `contribution_events` (not duplicated) |
+| C3 | P1 | As `qa_citizen_2`, mark citizen 1's report helpful, unmark it, then mark it again | The count goes 1 → 0 → 1. Marking your own report is accepted but earns no points (same as before the migration). | One `report_marked_helpful` and one `report_received_helpful` in `contribution_events` (not duplicated) |
 | C4 | P1 | **(new)** As `qa_citizen_2`, report an issue on the report, then report again with another reason | Both are accepted | One row in `comment_issue_reports`, with the latest reason |
 | C5 | P2 | **(new)** "Load more" on an event with more reports than the first page shows. **(API)** Post about 15 reports on one test event first. | The next page loads, without repeats or gaps | `GET /comments?...&cursor=` 200 |
 | C6 | P1 | **(new)** **(API, admin)** Reject one report, then delete another (commands below); reload the earthquake page | The rejected one disappears from the list; the deleted one is gone | `PATCH /comments/<id>/status`, `DELETE /comments/<id>` 200 |
@@ -172,31 +177,47 @@ curl -X POST http://localhost:5000/accounts/reset-password -H 'Content-Type: app
 | D6 | P1 | **(new)** Account settings: change the username, email, password and alert preferences, reloading after each | Each change is saved and stays after a reload | `PATCH /accounts/...` 200 |
 | D7 | P1 | Sign out, then sign back in | Signed out cleanly; signing in works again | |
 | D9 | P1 | **(new)** Delete `qa_citizen_3` (no devices) | It's deleted, and signing in with it fails | `DELETE /accounts` 200 |
-| D10 | P2 | Sign in as `qa_brgy` (seeded) | The "Managed devices" dashboard loads, with the two forwarded test sensors (on a freshly seeded database) | |
+| D10 | P2 | Sign in as `qa_brgy` (seeded), then refresh ([known issue 5](#known-frontend-issues-on-enhancerefactor)) | The "Managed devices" dashboard loads, with the two forwarded test sensors on a freshly seeded database. On the old dev data the list is empty ("No managed devices yet"; setup step 6). | `GET /device/my-devices` 200 |
 
 ### E. Sensors and devices
 
-The sensor software links devices, not the frontend. The backend dev does the linking through the API, and the frontend dev checks the dashboard.
+The sensor software links devices, not the frontend. The backend dev does the linking through the API, and the frontend dev checks the dashboard. Refresh the dashboard (F5) after signing in ([known issue 5](#known-frontend-issues-on-enhancerefactor)).
+
+**Before E1:** give `qa_citizen_1` the sensor role (first command below). Without it, `POST /device/link` returns **403** "Account is not allowed to link a device (sensor role required)" (setup step 6). Section 6 takes the role away again.
 
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
-| E1 | P1 | **(API)** Link a test device to `qa_citizen_1` (commands below); then, as `qa_citizen_1`, open the dashboard | The device appears under "Your devices" | `POST /device/link` 200; row in `devices` |
-| E2 | P1 | **(API)** Send a station status of `streaming`, then `not streaming` | The dashboard shows each status after a refresh | `POST /messaging/restricted/station-status` 200 |
-| E3 | P1 | **(API)** Unlink the device | It leaves "Your devices", and the release history shows it | `POST /device/unlink` 200; row in `device_releases` |
-| E4 | P1 | Try deleting `qa_citizen_1` while a device is linked | Refused, with a clear message | `DELETE /accounts` 409 |
-| E5 | — | Remote device actions | **Not testable in dev:** they need the tunnel/bastion servers | |
+| E1 | P1 | **(API)** Link the test device to `qa_citizen_1` (commands below); then, as `qa_citizen_1`, open the dashboard | The device (AM, RABCD) appears under "Your devices" as **Not Streaming** | `POST /device/link` 200 (status 60); row in `devices`, owned by `qa_citizen_1` |
+| E2 | P1 | **(API)** Send a station status of `streaming`, then `not streaming` | The dashboard shows each status straight away (live), and still after a refresh. The map doesn't change ([known issue 6](#known-frontend-issues-on-enhancerefactor)). | `POST /messaging/restricted/station-status` 200; `devices.activity` is `active`, then `inactive`. Check the row: this endpoint returns 200 even if the save fails. |
+| E3 | P1 | **(API)** Unlink the device | After a refresh, it shows as **Unlinked** in "Device overview". That's the release history: it leaves `devices` and comes back from `releasedDevices`. | `POST /device/unlink` 200; `devices.activity` is `unlinked`, with no owner; row in `device_releases` |
+| E4 | P1 | **(API)** Link the device again (E1's link command; E3 unlinked it). As `qa_citizen_1`, open Account settings → Danger zone. Then send the delete anyway, from the DevTools Console (command below). | The button reads "Unlink devices first" and is disabled ("Devices linked: 1"). The API refuses, with a clear message. | `DELETE /accounts` 409 (status 180, `deviceCount: 1`); the account is still there. Relinking reused the device record and removed its `device_releases` row. |
+| E5 | — | Remote device actions | **Not testable end to end in dev:** they need the tunnel/bastion servers. **(API)** Only the database step, the ownership check, can be run (commands below; while the device is linked): another station → 200 with `reason: "not_owned"`; the account's own device → 500 `config_error` (section 5). | `GET /device/remote-actions/capabilities` |
 
-Device commands. Run them in `earthquake-hub-backend`; the station code comes from the MAC address:
+Device commands. Run them in `earthquake-hub-backend`. The station code comes from the MAC address: `RABCD` for `B8:27:EB:12:AB:CD`.
 
 ```sh
+# before E1: give qa_citizen_1 the sensor role
+docker exec earthquake-hub-postgres psql -U ehub -d earthquake_hub -c "UPDATE accounts SET roles = ARRAY['citizen','sensor']::account_role[] WHERE username = 'qa_citizen_1';"
+# the station code (prints RABCD)
 docker exec -w /app earthquake-hub-backend-dev node -e "console.log(require('./src/controllers/helpers').generateAMStationCode('B8:27:EB:12:AB:CD'))"
-# link (as the sensor software does):
-curl -X POST http://localhost:5000/device/link -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor","elevation":"55","latitude":"14.64","longitude":"121.06","macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_<station>_.*/MSEED"}'
-# station status:
-curl -X POST http://localhost:5000/messaging/restricted/station-status -H 'Content-Type: application/json' -d '{"network":"AM","station":"<station>","status":"streaming"}'
-# unlink: sign in as the sensor, then send its token
-TOKEN=$(curl -s -X POST http://localhost:5000/accounts/authenticate -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor"}' | node -pe "JSON.parse(require('fs').readFileSync(0)).accessToken")
-curl -X POST http://localhost:5000/device/unlink -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_<station>_.*/MSEED"}'
+# link (E1, and again in E4), as the sensor software does
+curl -X POST http://localhost:5000/device/link -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor","elevation":"55","latitude":"14.64","longitude":"121.06","macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_RABCD_.*/MSEED"}'
+# station status (E2): "streaming", then "not streaming"
+curl -X POST http://localhost:5000/messaging/restricted/station-status -H 'Content-Type: application/json' -d '{"network":"AM","station":"RABCD","status":"streaming"}'
+# unlink (E3): sign in as the sensor, then send its token
+TOKEN=$(curl -s -X POST http://localhost:5000/accounts/authenticate -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"sensor"}' | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
+curl -X POST http://localhost:5000/device/unlink -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"macAddress":"B8:27:EB:12:AB:CD","streamId":"AM_RABCD_.*/MSEED"}'
+# remote-action ownership (E5): sign in as the citizen with a cookie session, then ask
+curl -s -c qa1.cookies -o /dev/null -X POST http://localhost:5000/accounts/authenticate -H 'Origin: http://localhost:3000' -H 'Content-Type: application/json' -d '{"username":"qa_citizen_1","password":"Qa-Password-2026!","role":"citizen"}'
+curl -b qa1.cookies 'http://localhost:5000/device/remote-actions/capabilities?deviceIds=AM_R0000'   # not owned: 200, reason "not_owned"
+curl -b qa1.cookies 'http://localhost:5000/device/remote-actions/capabilities'                      # own device: 500 config_error in dev
+rm qa1.cookies
+```
+
+Delete while a device is linked (E4). The page won't send it, so paste this into the DevTools Console while signed in as `qa_citizen_1`. Check first that the device is linked (`devices.owner_account_id` is `qa_citizen_1`'s id); if it isn't, this really deletes the account.
+
+```js
+fetch('http://localhost:5000/accounts', { method: 'DELETE', credentials: 'include' }).then(async r => console.log(r.status, await r.json()))
 ```
 
 ### F. Significant earthquakes (new: picked by the significance score)
@@ -211,7 +232,7 @@ The list is no longer picked by hand. A score picks it from the earthquakes: [`P
 | F2 | P1 | **(API)** Get one entry by its `_id` | 200 with `title`, `magnitude`, `depth`, `location`, `eventTime`, `eventSummary`, and empty `instrumentRecordings` and `references` | `POST /significant-eqs` 200 |
 | F3 | P1 | **(API, admin)** Set recordings and references on that earthquake, then get it again | Both lists come back as set | `PUT /significant-eqs/<_id>/details` 200; row in `significant_eq_details` |
 | F4 | P1 | **(API, admin)** Remove them, then get it again | Both lists are empty again | `DELETE .../details` 200; row gone |
-| F5 | P1 | **(API, admin)** Edit the summary of a listed earthquake (B5's command), then get the list again | That entry's `eventSummary` is the edited text. Revert it afterwards. | |
+| F5 | P1 | **(API, admin)** Edit the summary of a listed earthquake (B5's command), then get the list again | That entry's `eventSummary` is the edited text, and its place in the list doesn't change. Revert it afterwards. | `events.summary_override_text`. Get the list with curl: a browser may show it up to 5 minutes late (section 5). |
 | F6 | P2 | **(API)** Get `{"id":"abc"}`, then an unknown 24-character id | 400, then 404 | |
 
 Commands (F1–F4, F6). `<_id>` is an entry's `_id` from F1:
@@ -230,7 +251,7 @@ curl -X POST http://localhost:5000/significant-eqs -H 'Content-Type: application
 
 | ID | P | Steps | Expected | Backend check |
 |---|---|---|---|---|
-| G3 | P1 | **(new)** Load the home page with the widest time range, then keep using the app for 2–3 minutes: open earthquakes, post a report | No slowdowns or failures. This checks the fix for the database-connection stall that a full event list used to cause. | No `KnexTimeoutError` in the log |
+| G3 | P1 | **(new)** In the events panel, click **All** ("All recorded earthquakes"), then keep using the app for 2–3 minutes: open earthquakes, switch Latest ↔ All, post a report on the test earthquake | No slowdowns or failures. This checks the fix for the database-connection stall that a full event list used to cause. In dev, the first list or earthquake after a quiet minute takes about 3 s (section 5). | No `KnexTimeoutError` in the log; database connections stay within the pool's 10 (section 4's query) |
 
 ### H. Optional checks: not about the database
 
@@ -262,8 +283,11 @@ Look at the rows each write should leave, in pgAdmin or psql (`docker exec -it e
 SELECT username, email, created_at FROM accounts WHERE username LIKE 'qa\_%';
 SELECT c.comment_id, c.username, c.status, e.public_id FROM comments c JOIN events e ON e.id = c.event_id ORDER BY c.created_at DESC LIMIT 20;
 SELECT a.username, ce.action_type, ce.points FROM contribution_events ce JOIN accounts a ON a.id = ce.account_id WHERE a.username LIKE 'qa\_%';
-SELECT network, station, activity, status FROM devices ORDER BY updated_at DESC LIMIT 5;
+SELECT d.network, d.station, d.activity, d.activity_toggled_at, a.username AS owner FROM devices d LEFT JOIN accounts a ON a.id = d.owner_account_id ORDER BY d.updated_at DESC LIMIT 5;
+SELECT r.station, r.reason, r.released_at, a.username FROM device_releases r JOIN accounts a ON a.id = r.account_id;
 SELECT * FROM significant_eq_details;
+-- database connections (G3): total stays at 10 or fewer
+SELECT count(*) FILTER (WHERE state = 'active') AS active, count(*) AS total FROM pg_stat_activity WHERE datname = 'earthquake_hub' AND pid <> pg_backend_pid();
 ```
 
 ---
@@ -277,19 +301,26 @@ SELECT * FROM significant_eq_details;
 | Map overlays listed in a different order on some pages | E2E finding 6. Same content. |
 | Cancelled requests (`GET /overlays/faults`, `GET /messaging`) in Network | The frontend cancels them itself (E2E finding 7) |
 | In dev: places "Unavailable", or region names instead of "N km of ..." | Dev can't reach GeoServe |
-| In dev: errors for live waveforms or sensor feeds; backend log "Error connecting to /sse-connections" | Dev can't reach the sensors or the ringserver |
+| In dev: the first event list or earthquake after a quiet minute takes about 3 s; later ones are fast | `GEOSERVE_HOST` doesn't resolve in dev. The backend waits for that lookup once, then skips GeoServe for 60 s. In production the host resolves. |
+| In dev: errors for live waveforms or sensor feeds (`query?starttime=…` 404 or CORS, console "statusCode 500"); backend log "Error connecting to /sse-connections" or "/sse-streams" | Dev can't reach the sensors or the ringserver. The waveform requests go to the external `fdsnws` servers, not this backend. |
+| In dev: no device changes status by itself | Automatic status comes from the ringserver's `/sse-streams` feed, which dev doesn't have. E2's endpoint is the manual test hook. |
+| In dev: `GET /device/remote-actions/capabilities` → **500** `config_error` when the signed-in account owns a device (e.g. opening **Tools**) | Remote actions need the bastion scripts, which dev doesn't have (E5) |
+| The significant earthquakes list in a browser can be up to 5 minutes old | `GET /significant-eqs/all` is sent with `Cache-Control: max-age=300`. Use curl to see a change straight away (F5). |
 | The significant earthquakes list differs from the old hand-picked one | It's chosen by the score now. The old summaries, recordings and references are carried over only by the copy script, and dev had none. |
 | To admins, a report by a deleted account shows no `accountId` | PostgreSQL removes the link when the account is deleted. MongoDB kept the old id. |
 | `POST /device/add` → **404** if you add a device from the dashboard | The backend has no such route. The old frontend made the same call; not part of this plan. |
 
 ### Known frontend issues on `enhance/refactor`
 
-Problems in the refactored frontend, not the backend. Record the affected rows as **Fail (frontend)**, still do their backend checks, and pass the issue to the frontend dev.
+Problems in the refactored frontend, not the backend. Record the affected rows as **Fail (frontend)**, still do their backend checks, and pass the issue to the frontend dev. Issues 5 and 6 don't fail a row: refresh, or note it, and carry on.
 
 1. **The live feed doesn't add a new earthquake (A3).** In `src/features/map/data/local/EarthquakesDataHandler.ts`, `receiveEarthquakeFromStream` uses `if(existingIndex)`. `findIndex` returns `-1` for a new earthquake, and `-1` counts as true, so the new earthquake is never added. And an update to the earthquake at index 0 adds a second copy instead of replacing it. A new earthquake appears only after a reload.
 2. **No reset-password page (D5, G1).** The reset email links to `/reset-password?token=...`, which opens Not Found.
 3. **No significant earthquakes pages (section F, A6).** `/significant-eqs` and `/significant-eq-info` were removed, and the floating button that opens them isn't shown.
 4. **No admin screens (B5, C6).** Summaries can't be edited and reports can't be moderated in the app. The detail page still shows an edited summary.
+5. **The profile isn't reloaded after signing in or out (section D, D10, E).** `handleSignInSuccess` in `src/layouts/Header.tsx` doesn't reload it, so until a refresh (F5) the header can still show **Account** and the dashboard "Signed in as Contributor"; a brgy sees the citizen workspace, and a citizen's devices don't load. After signing out, the menu (☰) can stay until a refresh.
+6. **The map ignores station status updates (E2).** `src/features/map/data/local/SSEStreamHandler.ts` receives `STATION_STATUS` but only logs it (it acts on `SC_PICK` and `SC_EVENT` only), so map markers don't change. The dashboard does apply it.
+7. **"Load more reports" is disabled when there are more (C5).** `src/features/earthquake-details/ui/components/sections/reports/ReportsSection.tsx` has `disabled={hasMore}`, so on an earthquake with more than one page of reports (over 20), only the first ones ever show. And with the button enabled, `loadMoreReports` in `src/features/earthquake-details/hooks/useReports.ts` loads the next page in place of the current one instead of adding it.
 
 ---
 
@@ -298,17 +329,40 @@ Problems in the refactored frontend, not the backend. Record the affected rows a
 The backend dev does this at the end:
 
 1. Delete the accounts created during the test, such as `qa_citizen_3` if D9 didn't: in the app, or with `DELETE /accounts` and its session. Their points go with them. The seeded `qa_` accounts can stay; if one was deleted, `npm run db:pg:seed` adds it back.
-2. Delete the test earthquakes and their reports:
+2. Remove the section E test device and its release history, and take the sensor role away from `qa_citizen_1` again:
    ```sql
-   DELETE FROM events WHERE public_id LIKE 'qa%';   -- their comments, stations and details go with them
+   BEGIN;
+   DELETE FROM device_releases WHERE station = 'RABCD';
+   DELETE FROM devices WHERE station = 'RABCD' AND mac_address = 'B8:27:EB:12:AB:CD';
+   UPDATE accounts SET roles = ARRAY['citizen']::account_role[] WHERE username = 'qa_citizen_1';
+   COMMIT;
    ```
-3. Revert any summary you edited (B5, F5), and remove any significant earthquake details (F3).
-4. Check the counts are back to where they started (906 events; 4 accounts on a freshly seeded database, or 85 on the old dev data):
+3. Note the uploaded test images (C2), so you can delete their files in step 5:
+   ```sql
+   SELECT c.image_url FROM comments c JOIN events e ON e.id = c.event_id WHERE e.public_id LIKE 'qa%' AND c.image_url IS NOT NULL;
+   ```
+4. Delete the test earthquakes, their reports, and the points those reports earned. The points don't go with the earthquake (their link is only cleared), so delete them first:
+   ```sql
+   BEGIN;
+   DELETE FROM contribution_events WHERE event_id IN (SELECT id FROM events WHERE public_id LIKE 'qa%');
+   DELETE FROM events WHERE public_id LIKE 'qa%';   -- their comments, stations and details go with them
+   COMMIT;
+   ```
+5. Delete the image files from step 3: an `image_url` of `/uploads/<file>` is `public/uploads_dev/<file>` in `earthquake-hub-backend`.
+6. Revert any summary you edited (B5, F5), and remove any significant earthquake details (F3).
+7. Check the counts are back to where they started:
    ```sql
    SELECT (SELECT count(*) FROM events) AS events, (SELECT count(*) FROM accounts) AS accounts,
-          (SELECT count(*) FROM comments) AS comments, (SELECT count(*) FROM significant_eq_details) AS details;
+          (SELECT count(*) FROM comments) AS comments, (SELECT count(*) FROM significant_eq_details) AS details,
+          (SELECT count(*) FROM events WHERE summary_override_text IS NOT NULL) AS edited_summaries,
+          (SELECT count(*) FROM contribution_events) AS points, (SELECT count(*) FROM devices) AS devices,
+          (SELECT count(*) FROM device_releases) AS releases;
    ```
-5. Stop Mailpit.
+   | | events | accounts | comments | details | edited_summaries | points | devices | releases |
+   |---|---|---|---|---|---|---|---|---|
+   | Freshly seeded database | 906 | 4 | 0 | 0 | 0 | 0 | 17 | 0 |
+   | Old dev data (+ the 4 seeded `qa_` accounts) | 906 | 89 | 0 | 0 | 0 | 0 | 26 | 0 |
+8. Stop Mailpit. If you want `.env` as it was, set `EMAIL_HOST` back and restart the backend (`docker restart earthquake-hub-backend-dev`).
 
 ---
 
@@ -343,7 +397,7 @@ The backend dev does this at the end:
 | E2 | | | |
 | E3 | | | |
 | E4 | | | |
-| E5 | N/A (dev) | | needs the tunnel/bastion servers |
+| E5 | N/A (dev) | | needs the tunnel/bastion servers; record the ownership check (section E) in the notes |
 | F1 | | | |
 | F2 | | | |
 | F3 | | | |
