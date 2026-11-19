@@ -1,35 +1,38 @@
-// End-to-end check, API writes: runs every write flow the frontend and the sensors use on both backends
-// (start-backends.js), step by step with the same input, and compares the responses after the goldens'
-// normalization (__tests__/fixtures/golden.js: tokens as their claims, recent times as <now>, generated
-// ids as placeholders). Uses throwaway accounts, comments and devices, and removes them afterwards
-// where the API can.
+// End-to-end check, API writes: runs every write flow the frontend and the sensors use on the backend
+// (start-backend.js), step by step, and compares each response with the baseline's
+// (baseline/api-writes.json) after the goldens' normalization (__tests__/fixtures/golden.js: tokens as
+// their claims, recent times as <now>, generated ids as placeholders). The first baseline was recorded
+// on MongoDB (docs/e2e/E2E_RESULTS.md). Uses throwaway accounts, comments and devices, and removes them
+// afterwards where the API can.
 //
 // Flows: accounts (register to delete, password reset through the mail catcher), sensors (link, station
 // status, brgy forwarding, unlink, reset-link), comments (text, image, anonymous; helpful marks; issue
 // reports; moderation and delete), an earthquake summary, and a SeisComP event with its live update.
 //
-// Writes api-writes.json (per step: same or the differences) and baseline/api-writes.json (MongoDB's
-// responses) to the output folder, outside the repos.
+// A run reuses the baseline's run id (from its "E2E check <id>" comment), so its throwaway names, sensor
+// and SeisComP event are the baseline's. --record saves this backend's responses as the baseline
+// instead, with a new run id (the output folder must not hold one).
 //
-// Re-run after Part 4 (--baseline): only the postgres backend runs, and each step is compared with
-// MongoDB's saved response (baseline/api-writes.json). The run reuses the first run's id, so its
-// throwaway names, sensor and SeisComP event are the same as in the baseline. Writes rerun/api-writes.json.
+// Writes api-writes.json (per step: same or the differences) to the output folder, outside the repos,
+// and with --record baseline/api-writes.json.
 //
-//   node scripts/e2e/compare-writes.js [output folder] [--baseline]
-require('dotenv/config'); // the same secrets the backends use, to mint the admin session
+//   node scripts/e2e/compare-writes.js [output folder] [--record]
+require('dotenv/config'); // the same secrets the backend uses, to mint the admin session
 const fs = require('fs');
 const path = require('path');
-const { DEFAULT_OUTPUT_DIR, MAILPIT_API } = require('./env');
-const { BACKENDS, url, positional } = require('./start-backends');
+const { DEFAULT_OUTPUT_DIR, MAILPIT_API, positional } = require('./env');
+const { BACKEND, url: backendUrl } = require('./start-backend');
 const { diff } = require('./compare-api');
 const { stabilized } = require('../../__tests__/fixtures/golden');
 const { generateAMStationCode, generateAccessToken } = require('../../src/controllers/helpers');
 
-const USE_BASELINE = process.argv.includes('--baseline');
-const NAMES = USE_BASELINE ? ['postgres'] : Object.keys(BACKENDS); // mongodb, postgres
+const RECORD = process.argv.includes('--record');
+// The flows keep per-backend state under this name (ctx), as when two backends ran side by side
+const NAMES = ['backend'];
+const url = () => backendUrl();
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 let RUN = Date.now().toString(36);
-let saved = null; // MongoDB's saved responses, with --baseline
+let saved = {}; // the baseline's responses (filled in as they're recorded, with --record)
 const PASSWORD = 'E2e-Flow-Password-2026!';
 const NEW_PASSWORD = 'E2e-Flow-Password-2027!';
 const RESET_PASSWORD = 'E2e-Flow-Password-2028!';
@@ -60,7 +63,7 @@ async function send(name, { method = 'GET', path: requestPath, body, form, cooki
   return { status: res.status, body: parsed, cookie: cookieOf(res) };
 }
 
-const webOrigin = (name) => `http://localhost:${BACKENDS[name].clientPort}`;
+const webOrigin = () => `http://localhost:${BACKEND.clientPort}`;
 
 // The newest mail to `to` in the mail catcher, as text
 async function latestMailTo(to) {
@@ -77,7 +80,6 @@ const clearMail = () => fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' });
 // --- Steps ---
 
 const report = [];
-const baseline = {};
 // Runs one step on both backends. `build(name, ctx)` gives the request; `replace(name, ctx, res)` the
 // generated values to show as placeholders. ctx[name] keeps per-backend state between steps.
 const ctx = Object.fromEntries(NAMES.map((name) => [name, {}]));
@@ -89,12 +91,12 @@ async function step(label, build, { replace = () => ({}), after = () => {} } = {
     after(name, ctx[name], res);
     results[name] = stabilized({ status: res.status, body: res.body }, replace(name, ctx[name], res));
   }
-  const reference = USE_BASELINE ? saved[label] : results.mongodb;
-  const differences = diff(reference, results.postgres);
+  if (RECORD) saved[label] = results.backend;
+  const reference = saved[label];
+  const differences = diff(reference, results.backend);
   const status = reference ? reference.status : '(not in the baseline)';
   report.push({ step: label, same: differences.length === 0, status, differences: differences.slice(0, 20) });
-  if (!USE_BASELINE) baseline[label] = results.mongodb;
-  console.log(`${differences.length === 0 ? 'ok  ' : 'DIFF'} ${label} (${status}${results.postgres.status !== status ? ` vs ${results.postgres.status}` : ''})`);
+  console.log(`${differences.length === 0 ? 'ok  ' : 'DIFF'} ${label} (${status}${results.backend.status !== status ? ` vs ${results.backend.status}` : ''})`);
   return results;
 }
 const ids = (name, c) => Object.fromEntries(Object.entries(c.placeholders || {}));
@@ -290,11 +292,10 @@ async function seiscompFlow() {
     .filter((data) => JSON.stringify(data).includes(publicID));
   const live = Object.fromEntries(NAMES.map((name) => [name, stabilized(sseEvents(name))]));
   const LIVE = 'seiscomp: the live feed (SSE) message';
-  const liveReference = USE_BASELINE ? saved[LIVE] : live.mongodb;
-  const liveDiff = diff(liveReference, live.postgres);
+  if (RECORD) saved[LIVE] = live.backend;
+  const liveDiff = diff(saved[LIVE], live.backend);
   report.push({ step: LIVE, same: liveDiff.length === 0, status: null, differences: liveDiff.slice(0, 20) });
-  if (!USE_BASELINE) baseline[LIVE] = live.mongodb;
-  console.log(`${liveDiff.length === 0 ? 'ok  ' : 'DIFF'} ${LIVE} (${(liveReference || []).length} message(s))`);
+  console.log(`${liveDiff.length === 0 ? 'ok  ' : 'DIFF'} ${LIVE} (${(saved[LIVE] || []).length} message(s))`);
   NAMES.forEach((name) => feeds[name].controller.abort());
 
   // Ingest starts the station check at once (ONLINE_STATION_REFINEMENT_DELAY_MS), and it waits on
@@ -319,15 +320,17 @@ async function seiscompFlow() {
 
 async function compareWrites(outputDir = DEFAULT_OUTPUT_DIR) {
   const samples = JSON.parse(fs.readFileSync(path.join(outputDir, 'sample-accounts.json'), 'utf8'));
-  if (USE_BASELINE) {
-    saved = JSON.parse(fs.readFileSync(path.join(outputDir, 'baseline', 'api-writes.json'), 'utf8'));
-    // The first run's id, as its comments show it ("E2E check <id>")
-    const firstRun = /E2E check ([a-z0-9]+)/.exec(JSON.stringify(saved));
-    if (!firstRun) throw new Error('The baseline has no "E2E check <id>" comment to take the run id from');
-    [, RUN] = firstRun;
+  const baselineFile = path.join(outputDir, 'baseline', 'api-writes.json');
+  if (RECORD && fs.existsSync(baselineFile)) throw new Error(`${baselineFile} already exists: a baseline is never overwritten`);
+  if (!RECORD) {
+    saved = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
+    // The baseline's run id, as its comments show it ("E2E check <id>")
+    const baselineRun = /E2E check ([a-z0-9]+)/.exec(JSON.stringify(saved));
+    if (!baselineRun) throw new Error('The baseline has no "E2E check <id>" comment to take the run id from');
+    [, RUN] = baselineRun;
   }
   // The newest earthquake with no summary: comments and the summary edit go on it
-  const list = await (await fetch(`${url(NAMES[0])}/eq-events?startTime=1970-01-01T00:00:00.000Z&endTime=2100-01-01T00:00:00.000Z`)).json();
+  const list = await (await fetch(`${url()}/eq-events?startTime=1970-01-01T00:00:00.000Z&endTime=2100-01-01T00:00:00.000Z`)).json();
   const event = list.payload.find((e) => !e.summaryOverride);
 
   await accountsFlow();
@@ -336,12 +339,11 @@ async function compareWrites(outputDir = DEFAULT_OUTPUT_DIR) {
   await summaryFlow(samples, event);
   await seiscompFlow();
 
-  const reportDir = USE_BASELINE ? path.join(outputDir, 'rerun') : outputDir;
-  fs.mkdirSync(reportDir, { recursive: true });
-  fs.writeFileSync(path.join(reportDir, 'api-writes.json'), `${JSON.stringify(report, null, 2)}\n`);
-  if (!USE_BASELINE) {
-    fs.mkdirSync(path.join(outputDir, 'baseline'), { recursive: true });
-    fs.writeFileSync(path.join(outputDir, 'baseline', 'api-writes.json'), `${JSON.stringify(baseline)}\n`);
+  fs.writeFileSync(path.join(outputDir, 'api-writes.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (RECORD) {
+    fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
+    fs.writeFileSync(baselineFile, `${JSON.stringify(saved)}\n`);
+    console.log(`Recorded ${report.length} steps in baseline/api-writes.json (run id ${RUN})`);
   }
   const failed = report.filter((r) => !r.same);
   console.log(`${report.length} steps, ${report.length - failed.length} the same, ${failed.length} different`);

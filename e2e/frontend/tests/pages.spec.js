@@ -1,6 +1,6 @@
 // End-to-end check, frontend (Phase 4 - Part 1). Each test visits a page or drives a flow, then
 // records what the page shows: its visible text (normalized) and a screenshot, plus console errors and
-// failed requests. The two runs (MongoDB, PostgreSQL) are compared by scripts/e2e/compare-frontend.js.
+// failed requests. A run is compared with a baseline run by scripts/e2e/compare-frontend.js.
 //
 // Every request that isn't to localhost is blocked (analytics, map tiles, outside services), so
 // nothing reaches production, and the two runs see the same outside world (map tiles stay blank). Personal data shown on a
@@ -11,8 +11,8 @@ const { test: base } = require('@playwright/test');
 
 const OUTPUT = process.env.E2E_OUTPUT_DIR || path.join(__dirname, '..', '..', '..', '..', 'e2e-output');
 const RUN = process.env.E2E_RUN || 'run';
-// The folder a run's pages are saved in, under frontend/: the backend's name, or E2E_RECORD_AS (the
-// re-run after Part 4 saves as postgres-only, keeping the first run's pages)
+// The folder a run's pages are saved in, under frontend/: E2E_RECORD_AS (e.g. baseline, to record a
+// baseline run), or the project's name (postgres)
 const RECORD_AS = process.env.E2E_RECORD_AS;
 const samples = JSON.parse(fs.readFileSync(path.join(OUTPUT, 'sample-accounts.json'), 'utf8'));
 const sample = (kind) => samples.accounts.find((s) => s.kind === kind && s.found);
@@ -20,9 +20,9 @@ const sample = (kind) => samples.accounts.find((s) => s.kind === kind && s.found
 const test = base.extend({ backendURL: ['', { option: true }] });
 
 const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\//;
-// Known failures that are the same on both backends: the removed endpoints, and the sensor feeds and
+// Known failures, the same on every run: the removed push sign-up endpoint, and the sensor feeds and
 // outside services the test environment can't reach (blocked here)
-const EXPECTED_FAILURES = [/\/significant-eqs/, /\/notifications\/subscribe/, /localhost:9\//];
+const EXPECTED_FAILURES = [/\/notifications\/subscribe/, /localhost:9\//];
 
 let personal = new Set(Object.values(samples.accounts).map((s) => s.username).filter(Boolean));
 
@@ -108,7 +108,7 @@ async function record(page, testInfo, name) {
   }, null, 2)}\n`);
 }
 
-// --- Picking the same events on both runs (the lists are identical) ---
+// --- Picking the same events on every run (the lists are the baseline's) ---
 
 // Production's events only: not the one scripts/e2e/compare-writes.js adds (publicID e2e...)
 const pick = (all) => {
@@ -178,7 +178,7 @@ test('earthquake detail: an event with reports', async ({ page, backendURL }, te
   await record(page, testInfo, 'detail-withReports');
 });
 
-test('removed feature: the significant earthquakes page', async ({ page }, testInfo) => {
+test('the significant earthquakes page', async ({ page }, testInfo) => {
   await page.goto('/significant-eqs');
   await record(page, testInfo, 'significant-eqs');
 });

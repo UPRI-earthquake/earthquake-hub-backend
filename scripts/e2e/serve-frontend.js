@@ -1,20 +1,19 @@
-// End-to-end check: serves one production build of the frontend twice, each copy talking to its own
-// backend (start-backends.js), until stopped:
-//   http://localhost:3101  ->  http://localhost:5101  (every area on MongoDB)
-//   http://localhost:3102  ->  http://localhost:5102  (every area on PostgreSQL)
-// The frontend reads its backend from /config.js at runtime, so each copy gets its own; nothing in the
-// frontend's code changes. Live ringserver feeds point at a dead local address (no real sensor is
-// contacted), and the browser tests block every other non-local request.
+// End-to-end check: serves a production build of the frontend, talking to the backend (start-backend.js),
+// until stopped:
+//   http://localhost:3102  ->  http://localhost:5102
+// The frontend reads its backend from /config.js at runtime, so nothing in the frontend's code changes.
+// Live ringserver feeds point at a dead local address (no real sensor is contacted), and the browser
+// tests block every other non-local request.
 //
 // Build the frontend first (outside the repos), from the frontend folder:
 //   BUILD_PATH=../e2e-output/frontend-build GENERATE_SOURCEMAP=false REACT_APP_FDSNWS=http://localhost:9/fdsnws npx react-scripts build
 //
-//   node scripts/e2e/serve-frontend.js [build folder] [--only=postgres]
+//   node scripts/e2e/serve-frontend.js [build folder]
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { DEFAULT_OUTPUT_DIR } = require('./env');
-const { BACKENDS, onlyBackends, positional } = require('./start-backends');
+const { DEFAULT_OUTPUT_DIR, positional } = require('./env');
+const { BACKEND } = require('./start-backend');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -30,33 +29,32 @@ const configFor = (backendPort) => `window['ENV'] = ${JSON.stringify({
   REACT_APP_RS_FDSNWS: 'http://localhost:9/fdsnws',
 }, null, 2)};\n`;
 
-function serveFrontend(buildDir = path.join(DEFAULT_OUTPUT_DIR, 'frontend-build'), names = Object.keys(BACKENDS)) {
+function serveFrontend(buildDir = path.join(DEFAULT_OUTPUT_DIR, 'frontend-build')) {
   if (!fs.existsSync(path.join(buildDir, 'index.html'))) throw new Error(`No frontend build in ${buildDir}`);
-  return names.map((name) => [name, BACKENDS[name]]).map(([name, { port, clientPort }]) => {
-    const handler = (req, res) => {
-      const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-      if (urlPath === '/config.js') {
-        res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
-        res.end(configFor(port));
-        return;
-      }
-      let file = path.join(buildDir, urlPath);
-      if (!file.startsWith(buildDir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-        file = path.join(buildDir, 'index.html'); // single-page app: every route is index.html
-      }
-      res.writeHead(200, { 'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream' });
-      fs.createReadStream(file).pipe(res);
-    };
-    // Loopback only (the build talks to production data), on IPv4 and IPv6: "localhost" can be either
-    const servers = ['127.0.0.1', '::1'].map((host) => http.createServer(handler).listen(clientPort, host));
-    return { name, servers, url: `http://localhost:${clientPort}` };
-  });
+  const { port, clientPort } = BACKEND;
+  const handler = (req, res) => {
+    const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    if (urlPath === '/config.js') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
+      res.end(configFor(port));
+      return;
+    }
+    let file = path.join(buildDir, urlPath);
+    if (!file.startsWith(buildDir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      file = path.join(buildDir, 'index.html'); // single-page app: every route is index.html
+    }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  };
+  // Loopback only (the build can talk to production data), on IPv4 and IPv6: "localhost" can be either
+  const servers = ['127.0.0.1', '::1'].map((host) => http.createServer(handler).listen(clientPort, host));
+  return { servers, url: `http://localhost:${clientPort}` };
 }
 
 module.exports = { serveFrontend };
 
 if (require.main === module) {
   const [buildArg] = positional();
-  const running = serveFrontend(buildArg ? path.resolve(buildArg) : undefined, onlyBackends());
-  running.forEach(({ name, url }) => console.log(`${name} frontend: ${url}`));
+  const { url } = serveFrontend(buildArg ? path.resolve(buildArg) : undefined);
+  console.log(`frontend: ${url}`);
 }

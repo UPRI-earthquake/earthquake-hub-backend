@@ -1,74 +1,69 @@
-// End-to-end check, frontend: compares what each page showed on the MongoDB run with the PostgreSQL run
-// (e2e/frontend, Playwright): the visible text line by line, and which console errors and failed
-// requests each showed. A page with the same lines in another order is reported apart, with the lines that moved
-// (e.g. map overlays, listed in the order their static files happen to load). Screenshots are compared
-// by eye in docs/e2e/E2E_RESULTS.md.
+// End-to-end check, frontend: compares what each page showed on a baseline run with a later run
+// (e2e/frontend, Playwright; each saved under frontend/<run>): the visible text line by line, and which
+// console errors and failed requests each showed. A page with the same lines in another order is
+// reported apart, with the lines that moved (e.g. map overlays, listed in the order their static files
+// happen to load). Screenshots are compared by eye in docs/e2e/E2E_RESULTS.md.
 //
+// The runs default to baseline (recorded with E2E_RECORD_AS=baseline) and postgres (a run as is).
 // Writes frontend-compare.json to the output folder.
 //
-// Re-run after Part 4: --runs=mongodb,postgres-only compares the first run's MongoDB pages with the
-// PostgreSQL-only run's (saved as frontend/postgres-only), and writes rerun/frontend-compare.json.
-//
-//   node scripts/e2e/compare-frontend.js [output folder] [--runs=mongodb,postgres-only]
+//   node scripts/e2e/compare-frontend.js [output folder] [--runs=<baseline run>,<run>]
 const fs = require('fs');
 const path = require('path');
-const { DEFAULT_OUTPUT_DIR } = require('./env');
-const { positional } = require('./start-backends');
+const { DEFAULT_OUTPUT_DIR, positional } = require('./env');
 
 const distinct = (list) => [...new Set(list)].sort();
 
 const lineDiff = (a, b) => {
   const left = a.split('\n');
   const right = b.split('\n');
-  const onlyLeft = left.filter((line) => !right.includes(line));
-  const onlyRight = right.filter((line) => !left.includes(line));
-  return { onlyMongodb: onlyLeft, onlyPostgres: onlyRight, sameOrder: a === b };
+  const onlyBaseline = left.filter((line) => !right.includes(line));
+  const onlyRun = right.filter((line) => !left.includes(line));
+  return { onlyBaseline, onlyRun, sameOrder: a === b };
 };
 
-function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR, [mongodbRun, postgresRun] = ['mongodb', 'postgres']) {
+function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR, [baselineRun, run] = ['baseline', 'postgres']) {
   const dir = (name) => path.join(outputDir, 'frontend', name);
-  const pages = fs.readdirSync(dir(mongodbRun)).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
+  const pages = fs.readdirSync(dir(baselineRun)).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
   const report = pages.map((page) => {
     const read = (name) => {
       const file = path.join(dir(name), `${page}.json`);
       return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
     };
-    const m = read(mongodbRun);
-    const p = read(postgresRun);
-    if (!p) return { page, same: false, missing: 'postgres' };
-    const text = lineDiff(m.text, p.text);
+    const b = read(baselineRun);
+    const r = read(run);
+    if (!r) return { page, same: false, missing: run };
+    const text = lineDiff(b.text, r.text);
     // Which messages, not how many times: the requests the test blocks (map tiles and other outside
     // URLs, logged as "Failed to load resource: net::ERR_FAILED") vary in number with render timing
-    const sameSet = (a, b) => JSON.stringify(distinct(a)) === JSON.stringify(distinct(b));
-    const consoleSame = sameSet(m.consoleErrors, p.consoleErrors);
-    const requestsSame = sameSet(m.failedRequests, p.failedRequests);
-    const pLines = p.text.split('\n');
+    const sameSet = (x, y) => JSON.stringify(distinct(x)) === JSON.stringify(distinct(y));
+    const consoleSame = sameSet(b.consoleErrors, r.consoleErrors);
+    const requestsSame = sameSet(b.failedRequests, r.failedRequests);
+    const runLines = r.text.split('\n');
     return {
       page,
       same: text.sameOrder && consoleSame && requestsSame,
-      sameContent: text.onlyMongodb.length === 0 && text.onlyPostgres.length === 0 && consoleSame && requestsSame,
-      movedLines: text.sameOrder ? [] : m.text.split('\n').filter((line, i) => pLines[i] !== line),
+      sameContent: text.onlyBaseline.length === 0 && text.onlyRun.length === 0 && consoleSame && requestsSame,
+      movedLines: text.sameOrder ? [] : b.text.split('\n').filter((line, i) => runLines[i] !== line),
       text,
-      consoleErrors: { mongodb: m.consoleErrors, postgres: p.consoleErrors, same: consoleSame },
-      failedRequests: { mongodb: m.failedRequests, postgres: p.failedRequests, same: requestsSame },
+      consoleErrors: { baseline: b.consoleErrors, run: r.consoleErrors, same: consoleSame },
+      failedRequests: { baseline: b.failedRequests, run: r.failedRequests, same: requestsSame },
     };
   });
-  const reportDir = postgresRun === 'postgres' ? outputDir : path.join(outputDir, 'rerun');
-  fs.mkdirSync(reportDir, { recursive: true });
-  fs.writeFileSync(path.join(reportDir, 'frontend-compare.json'), `${JSON.stringify(report, null, 2)}\n`);
-  report.forEach((r) => {
-    const detail = r.missing ? `no ${r.missing} run`
+  fs.writeFileSync(path.join(outputDir, 'frontend-compare.json'), `${JSON.stringify(report, null, 2)}\n`);
+  report.forEach((p) => {
+    const detail = p.missing ? `no ${p.missing} run`
       : [
-        !r.text.sameOrder && `text: ${r.text.onlyMongodb.length} line(s) only on MongoDB, ${r.text.onlyPostgres.length} only on PostgreSQL${r.text.onlyMongodb.length + r.text.onlyPostgres.length === 0 ? ' (order differs)' : ''}`,
-        !r.consoleErrors.same && 'console errors differ',
-        !r.failedRequests.same && 'failed requests differ',
+        !p.text.sameOrder && `text: ${p.text.onlyBaseline.length} line(s) only in the baseline, ${p.text.onlyRun.length} only in this run${p.text.onlyBaseline.length + p.text.onlyRun.length === 0 ? ' (order differs)' : ''}`,
+        !p.consoleErrors.same && 'console errors differ',
+        !p.failedRequests.same && 'failed requests differ',
       ].filter(Boolean).join('; ');
-    const errors = r.consoleErrors ? distinct(r.consoleErrors.mongodb).length + distinct(r.failedRequests.mongodb).length : 0;
-    const verdict = r.same ? 'same' : (r.sameContent ? 'same content, other order' : 'DIFF');
-    const moved = r.sameContent && !r.same ? ` [moved: ${r.movedLines.join(', ')}]` : '';
-    console.log(`${verdict} ${r.page}${r.same || r.sameContent ? moved : (detail ? `: ${detail}` : '')}${errors ? ` (${errors} distinct console error(s) or failed request(s), on both)` : ''}`);
+    const errors = p.consoleErrors ? distinct(p.consoleErrors.baseline).length + distinct(p.failedRequests.baseline).length : 0;
+    const verdict = p.same ? 'same' : (p.sameContent ? 'same content, other order' : 'DIFF');
+    const moved = p.sameContent && !p.same ? ` [moved: ${p.movedLines.join(', ')}]` : '';
+    console.log(`${verdict} ${p.page}${p.same || p.sameContent ? moved : (detail ? `: ${detail}` : '')}${errors ? ` (${errors} distinct console error(s) or failed request(s), in both)` : ''}`);
   });
-  return { ok: report.every((r) => r.same || r.sameContent), report };
+  return { ok: report.every((p) => p.same || p.sameContent), report };
 }
 
 module.exports = { compareFrontend };
@@ -77,7 +72,7 @@ if (require.main === module) {
   const [outputArg] = positional();
   const runsArg = process.argv.find((arg) => arg.startsWith('--runs='));
   const runs = runsArg ? runsArg.slice('--runs='.length).split(',') : undefined;
-  if (runs && runs.length !== 2) throw new Error('--runs needs two runs: <MongoDB run>,<PostgreSQL run>');
+  if (runs && runs.length !== 2) throw new Error('--runs needs two runs: <baseline run>,<run>');
   const { ok } = compareFrontend(outputArg ? path.resolve(outputArg) : undefined, runs);
   process.exit(ok ? 0 : 1);
 }

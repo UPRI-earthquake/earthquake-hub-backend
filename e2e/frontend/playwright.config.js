@@ -1,6 +1,5 @@
-// End-to-end check, frontend: the same tests run once against each copy of the frontend
-// (scripts/e2e/serve-frontend.js), each talking to its own backend. One worker, MongoDB first, so the
-// write flows don't overlap. Run from this folder: npx playwright test
+// End-to-end check, frontend: the tests run against the served frontend (scripts/e2e/serve-frontend.js)
+// and its backend, one at a time. Run from this folder: npx playwright test
 const path = require('path');
 const { defineConfig } = require('@playwright/test');
 
@@ -24,7 +23,6 @@ module.exports = defineConfig({
     serviceWorkers: 'block',
   },
   projects: [
-    { name: 'mongodb', use: { baseURL: 'http://localhost:3101', backendURL: 'http://localhost:5101' } },
     { name: 'postgres', use: { baseURL: 'http://localhost:3102', backendURL: 'http://localhost:5102' } },
   ],
 });

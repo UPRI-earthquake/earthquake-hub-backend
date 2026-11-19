@@ -1,184 +1,89 @@
-# End-to-end check: MongoDB vs PostgreSQL on production data
+# End-to-end check: the backend against a saved baseline
 
-Phase 4 - Part 1 of the PostgreSQL migration. The same backend runs twice on the same production data, once with every area on MongoDB and once with every area on PostgreSQL. The API responses and the frontend are then compared. Results go in [`E2E_RESULTS.md`](E2E_RESULTS.md).
+Phase 4 - Ticket 1 ran the same backend twice on the same production data, once on MongoDB and once on PostgreSQL, and compared their API responses and the frontend's pages. Its results, and its re-runs after MongoDB was removed, are in [`E2E_RESULTS.md`](E2E_RESULTS.md).
 
-## The export is personal data
+MongoDB is gone now, so the check compares the backend with a **saved baseline** instead: a database dump, and the responses the backend gave on it when the baseline was recorded. Restore the dump, run the backend, call the same endpoints, and any difference shows. Use it to check that a change to the backend leaves its responses as they were.
 
-The production export (one `mongoexport` JSON file per collection) holds real emails, password hashes and usernames:
+## A baseline
 
-- Keep it outside both repos. The scripts read it from `../latestEQs.110526` next to the backend by default.
-- Everything made from it also stays outside the repos, in `../e2e-output`: the import and copy reports, the sample accounts, and the saved baseline.
-- Delete both when the check is done.
+A baseline is an output folder, outside the repos (default: `../e2e-output`, next to the backend):
 
-## Building the environment
+| File | What it is |
+|---|---|
+| `baseline/postgres.dump` | the database before any read or write (`pg_dump --format=custom`) |
+| `table-checks.json` | each table's count in that database |
+| `sample-accounts.json` | the accounts the comparisons sign in as, one per kind (citizen, sensor owner, brgy), and their password |
+| `baseline/api-reads.json`, `baseline/api-writes.json` | the responses recorded on it |
 
-Needs Docker. From the backend folder:
+**Personal data:** a baseline made from production data (as Ticket 1's was) holds personal data. Keep it outside the repos, restrict access to it, and delete it when the check is done. Ticket 1's baseline was deleted with its export when that ticket closed.
+
+**Make a new one from the seeded test data** (`scripts/seed-dev-data.js`), which has no personal data. Record it from the code you want to compare against, e.g. before a change:
 
 ```sh
-node scripts/e2e/setup.js [export folder] [output folder]
+node scripts/e2e/seed-baseline.js           # the database: migrated and seeded, then dumped
+node scripts/e2e/start-backend.js           # the backend on it (until stopped, Ctrl+C)
+node scripts/e2e/compare-api.js --record    # in another terminal: every read, saved
+node scripts/e2e/compare-writes.js --record # every write flow, saved
 ```
 
-The run starts from scratch every time:
+Neither script overwrites a baseline: record into an empty output folder (give its path as the first argument to every script).
 
-1. **Starts the throwaway services** in `e2e/docker-compose.yml`, all bound to loopback:
+## Comparing against a baseline
 
-    | Service | Port |
-    |---|---|
-    | MongoDB (single-node replica set) | 27117 |
-    | PostgreSQL | 55432 |
-    | Mailpit (SMTP / web UI) | 1125 / 8125 |
+```sh
+node scripts/e2e/restore-baseline.js        # the database, as the baseline saved it
+node scripts/e2e/start-backend.js           # the backend on it (until stopped)
+node scripts/e2e/compare-api.js             # in another terminal: every read
+node scripts/e2e/compare-writes.js          # every write flow
+```
 
-2. **Migrates PostgreSQL** and empties every table.
-3. **Imports the export into MongoDB** (`scripts/e2e/import-prod-json.js`):
-    - Reads Extended JSON, so `$oid` and `$date` become ObjectIds and Dates again.
-    - Builds the app's indexes first, so duplicates are rejected as production would.
-    - Changes only what keeps the test safe: every email becomes `user-<hash>@example.org` (two that clash ignoring case still clash), and one sample account per kind gets a known test password. The kinds are sensor owner, citizen, brgy and admin.
-    - Records what it finds, structure only, in `import-report.json`.
-4. **Copies to PostgreSQL** with the real copy scripts: accounts and devices, then earthquakes, then comments and points (`copy-*.log`).
-5. **Checks every table and link** (`table-checks.json`):
-    - counts per table: MongoDB, PostgreSQL, and what each copy skipped
-    - each comment's event and author
-    - each device's owner
-    - each event's stations
+Start the backend after the restore, which recreates the database. Restore again before each repeat: the write flows leave data behind.
 
-To stop the services, and remove their data:
+### The services
+
+`e2e/docker-compose.yml` runs a throwaway PostgreSQL and a mail catcher, bound to loopback. `seed-baseline.js` and `restore-baseline.js` start them:
+
+| Service | Port |
+|---|---|
+| PostgreSQL (`ehub_e2e`) | 55432 |
+| Mailpit (SMTP / web UI) | 1125 / 8125 |
+
+To stop them and remove their data:
 
 ```sh
 docker compose -f e2e/docker-compose.yml down -v
 ```
 
-The backends read these databases through the environment in `scripts/e2e/env.js`, which never points at dev. Email goes to Mailpit, never to a real address.
+### What each step does
 
-## Running the check
+- **`restore-baseline.js`** recreates the database, restores the dump, applies the migrations added since it was taken, empties the mail catcher, and checks every table's count against `table-checks.json`.
+- **`start-backend.js`** runs this branch's backend at http://localhost:5102 (its frontend's address: http://localhost:3102), logging to `backend.log` in the output folder.
+  - It reads the developer's `.env` for secrets, but the database and mail settings come from `scripts/e2e/env.js`, which never points at dev.
+  - Every outside service is pointed at a dead local address (`127.0.0.1:9`): GeoServe (places come from the stored data, or show "Unavailable"), FDSN, the ringserver and the device tunnels. The nightly catalog enrichment never runs.
+  - Reports' images go to `uploads/` in the output folder.
+  - The backend listens on every interface, so run the check where a firewall keeps 5102 closed to the network.
+- **`compare-api.js`** calls every read endpoint the frontend uses, for every record, and compares each response field by field with the baseline's. It writes `api-reads.json`.
+  - Covered: the whole event list and every event's page, every event's comments (every page, by cursor and by offset), the device list and every station's status, the ringserver hosts, and each sample account's profile and devices.
+  - Against a baseline recorded on MongoDB (Ticket 1's), the differences `POSTGRES.md` documents ("What the API shows differently") are counted apart. Any other difference fails the run.
+  - The full event list's events with no place come last, in the order their GeoServe lookups end, which varies from call to call: they're compared as a set, the rest in order ([`E2E_RESULTS.md`](E2E_RESULTS.md), finding 13).
+- **`compare-writes.js`** runs every write flow the frontend and the sensors use, step by step, and compares each response with the baseline's, after the goldens' normalization (new ids and this run's times as placeholders, tokens as their claims). It writes `api-writes.json`.
+  - Flows: accounts (register to delete, with the password reset through Mailpit), sensors (link, station status, brgy forwarding, unlink, reset-link), comments (text, image, anonymous; helpful marks; issue reports; moderation and delete), an earthquake summary, and a SeisComP event with its live-feed message.
+  - It reuses the baseline's run id (from its "E2E check \<id\>" comment), so its throwaway accounts, sensor and SeisComP event are the baseline's.
 
-Run the stages in this order, right after `setup.js`, so every result comes from the same fresh data. Rebuild with `setup.js` before running them again: the write flows and the browser tests leave reports behind, and a report posted in an earlier run shows a different time on each backend.
+## The frontend (optional)
 
-### 1. Both backends
-
-```sh
-node scripts/e2e/start-backends.js [output folder]
-```
-
-Runs this branch twice until stopped (Ctrl+C), with logs in `backend-mongodb.log` and `backend-postgres.log`:
-
-| Backend | Areas on | API | Its frontend |
-|---|---|---|---|
-| `mongodb` | MongoDB | http://localhost:5101 | http://localhost:3101 |
-| `postgres` | PostgreSQL | http://localhost:5102 | http://localhost:3102 |
-
-Both read the developer's `.env` for secrets. Every outside service it names is pointed at a dead local address (`127.0.0.1:9`), so nothing reaches production and both backends see the same unreachable world:
-- GeoServe, so places come from the stored data or show "Unavailable"
-- FDSN
-- the ringserver
-- the device tunnels
-
-The nightly catalog enrichment never runs. Reports' images go to `uploads/<backend>/` in the output folder, not the backend's `public/uploads_dev`.
-
-The backend listens on every interface (`listen(port)` in `src/index.js`). Run the check on a machine whose firewall keeps 5101 and 5102 closed to the network.
-
-### 2. API reads
+The browser tests (`e2e/frontend`, Playwright) record what each page shows: its visible text, a screenshot, and its console errors and failed requests. They were written for the frontend Ticket 1 tested (its production build, before `enhance/refactor`), so they need that build in the output folder (`frontend-build/`).
 
 ```sh
-node scripts/e2e/compare-api.js
-```
-
-Calls every read endpoint the frontend uses, for every record, on both backends, and compares them field by field. Differences listed in `POSTGRES.md` ("What the API shows differently") are counted apart. Any other difference fails the run.
-
-Writes `api-reads.json`, and `baseline/api-reads.json` (every MongoDB response, for the re-run after Part 4).
-
-### 3. API writes
-
-```sh
-node scripts/e2e/compare-writes.js
-```
-
-Runs every write flow the frontend and the sensors use, step by step with the same input on both backends:
-- accounts, including the password reset through Mailpit
-- sensors
-- comments, helpful marks, issue reports and moderation
-- an earthquake summary
-- a SeisComP event and its live-feed message
-
-It compares the responses after the goldens' normalization. Its throwaway accounts and comments are removed afterwards. Writes `api-writes.json` and `baseline/api-writes.json`.
-
-### 4. The frontend
-
-Build the frontend once, outside the repos, from the frontend folder:
-
-```sh
-BUILD_PATH=../e2e-output/frontend-build GENERATE_SOURCEMAP=false REACT_APP_FDSNWS=http://localhost:9/fdsnws npx react-scripts build
-```
-
-Serve it twice, each copy talking to its own backend (until stopped):
-
-```sh
-node scripts/e2e/serve-frontend.js
-```
-
-The frontend reads its backend from `/config.js` at runtime, so its code doesn't change. Then run the browser tests (Playwright, once against each copy, MongoDB first) and compare them:
-
-```sh
+node scripts/e2e/serve-frontend.js          # the build, talking to the backend (until stopped)
 cd e2e/frontend && npm ci && npx playwright install chromium
-E2E_RUN=<any new name> npx playwright test
-cd ../.. && node scripts/e2e/compare-frontend.js
+E2E_RUN=<a name> E2E_RECORD_AS=baseline npx playwright test   # record the baseline's pages
+E2E_RUN=<the same name> npx playwright test                   # a later run (saved as postgres)
+cd ../.. && node scripts/e2e/compare-frontend.js              # baseline vs postgres
 ```
 
-The tests (`e2e/frontend/tests/pages.spec.js`) visit the home page, five kinds of earthquake page, the removed significant earthquakes page and the reset password page. They sign in as each sample account to see its dashboard and account settings, fill in the registration form (up to its confirmation dialog), post a report and mark it helpful.
-
-For each page they save to `frontend/<backend>/` in the output folder:
-- the visible text, with times relative to now normalized
-- a full-page screenshot (PNG, plus a smaller JPEG)
-- the console errors and failed requests
-
-Playwright's own files, such as a failed test's screenshot and trace, go to `frontend/test-results/` in the output folder too, never into the repo.
-
-How the tests keep personal data and production out:
-- Every request that isn't to localhost is blocked, so map tiles stay blank on both runs.
-- Usernames, emails and reporters' initials are blanked in the page before each screenshot.
-
-`compare-frontend.js` writes `frontend-compare.json` and gives one verdict per page:
-- **same:** same text in the same order, with the same console errors and failed requests
-- **same content, other order:** the same lines, but some moved (e.g. the map overlays, listed in the order their files load)
-- **DIFF:** anything else; the run fails
-
-## Re-run after Part 4
-
-Since Phase 4 the backend runs only on PostgreSQL, so the re-run compares the PostgreSQL backend with what the first run saved from MongoDB. It needs the first run's output folder:
-- `baseline/postgres.dump`
-- `baseline/api-reads.json` and `baseline/api-writes.json`
-- `frontend/mongodb/`
-- `frontend-build/`
-- `sample-accounts.json`
-- `table-checks.json`
-
-Its reports go to `rerun/` in that folder, and the baseline is never changed. Run the stages in this order:
-
-```sh
-# 1. PostgreSQL and Mailpit only, the saved dump restored, the newer migrations applied, every count checked
-node scripts/e2e/restore-baseline.js
-
-# 2. The PostgreSQL backend alone (until stopped)
-node scripts/e2e/start-backends.js ../e2e-output/rerun --only=postgres
-
-# 3. Reads, then writes, each against MongoDB's saved responses
-node scripts/e2e/compare-api.js --baseline
-node scripts/e2e/compare-writes.js --baseline
-
-# 4. The first run's frontend build (until stopped), the browser tests, then the pages against MongoDB's
-node scripts/e2e/serve-frontend.js --only=postgres
-cd e2e/frontend && E2E_RUN=<the first run's name> E2E_RECORD_AS=postgres-only npx playwright test --project=postgres
-cd ../.. && node scripts/e2e/compare-frontend.js --runs=mongodb,postgres-only
-```
-
-How the comparisons stay comparable:
-- **Writes:** `compare-writes.js --baseline` reuses the first run's id, read from the baseline. Its throwaway names, sensor and SeisComP event are then the same as the first run's.
-- **Pages:** give `E2E_RUN` the first run's name, the one in its report text ("E2E UI report <name>"). Run the browser tests after the writes, as the first run did: the home page's 30-day list then shows the same test earthquake.
-- **Repeating it:** restore again before each repeat, since the writes and the browser tests leave data behind.
+`compare-frontend.js` gives one verdict per page: **same**, **same content, other order** (e.g. the map overlays, listed in the order their files load), or **DIFF**. Every request that isn't to localhost is blocked (map tiles stay blank), and usernames, emails and reporters' initials are blanked before each screenshot.
 
 ## When the check is done
 
-Copy the screenshots worth keeping into `docs/e2e/screenshots/` (check each one for personal data first). Then delete the export, the output folder and the services:
-
-```sh
-docker compose -f e2e/docker-compose.yml down -v
-```
+Stop the services and remove their data (above). If the output folder holds production data, delete it.
