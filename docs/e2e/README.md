@@ -72,7 +72,7 @@ Both read the developer's `.env` for secrets. Every outside service it names is 
 - the ringserver
 - the device tunnels
 
-The nightly catalog enrichment never runs.
+The nightly catalog enrichment never runs. Reports' images go to `uploads/<backend>/` in the output folder, not the backend's `public/uploads_dev`.
 
 The backend listens on every interface (`listen(port)` in `src/index.js`). Run the check on a machine whose firewall keeps 5101 and 5102 closed to the network.
 
@@ -140,6 +140,40 @@ How the tests keep personal data and production out:
 - **same:** same text in the same order, with the same console errors and failed requests
 - **same content, other order:** the same lines, but some moved (e.g. the map overlays, listed in the order their files load)
 - **DIFF:** anything else; the run fails
+
+## Re-run after Part 4
+
+Since Phase 4 the backend runs only on PostgreSQL, so the re-run compares the PostgreSQL backend with what the first run saved from MongoDB. It needs the first run's output folder:
+- `baseline/postgres.dump`
+- `baseline/api-reads.json` and `baseline/api-writes.json`
+- `frontend/mongodb/`
+- `frontend-build/`
+- `sample-accounts.json`
+- `table-checks.json`
+
+Its reports go to `rerun/` in that folder, and the baseline is never changed. Run the stages in this order:
+
+```sh
+# 1. PostgreSQL and Mailpit only, the saved dump restored, the newer migrations applied, every count checked
+node scripts/e2e/restore-baseline.js
+
+# 2. The PostgreSQL backend alone (until stopped)
+node scripts/e2e/start-backends.js ../e2e-output/rerun --only=postgres
+
+# 3. Reads, then writes, each against MongoDB's saved responses
+node scripts/e2e/compare-api.js --baseline
+node scripts/e2e/compare-writes.js --baseline
+
+# 4. The first run's frontend build (until stopped), the browser tests, then the pages against MongoDB's
+node scripts/e2e/serve-frontend.js --only=postgres
+cd e2e/frontend && E2E_RUN=<the first run's name> E2E_RECORD_AS=postgres-only npx playwright test --project=postgres
+cd ../.. && node scripts/e2e/compare-frontend.js --runs=mongodb,postgres-only
+```
+
+How the comparisons stay comparable:
+- **Writes:** `compare-writes.js --baseline` reuses the first run's id, read from the baseline. Its throwaway names, sensor and SeisComP event are then the same as the first run's.
+- **Pages:** give `E2E_RUN` the first run's name, the one in its report text ("E2E UI report <name>"). Run the browser tests after the writes, as the first run did: the home page's 30-day list then shows the same test earthquake.
+- **Repeating it:** restore again before each repeat, since the writes and the browser tests leave data behind.
 
 ## When the check is done
 

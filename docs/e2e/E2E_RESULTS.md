@@ -8,11 +8,13 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
 | Code | branch `feat/postgres-migration`, the commit that adds this file |
 | Data | production export `latestEQs.110526` (MongoDB, exported Nov 5, 2026) |
 | Frontend | `earthquake-hub-frontend` as it is, unchanged (production build) |
+| Re-run after Part 4 | Nov 19, 2026, on PostgreSQL only, against this run's saved MongoDB results ([below](#re-run-after-part-4)) |
 
 **Result: no differences that matter between the two backends.**
 - One finding was a real bug, the "[object Object]" title. It was fixed, and the whole check run again.
 - Two findings need action before production moves to PostgreSQL: fields only production has, and an email clash.
 - The rest are explained below and accepted.
+- **The re-run after Part 4**, with MongoDB gone, gives the same results against this run's MongoDB responses and pages. It found two gaps in the check itself (findings 12 and 13), and one page changed on purpose (finding 14).
 
 **Contents**
 1. [Summary](#summary)
@@ -51,6 +53,9 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
 | 9 | No production event has an edited summary, so that page wasn't visited | Accepted |
 | 10 | Under the browser tests, the PostgreSQL backend ran out of database connections while outside hosts couldn't be resolved | Fixed in the test setup; follow-up suggested |
 | 11 | The developer `.env` points FDSN at production | Fixed in the test setup |
+| 12 | *(re-run)* This run's per-station status check asked for `station=undefined` every time | Fixed in the check |
+| 13 | *(re-run)* The last 117 events of the full list (those with no place) come back in a varying order, on either database | Accepted; follow-up suggested |
+| 14 | *(re-run)* The significant earthquakes page lists 16 earthquakes instead of the 404 | Expected: the feature came back after this run |
 
 **1. "[object Object]" on earthquake pages with no place name: fixed.**
 
@@ -164,13 +169,13 @@ Links checked in PostgreSQL: 2 comments (event and author), 26 devices (owner), 
 | Endpoint | Requests | Identical | Documented differences only | Other differences |
 |---|---|---|---|---|
 | GET /eq-events (each event in the list) | 906 | 50 | 856 (`onlineStations` 2, `createdAt` 721, `__v` 682, `legacyImportedAt` 847, `legacySourcePublicID` 847, `candidateStations` 14, `catalogEnrichmentAttempts` 835, `catalogEnrichmentStatus` 2) | 0 |
-| GET /eq-events (order) | 906 / 906 events | same order | | |
+| GET /eq-events (order) | 906 / 906 events | same order (the last 117 can vary: finding 13) | | |
 | GET /eq-events/:publicID | 906 | 50 | 856 (`onlineStations` 2, `createdAt` 721, `__v` 682, `legacyImportedAt` 847, `legacySourcePublicID` 847, `candidateStations` 14, `catalogEnrichmentAttempts` 835, `catalogEnrichmentStatus` 2) | 0 |
 | GET /comments | 906 | 906 | 0 | 0 |
 | GET /comments (by cursor) | 2 | 2 | 0 | 0 |
 | GET /comments (by offset) | 2 | 2 | 0 | 0 |
 | GET /device/all | 1 | 1 | 0 | 0 |
-| GET /device/status | 26 | 26 | 0 | 0 |
+| GET /device/status | 26 | 26 | 0 | 0, but each asked for `station=undefined` (finding 12) |
 | GET /accounts/ringserver-hosts | 1 | 1 | 0 | 0 |
 | GET /accounts/profile | 3 | 3 | 0 | 0 |
 | GET /device/my-devices | 3 | 3 | 0 | 0 |
@@ -469,9 +474,188 @@ Tables no frontend call reaches:
 
 ## Re-run after Part 4
 
-Part 4 removes MongoDB and the copy scripts. To re-run then:
-1. Restore PostgreSQL from the saved baseline (`baseline/postgres.dump`).
-2. Run only the PostgreSQL backend.
-3. Compare its responses with `baseline/api-reads.json` and `baseline/api-writes.json`, the MongoDB responses saved in this run.
+Since Phase 4 the backend no longer connects to MongoDB, and its areas accept only `postgres`. The check was run again with no MongoDB, against what this run saved from it. How to run it: [`README.md`, "Re-run after Part 4"](README.md#re-run-after-part-4).
 
-Results: *(to be added after Part 4)*
+| | |
+|---|---|
+| Run on | Nov 19, 2026 |
+| Code | branch `feat/postgres-migration`, the commit that adds this section |
+| Data | `baseline/postgres.dump`, saved by the first run right after the copy (production export `latestEQs.110526`, Nov 5, 2026), plus the one migration added since (`20261111000000_create_significant_eq_details`) |
+| Backend | the PostgreSQL one only: no MongoDB service, and no copy script run |
+| Compared with | the first run's MongoDB responses (`baseline/api-reads.json`, `baseline/api-writes.json`) and pages (`frontend/mongodb`) |
+| Frontend | the first run's production build of `earthquake-hub-frontend`, unchanged |
+
+**Result: the PostgreSQL-only backend matches the MongoDB baseline.** Every count, API read and API write is the same as in the first run. One page differs, on purpose (finding 14).
+
+| Stage | What was checked | Result |
+|---|---|---|
+| Restore | the saved dump into an empty database, then the migrations added since | 12 tables, each with the same count as the first run |
+| API reads | every read the frontend makes, for every record, against MongoDB's saved responses | 2,756 requests: 0 undocumented differences. Every endpoint has the same counts as the first run (identical, documented only) |
+| API writes | the same 49 steps, with the same input, against MongoDB's saved responses | 49 steps, 49 the same, 0 different |
+| Frontend | the same 13 tests, against the MongoDB run's pages | 12 passed, 1 skipped (finding 9). 16 pages: 12 same, 3 same content in another order (finding 6), 1 different (finding 14) |
+
+**How the re-run compares without MongoDB:**
+- **Same data:** the dump holds the database as it was before the first run's reads and writes.
+- **Same requests:** reads use the keys the baseline saved them under. Writes reuse the first run's id (`mw3jrn01`), so their throwaway accounts, sensor (station `R0001`) and SeisComP event are the same as in the baseline.
+- **Same pages:** the browser tests reuse the first run's name for their report and account (`final2054`), and run after the writes, as before. The home page's 30-day list then holds only the write flow's test earthquake, as on Nov 5.
+- **Same normalization:** the comparisons normalize exactly as the first run did (new ids, this run's times, token signatures).
+- **Isolated:** outside services point at a dead local address, email goes to Mailpit, and the test's uploaded image goes to the output folder.
+
+### Counts after the restore
+
+| Table | First run | Re-run |
+|---|---|---|
+| accounts | 90 | 90 |
+| devices | 26 | 26 |
+| device releases | 0 | 0 |
+| brgy forwarding | 37 | 37 |
+| events | 906 | 906 |
+| event stations | 6,548 | 6,548 |
+| event catalog matches | 1,204 | 1,204 |
+| event catalog status | 1,812 | 1,812 |
+| comments | 2 | 2 |
+| helpful marks, issue reports | 0 | 0 |
+| contribution points | 4 | 4 |
+
+### API reads
+
+| Endpoint | Requests | Identical | Documented differences only | Other differences |
+|---|---|---|---|---|
+| GET /eq-events (each event in the list) | 906 | 50 | 856 (the same fields and counts as the first run) | 0 |
+| GET /eq-events (order) | 906 / 906 events | the 789 with a place in the same order; the 117 without one the same events (finding 13) | | |
+| GET /eq-events/:publicID | 906 | 50 | 856 (the same fields and counts as the first run) | 0 |
+| GET /comments | 906 | 906 | 0 | 0 |
+| GET /comments (by cursor) | 2 | 2 | 0 | 0 |
+| GET /comments (by offset) | 2 | 2 | 0 | 0 |
+| GET /device/all | 1 | 1 | 0 | 0 |
+| GET /device/status, each station (finding 12) | 26 | 26 | 0 | 0 |
+| GET /accounts/ringserver-hosts | 1 | 1 | 0 | 0 |
+| GET /accounts/profile | 3 | 3 | 0 | 0 |
+| GET /device/my-devices | 3 | 3 | 0 | 0 |
+
+### API writes
+
+All 49 steps returned what MongoDB returned, after the same normalization:
+- accounts, from register to delete, including the password reset through Mailpit
+- the sensor's link, status, brgy forwarding, unlink, link again and reset-link
+- comments: text, anonymous and image; helpful marks; issue reports; rejection and deletes
+- the summary edit and clear
+- the SeisComP event, its live-feed message, and its updates
+
+The step list is the same as the first run's ([API writes](#api-writes)).
+
+### Frontend
+
+| Page | Verdict |
+|---|---|
+| Home: map and events panel | same |
+| Earthquake page: matched in PHIVOLCS and USGS | same |
+| Earthquake page: legacy record | same |
+| Earthquake page: no place name | same |
+| Earthquake page: with a report | same |
+| Significant earthquakes | **different: lists 16 earthquakes** (finding 14) |
+| Reset password (an invalid link) | same |
+| Citizen: dashboard | same content, other order (Plate Boundaries, Fault Lines) |
+| Citizen: account settings | same content, other order (Plate Boundaries, Fault Lines) |
+| Sensor owner: dashboard, account settings | same |
+| Brgy: dashboard, account settings | same |
+| Register a new account (up to its confirmation dialog) | same content, other order (Fault Lines, Plate Boundaries) |
+| Post a report | same |
+| Mark a report helpful (another account) | same |
+
+The console errors and failed requests are the same as in the first run on every page but the significant earthquakes one, which has lost its 404s.
+
+### Findings from the re-run
+
+**12. The per-station status check asked for `station=undefined`: fixed in the check.**
+- `GET /device/all` names each station `code`, but the first run's check read `station`.
+- So all 26 of its `GET /device/status` requests asked for `station=undefined`, and compared the same 400 ("Invalid station format") 26 times.
+- The check now uses `code`. MongoDB is gone, so the re-run compares each station's status (network, station, activity) with what MongoDB's device list showed for it: 26 of 26 the same.
+- The full status response (`status`, `statusSince`) is compared field by field by the golden tests, on seeded data, and the sample accounts' `GET /device/my-devices` shows the same statuses as MongoDB above.
+
+**13. The full list's last 117 events come back in a varying order: accepted, follow-up suggested.**
+- `addPlacesAttribute` (`src/services/EQevents.service.js`) adds each event to the list as its place lookup ends.
+- Events with a stored place keep their order. Those without one, 117 here, all "Unavailable" since GeoServe can't be reached, come last, in the order their lookups fail. That order changes from call to call: 1 call in 50 when probed.
+- `dev` (MongoDB) adds them the same way, so this didn't come from the migration. The first run happened to get the same order from both backends; the re-run caught a different one.
+- The check now compares the events with a place in order, and the rest as a set: the same 789 in the same order, and the same 117.
+- The frontend sorts the list itself, so no page changes.
+- Suggested follow-up: sort the list after the lookups, so the API's order is stable. In production, an event that GeoServe has just placed lands at the end of the list too.
+
+**14. The significant earthquakes page now lists 16 earthquakes: expected.**
+- In the first run the backend had no significant earthquakes endpoints, so this page showed the 404 (finding 5).
+- They came back after it, with the list picked by the significance score.
+- The same unchanged page now lists the 16 earthquakes, M7.8 Soccsksargen first, with no console errors from the backend.
+
+### Screenshots
+
+MongoDB (the first run) on the left, PostgreSQL only (the re-run) on the right.
+
+**Home: map and events panel**
+
+<table><tr>
+<td><img src="screenshots/mongodb/home.jpg" width="420" alt="Home: map and events panel, MongoDB"></td>
+<td><img src="screenshots/postgres-only/home.jpg" width="420" alt="Home: map and events panel, PostgreSQL only"></td>
+</tr></table>
+
+**Earthquake page: matched in PHIVOLCS and USGS**
+
+<table><tr>
+<td><img src="screenshots/mongodb/detail-withMatches.jpg" width="420" alt="Earthquake page, matched, MongoDB"></td>
+<td><img src="screenshots/postgres-only/detail-withMatches.jpg" width="420" alt="Earthquake page, matched, PostgreSQL only"></td>
+</tr></table>
+
+**Earthquake page: no place name**
+
+<table><tr>
+<td><img src="screenshots/mongodb/detail-noPlace.jpg" width="420" alt="Earthquake page, no place name, MongoDB"></td>
+<td><img src="screenshots/postgres-only/detail-noPlace.jpg" width="420" alt="Earthquake page, no place name, PostgreSQL only"></td>
+</tr></table>
+
+**Earthquake page: with a report**
+
+<table><tr>
+<td><img src="screenshots/mongodb/detail-withReports.jpg" width="420" alt="Earthquake page with a report, MongoDB"></td>
+<td><img src="screenshots/postgres-only/detail-withReports.jpg" width="420" alt="Earthquake page with a report, PostgreSQL only"></td>
+</tr></table>
+
+**Post a report**
+
+<table><tr>
+<td><img src="screenshots/mongodb/report-posted.jpg" width="420" alt="Post a report, MongoDB"></td>
+<td><img src="screenshots/postgres-only/report-posted.jpg" width="420" alt="Post a report, PostgreSQL only"></td>
+</tr></table>
+
+**Citizen: account settings**
+
+<table><tr>
+<td><img src="screenshots/mongodb/account-settings-citizen.jpg" width="420" alt="Citizen account settings, MongoDB"></td>
+<td><img src="screenshots/postgres-only/account-settings-citizen.jpg" width="420" alt="Citizen account settings, PostgreSQL only"></td>
+</tr></table>
+
+**Citizen: dashboard**
+
+<table><tr>
+<td><img src="screenshots/mongodb/dashboard-citizen.jpg" width="420" alt="Citizen dashboard, MongoDB"></td>
+<td><img src="screenshots/postgres-only/dashboard-citizen.jpg" width="420" alt="Citizen dashboard, PostgreSQL only"></td>
+</tr></table>
+
+**Sensor owner: dashboard**
+
+<table><tr>
+<td><img src="screenshots/mongodb/dashboard-sensorOwner.jpg" width="420" alt="Sensor owner dashboard, MongoDB"></td>
+<td><img src="screenshots/postgres-only/dashboard-sensorOwner.jpg" width="420" alt="Sensor owner dashboard, PostgreSQL only"></td>
+</tr></table>
+
+**Brgy: dashboard**
+
+<table><tr>
+<td><img src="screenshots/mongodb/dashboard-brgy.jpg" width="420" alt="Brgy dashboard, MongoDB"></td>
+<td><img src="screenshots/postgres-only/dashboard-brgy.jpg" width="420" alt="Brgy dashboard, PostgreSQL only"></td>
+</tr></table>
+
+**Significant earthquakes (finding 14)**
+
+<table><tr>
+<td><img src="screenshots/mongodb/significant-eqs.jpg" width="420" alt="Significant earthquakes, MongoDB: the 404"></td>
+<td><img src="screenshots/postgres-only/significant-eqs.jpg" width="420" alt="Significant earthquakes, PostgreSQL only: 16 earthquakes"></td>
+</tr></table>
