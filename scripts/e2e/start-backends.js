@@ -6,7 +6,10 @@
 // ringserver or device tunnels, and both backends meet the same unreachable world. Logs go to
 // <output folder>/backend-<name>.log.
 //
-//   node scripts/e2e/start-backends.js [output folder]
+// Since Phase 4 the backend runs only on PostgreSQL, so the re-run against the saved baseline starts
+// the postgres one alone: --only=postgres (README.md, "Re-run after Part 4").
+//
+//   node scripts/e2e/start-backends.js [output folder] [--only=postgres]
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -17,6 +20,16 @@ const BACKENDS = {
   postgres: { port: 5102, clientPort: 3102 },
 };
 const url = (name) => `http://localhost:${BACKENDS[name].port}`;
+
+// The backends named by --only=<name,...> (all of them without it)
+const onlyBackends = (argv = process.argv) => {
+  const only = argv.find((arg) => arg.startsWith('--only='));
+  const names = only ? only.slice('--only='.length).split(',').filter(Boolean) : Object.keys(BACKENDS);
+  const unknown = names.filter((name) => !BACKENDS[name]);
+  if (unknown.length > 0) throw new Error(`Unknown backend(s): ${unknown.join(', ')}`);
+  return names;
+};
+const positional = (argv = process.argv) => argv.slice(2).filter((arg) => !arg.startsWith('--'));
 
 // Port 9 (discard) on loopback: nothing listens, so every call fails at once, with no DNS lookup
 const DEAD = '127.0.0.1';
@@ -48,9 +61,9 @@ const waitUntilUp = async (name, timeoutMs = 120_000) => {
   throw new Error(`The ${name} backend didn't start within ${timeoutMs / 1000}s`);
 };
 
-function startBackends(outputDir = DEFAULT_OUTPUT_DIR) {
+function startBackends(outputDir = DEFAULT_OUTPUT_DIR, names = Object.keys(BACKENDS)) {
   fs.mkdirSync(outputDir, { recursive: true });
-  return Object.entries(BACKENDS).map(([name, { port, clientPort }]) => {
+  return names.map((name) => [name, BACKENDS[name]]).map(([name, { port, clientPort }]) => {
     const log = fs.openSync(path.join(outputDir, `backend-${name}.log`), 'w');
     const child = spawn(process.execPath, ['-r', 'dotenv/config', 'src/index.js'], {
       cwd: BACKEND_ROOT,
@@ -61,6 +74,8 @@ function startBackends(outputDir = DEFAULT_OUTPUT_DIR) {
         BACKEND_DEV_PORT: String(port),
         CLIENT_DEV_HOST: 'localhost',
         CLIENT_DEV_PORT: String(clientPort),
+        // Reports' images go to the output folder, not the backend's public/uploads_dev
+        UPLOAD_DIR: path.join(outputDir, 'uploads', name),
       }),
       stdio: ['ignore', log, log],
     });
@@ -68,16 +83,18 @@ function startBackends(outputDir = DEFAULT_OUTPUT_DIR) {
   });
 }
 
-module.exports = { BACKENDS, ISOLATION_ENV, url, waitUntilUp, startBackends };
+module.exports = { BACKENDS, ISOLATION_ENV, url, waitUntilUp, startBackends, onlyBackends, positional };
 
 if (require.main === module) {
-  const outputDir = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_OUTPUT_DIR;
-  const running = startBackends(outputDir);
+  const [outputArg] = positional();
+  const outputDir = outputArg ? path.resolve(outputArg) : DEFAULT_OUTPUT_DIR;
+  const names = onlyBackends();
+  const running = startBackends(outputDir, names);
   const stop = () => running.forEach(({ child }) => child.kill());
   process.on('SIGINT', () => { stop(); process.exit(0); });
   process.on('SIGTERM', () => { stop(); process.exit(0); });
   running.forEach(({ name, child }) => child.on('exit', (code) => console.log(`${name} backend exited (${code})`)));
-  Promise.all(Object.keys(BACKENDS).map((name) => waitUntilUp(name)))
-    .then(() => Object.keys(BACKENDS).forEach((name) => console.log(`${name} backend: ${url(name)}`)))
+  Promise.all(names.map((name) => waitUntilUp(name)))
+    .then(() => names.forEach((name) => console.log(`${name} backend: ${url(name)}`)))
     .catch((err) => { console.error(err.message); stop(); process.exit(1); });
 }

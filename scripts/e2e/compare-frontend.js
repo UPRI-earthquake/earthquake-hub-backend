@@ -6,10 +6,14 @@
 //
 // Writes frontend-compare.json to the output folder.
 //
-//   node scripts/e2e/compare-frontend.js [output folder]
+// Re-run after Part 4: --runs=mongodb,postgres-only compares the first run's MongoDB pages with the
+// PostgreSQL-only run's (saved as frontend/postgres-only), and writes rerun/frontend-compare.json.
+//
+//   node scripts/e2e/compare-frontend.js [output folder] [--runs=mongodb,postgres-only]
 const fs = require('fs');
 const path = require('path');
 const { DEFAULT_OUTPUT_DIR } = require('./env');
+const { positional } = require('./start-backends');
 
 const distinct = (list) => [...new Set(list)].sort();
 
@@ -21,16 +25,16 @@ const lineDiff = (a, b) => {
   return { onlyMongodb: onlyLeft, onlyPostgres: onlyRight, sameOrder: a === b };
 };
 
-function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR) {
+function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR, [mongodbRun, postgresRun] = ['mongodb', 'postgres']) {
   const dir = (name) => path.join(outputDir, 'frontend', name);
-  const pages = fs.readdirSync(dir('mongodb')).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
+  const pages = fs.readdirSync(dir(mongodbRun)).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
   const report = pages.map((page) => {
     const read = (name) => {
       const file = path.join(dir(name), `${page}.json`);
       return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
     };
-    const m = read('mongodb');
-    const p = read('postgres');
+    const m = read(mongodbRun);
+    const p = read(postgresRun);
     if (!p) return { page, same: false, missing: 'postgres' };
     const text = lineDiff(m.text, p.text);
     // Which messages, not how many times: the requests the test blocks (map tiles and other outside
@@ -49,7 +53,9 @@ function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR) {
       failedRequests: { mongodb: m.failedRequests, postgres: p.failedRequests, same: requestsSame },
     };
   });
-  fs.writeFileSync(path.join(outputDir, 'frontend-compare.json'), `${JSON.stringify(report, null, 2)}\n`);
+  const reportDir = postgresRun === 'postgres' ? outputDir : path.join(outputDir, 'rerun');
+  fs.mkdirSync(reportDir, { recursive: true });
+  fs.writeFileSync(path.join(reportDir, 'frontend-compare.json'), `${JSON.stringify(report, null, 2)}\n`);
   report.forEach((r) => {
     const detail = r.missing ? `no ${r.missing} run`
       : [
@@ -68,6 +74,10 @@ function compareFrontend(outputDir = DEFAULT_OUTPUT_DIR) {
 module.exports = { compareFrontend };
 
 if (require.main === module) {
-  const { ok } = compareFrontend(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+  const [outputArg] = positional();
+  const runsArg = process.argv.find((arg) => arg.startsWith('--runs='));
+  const runs = runsArg ? runsArg.slice('--runs='.length).split(',') : undefined;
+  if (runs && runs.length !== 2) throw new Error('--runs needs two runs: <MongoDB run>,<PostgreSQL run>');
+  const { ok } = compareFrontend(outputArg ? path.resolve(outputArg) : undefined, runs);
   process.exit(ok ? 0 : 1);
 }

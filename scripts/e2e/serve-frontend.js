@@ -9,12 +9,12 @@
 // Build the frontend first (outside the repos), from the frontend folder:
 //   BUILD_PATH=../e2e-output/frontend-build GENERATE_SOURCEMAP=false REACT_APP_FDSNWS=http://localhost:9/fdsnws npx react-scripts build
 //
-//   node scripts/e2e/serve-frontend.js [build folder]
+//   node scripts/e2e/serve-frontend.js [build folder] [--only=postgres]
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { DEFAULT_OUTPUT_DIR } = require('./env');
-const { BACKENDS } = require('./start-backends');
+const { BACKENDS, onlyBackends, positional } = require('./start-backends');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -30,9 +30,9 @@ const configFor = (backendPort) => `window['ENV'] = ${JSON.stringify({
   REACT_APP_RS_FDSNWS: 'http://localhost:9/fdsnws',
 }, null, 2)};\n`;
 
-function serveFrontend(buildDir = path.join(DEFAULT_OUTPUT_DIR, 'frontend-build')) {
+function serveFrontend(buildDir = path.join(DEFAULT_OUTPUT_DIR, 'frontend-build'), names = Object.keys(BACKENDS)) {
   if (!fs.existsSync(path.join(buildDir, 'index.html'))) throw new Error(`No frontend build in ${buildDir}`);
-  return Object.entries(BACKENDS).map(([name, { port, clientPort }]) => {
+  return names.map((name) => [name, BACKENDS[name]]).map(([name, { port, clientPort }]) => {
     const handler = (req, res) => {
       const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       if (urlPath === '/config.js') {
@@ -56,6 +56,7 @@ function serveFrontend(buildDir = path.join(DEFAULT_OUTPUT_DIR, 'frontend-build'
 module.exports = { serveFrontend };
 
 if (require.main === module) {
-  const running = serveFrontend(process.argv[2] ? path.resolve(process.argv[2]) : undefined);
+  const [buildArg] = positional();
+  const running = serveFrontend(buildArg ? path.resolve(buildArg) : undefined, onlyBackends());
   running.forEach(({ name, url }) => console.log(`${name} frontend: ${url}`));
 }

@@ -11,19 +11,25 @@
 // Writes api-writes.json (per step: same or the differences) and baseline/api-writes.json (MongoDB's
 // responses) to the output folder, outside the repos.
 //
-//   node scripts/e2e/compare-writes.js [output folder]
+// Re-run after Part 4 (--baseline): only the postgres backend runs, and each step is compared with
+// MongoDB's saved response (baseline/api-writes.json). The run reuses the first run's id, so its
+// throwaway names, sensor and SeisComP event are the same as in the baseline. Writes rerun/api-writes.json.
+//
+//   node scripts/e2e/compare-writes.js [output folder] [--baseline]
 require('dotenv/config'); // the same secrets the backends use, to mint the admin session
 const fs = require('fs');
 const path = require('path');
 const { DEFAULT_OUTPUT_DIR, MAILPIT_API } = require('./env');
-const { BACKENDS, url } = require('./start-backends');
+const { BACKENDS, url, positional } = require('./start-backends');
 const { diff } = require('./compare-api');
 const { stabilized } = require('../../__tests__/fixtures/golden');
 const { generateAMStationCode, generateAccessToken } = require('../../src/controllers/helpers');
 
-const NAMES = Object.keys(BACKENDS); // mongodb, postgres
+const USE_BASELINE = process.argv.includes('--baseline');
+const NAMES = USE_BASELINE ? ['postgres'] : Object.keys(BACKENDS); // mongodb, postgres
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-const RUN = Date.now().toString(36);
+let RUN = Date.now().toString(36);
+let saved = null; // MongoDB's saved responses, with --baseline
 const PASSWORD = 'E2e-Flow-Password-2026!';
 const NEW_PASSWORD = 'E2e-Flow-Password-2027!';
 const RESET_PASSWORD = 'E2e-Flow-Password-2028!';
@@ -83,10 +89,12 @@ async function step(label, build, { replace = () => ({}), after = () => {} } = {
     after(name, ctx[name], res);
     results[name] = stabilized({ status: res.status, body: res.body }, replace(name, ctx[name], res));
   }
-  const differences = diff(results.mongodb, results.postgres);
-  report.push({ step: label, same: differences.length === 0, status: results.mongodb.status, differences: differences.slice(0, 20) });
-  baseline[label] = results.mongodb;
-  console.log(`${differences.length === 0 ? 'ok  ' : 'DIFF'} ${label} (${results.mongodb.status}${results.postgres.status !== results.mongodb.status ? ` vs ${results.postgres.status}` : ''})`);
+  const reference = USE_BASELINE ? saved[label] : results.mongodb;
+  const differences = diff(reference, results.postgres);
+  const status = reference ? reference.status : '(not in the baseline)';
+  report.push({ step: label, same: differences.length === 0, status, differences: differences.slice(0, 20) });
+  if (!USE_BASELINE) baseline[label] = results.mongodb;
+  console.log(`${differences.length === 0 ? 'ok  ' : 'DIFF'} ${label} (${status}${results.postgres.status !== status ? ` vs ${results.postgres.status}` : ''})`);
   return results;
 }
 const ids = (name, c) => Object.fromEntries(Object.entries(c.placeholders || {}));
@@ -281,10 +289,12 @@ async function seiscompFlow() {
     .map((data) => { try { return JSON.parse(data); } catch (_) { return data; } })
     .filter((data) => JSON.stringify(data).includes(publicID));
   const live = Object.fromEntries(NAMES.map((name) => [name, stabilized(sseEvents(name))]));
-  const liveDiff = diff(live.mongodb, live.postgres);
-  report.push({ step: 'seiscomp: the live feed (SSE) message', same: liveDiff.length === 0, status: null, differences: liveDiff.slice(0, 20) });
-  baseline['seiscomp: the live feed (SSE) message'] = live.mongodb;
-  console.log(`${liveDiff.length === 0 ? 'ok  ' : 'DIFF'} seiscomp: the live feed (SSE) message (${live.mongodb.length} message(s))`);
+  const LIVE = 'seiscomp: the live feed (SSE) message';
+  const liveReference = USE_BASELINE ? saved[LIVE] : live.mongodb;
+  const liveDiff = diff(liveReference, live.postgres);
+  report.push({ step: LIVE, same: liveDiff.length === 0, status: null, differences: liveDiff.slice(0, 20) });
+  if (!USE_BASELINE) baseline[LIVE] = live.mongodb;
+  console.log(`${liveDiff.length === 0 ? 'ok  ' : 'DIFF'} ${LIVE} (${(liveReference || []).length} message(s))`);
   NAMES.forEach((name) => feeds[name].controller.abort());
 
   // Ingest starts the station check at once (ONLINE_STATION_REFINEMENT_DELAY_MS), and it waits on
@@ -309,8 +319,15 @@ async function seiscompFlow() {
 
 async function compareWrites(outputDir = DEFAULT_OUTPUT_DIR) {
   const samples = JSON.parse(fs.readFileSync(path.join(outputDir, 'sample-accounts.json'), 'utf8'));
+  if (USE_BASELINE) {
+    saved = JSON.parse(fs.readFileSync(path.join(outputDir, 'baseline', 'api-writes.json'), 'utf8'));
+    // The first run's id, as its comments show it ("E2E check <id>")
+    const firstRun = /E2E check ([a-z0-9]+)/.exec(JSON.stringify(saved));
+    if (!firstRun) throw new Error('The baseline has no "E2E check <id>" comment to take the run id from');
+    [, RUN] = firstRun;
+  }
   // The newest earthquake with no summary: comments and the summary edit go on it
-  const list = await (await fetch(`${url('mongodb')}/eq-events?startTime=1970-01-01T00:00:00.000Z&endTime=2100-01-01T00:00:00.000Z`)).json();
+  const list = await (await fetch(`${url(NAMES[0])}/eq-events?startTime=1970-01-01T00:00:00.000Z&endTime=2100-01-01T00:00:00.000Z`)).json();
   const event = list.payload.find((e) => !e.summaryOverride);
 
   await accountsFlow();
@@ -319,9 +336,13 @@ async function compareWrites(outputDir = DEFAULT_OUTPUT_DIR) {
   await summaryFlow(samples, event);
   await seiscompFlow();
 
-  fs.mkdirSync(path.join(outputDir, 'baseline'), { recursive: true });
-  fs.writeFileSync(path.join(outputDir, 'api-writes.json'), `${JSON.stringify(report, null, 2)}\n`);
-  fs.writeFileSync(path.join(outputDir, 'baseline', 'api-writes.json'), `${JSON.stringify(baseline)}\n`);
+  const reportDir = USE_BASELINE ? path.join(outputDir, 'rerun') : outputDir;
+  fs.mkdirSync(reportDir, { recursive: true });
+  fs.writeFileSync(path.join(reportDir, 'api-writes.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (!USE_BASELINE) {
+    fs.mkdirSync(path.join(outputDir, 'baseline'), { recursive: true });
+    fs.writeFileSync(path.join(outputDir, 'baseline', 'api-writes.json'), `${JSON.stringify(baseline)}\n`);
+  }
   const failed = report.filter((r) => !r.same);
   console.log(`${report.length} steps, ${report.length - failed.length} the same, ${failed.length} different`);
   return { ok: failed.length === 0, report };
@@ -330,7 +351,8 @@ async function compareWrites(outputDir = DEFAULT_OUTPUT_DIR) {
 module.exports = { compareWrites };
 
 if (require.main === module) {
-  compareWrites(process.argv[2] ? path.resolve(process.argv[2]) : undefined)
+  const [outputArg] = positional();
+  compareWrites(outputArg ? path.resolve(outputArg) : undefined)
     .then(({ ok }) => process.exit(ok ? 0 : 1))
     .catch((err) => { console.error(`compare-writes failed: ${err.stack || err.message}`); process.exit(2); });
 }

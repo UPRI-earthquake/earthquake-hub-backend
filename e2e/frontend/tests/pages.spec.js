@@ -11,6 +11,9 @@ const { test: base } = require('@playwright/test');
 
 const OUTPUT = process.env.E2E_OUTPUT_DIR || path.join(__dirname, '..', '..', '..', '..', 'e2e-output');
 const RUN = process.env.E2E_RUN || 'run';
+// The folder a run's pages are saved in, under frontend/: the backend's name, or E2E_RECORD_AS (the
+// re-run after Part 4 saves as postgres-only, keeping the first run's pages)
+const RECORD_AS = process.env.E2E_RECORD_AS;
 const samples = JSON.parse(fs.readFileSync(path.join(OUTPUT, 'sample-accounts.json'), 'utf8'));
 const sample = (kind) => samples.accounts.find((s) => s.kind === kind && s.found);
 
@@ -81,7 +84,7 @@ async function record(page, testInfo, name) {
   await settle(page);
   await blankPersonal(page);
   const text = normalize(await page.locator('body').innerText());
-  const dir = path.join(OUTPUT, 'frontend', testInfo.project.name);
+  const dir = path.join(OUTPUT, 'frontend', RECORD_AS || testInfo.project.name);
   fs.mkdirSync(dir, { recursive: true });
   // From the top, nothing focused: a full-page screenshot draws the fixed header where the page was
   // scrolled to, and a focused element can show the "Skip to content" link
