@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       packages: read
     env:
       IMAGE: ghcr.io/upri-earthquake/earthquake-hub-backend
@@ -49,10 +50,11 @@ jobs:
       RELEASE_VERSION: ${{ inputs.release_version || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout trusted workflow code and full branch history
+      - name: Checkout exact approved release-control commit
         uses: actions/checkout@v7
         with:
-          ref: dev
+          # Pin code to the commit selected in the Run workflow branch selector.
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -78,6 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
       packages: write
     env:
       IMAGE: ghcr.io/upri-earthquake/earthquake-hub-backend
@@ -99,10 +102,11 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout trusted workflow code and full branch history
+      - name: Checkout exact approved release-control commit
         uses: actions/checkout@v7
         with:
-          ref: dev
+          # Pin code to the commit selected in the Run workflow branch selector.
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 

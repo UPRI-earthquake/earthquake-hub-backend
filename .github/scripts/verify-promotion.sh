@@ -9,13 +9,11 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?}"
 : "${GH_TOKEN:?}"
 
-[[ "${GITHUB_REF}" == "refs/heads/dev" ]] || { echo "Run this workflow from dev, not ${GITHUB_REF}"; exit 1; }
 [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Source commit must be a full lowercase 40-character SHA'; exit 1; }
 [[ "${EXPECTED_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Expected digest must be sha256 followed by 64 lowercase hexadecimal characters'; exit 1; }
 
 case "${PROMOTION_MODE}" in
   staging)
-    [[ "${GITHUB_REF_NAME}" == "dev" ]] || exit 1
     target_branch=staging
     confirmation="PROMOTE-STAGING"
     ;;
@@ -34,7 +32,25 @@ if [[ "${DRY_RUN:-true}" == 'false' && "${CONFIRMATION:-}" != "$confirmation" ]]
   exit 1
 fi
 
-# Checkout is pinned to staging/main with fetch-depth: 0, not to caller-controlled code.
+# Use only release-control code from the exact commit selected at workflow dispatch.
+# A protected branch must still point to this commit; restart if it advanced.
+expected_ref="refs/heads/${target_branch}"
+[[ "${GITHUB_REF}" == "$expected_ref" ]] || {
+  echo "Run ${PROMOTION_MODE} promotion from ${target_branch}, not ${GITHUB_REF}"
+  exit 1
+}
+[[ "${GITHUB_REF_NAME:-}" == "$target_branch" ]] || { echo 'Unexpected workflow ref name'; exit 1; }
+[[ -n "${GITHUB_SHA:-}" ]] || { echo 'Workflow dispatch SHA is required'; exit 1; }
+checked_out_sha="$(git rev-parse HEAD)"
+[[ "$checked_out_sha" == "$GITHUB_SHA" ]] || {
+  echo "Checked-out workflow code does not match the dispatched commit."
+  exit 1
+}
+current_target_sha="$(git rev-parse "refs/remotes/origin/$target_branch")"
+[[ "$current_target_sha" == "$GITHUB_SHA" ]] || {
+  echo "The protected ${target_branch} branch advanced after dispatch; rerun from its current tip."
+  exit 1
+}
 git cat-file -e "${SOURCE_SHA}^{commit}" || { echo 'Selected source commit not available'; exit 1; }
 git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/$target_branch" || {
   echo "Source commit is not in the promoted $target_branch history."
