@@ -1,4 +1,6 @@
 const MessagingService = require('../services/messaging.service')
+const crypto = require('crypto');
+const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
 
 // create helper middleware so we can reuse server-sent events
 const SSEFormatting= (req, res, next) => {
@@ -40,10 +42,44 @@ const missedEventsResender = (req, res, next) => {
   next();
 }
 
-module.exports = {
-  SSEFormatting,
-  missedEventsResender
+function secretsMatch(provided, expected) {
+  const providedBuffer = Buffer.from(String(provided || ''), 'utf8');
+  const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
+  if (providedBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
+const requireRshakeAlertSecret = async (req, res, next) => {
+  const expectedSecret = String(process.env.RSHAKE_ALERT_SHARED_SECRET || '').trim();
+  const providedSecret = String(req.get('X-RShake-Alert-Secret') || '').trim();
 
+  if (expectedSecret && secretsMatch(providedSecret, expectedSecret)) {
+    return next();
+  }
 
+  try {
+    const deviceSecretResult = await RshakeAlertCredentialsService.verifyDeviceAlertCredential({
+      providedSecret,
+      device: req.body?.device,
+    });
+
+    if (deviceSecretResult?.matched) {
+      return next();
+    }
+
+  } catch (error) {
+    return next(error);
+  }
+
+  res.message = 'Rejected sender alert request (missing or invalid alert credential)';
+  return res.status(403).json({
+    status: 403,
+    message: 'Forbidden',
+  });
+}
+
+module.exports = {
+  SSEFormatting,
+  missedEventsResender,
+  requireRshakeAlertSecret,
+}

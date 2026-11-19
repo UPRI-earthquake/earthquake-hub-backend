@@ -13,12 +13,13 @@ exports.subscribe = async (req, res, next) => {
         "any.required": "Endpoint is required.",
         "string.uri": "Endpoint must be a valid URI.",
       }),
-    expirationTime: Joi.date()
-      .allow(null)
-      .optional()
-      .messages({
-        "date.base": "Expiration time must be a valid date.",
-      }),
+    expirationTime: Joi.alternatives()
+      .try(
+        Joi.number(),
+        Joi.date(),
+        Joi.valid(null),
+      )
+      .optional(),
     keys: Joi.object({
       p256dh: Joi.string()
         .required()
@@ -31,6 +32,12 @@ exports.subscribe = async (req, res, next) => {
           "any.required": "Auth key is required.",
         }),
     }).required(),
+    clientMeta: Joi.object({
+      swScriptUrl: Joi.string().uri().allow(null).optional(),
+      userAgent: Joi.string().max(500).allow(null).optional(),
+      appVersion: Joi.string().max(80).allow(null).optional(),
+      time: Joi.alternatives().try(Joi.date(), Joi.number(), Joi.string(), Joi.valid(null)).optional(),
+    }).optional(),
   });
 
   try {

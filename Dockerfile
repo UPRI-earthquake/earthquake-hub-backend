@@ -1,27 +1,47 @@
 # Stage 1: base, minimal setup for dev, shall contain non-js deps.
 #          To be bind-mounted to local dev files (includint node_modules)
-FROM node:18-alpine as base
+FROM node:22-alpine AS base
 
 EXPOSE 5000
 
 WORKDIR /app
 
 # add non-js deps (for deps other than node_modules)
-RUN apk add --no-cache python3 make g++
+# openssh-client is required for tunnel enrollment ssh exec mode.
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    openssh-client \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# 2. Tell Puppeteer to skip downloading its own Chrome (saves 300MB+) 
+# and point it to the system Chromium binary
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Stage 2: prod, inherits base, adds src code, pre-installs js deps
 # TODO: Test for production build
-FROM base as prod
+FROM base AS prod
 
-RUN apk add dumb-init
+RUN apk add --no-cache dumb-init
 
 # install node modules
-ENV NODE_ENV production
+ENV NODE_ENV=production
 COPY --chown=node:node package*.json ./
 RUN npm ci --only=production --loglevel=verbose
 
-# copy codebase
+# copy codebase and scripts needed for build-time tasks
 COPY --chown=node:node ./src ./src
+COPY --chown=node:node ./scripts ./scripts
+
+# Overlay GeoJSON assets are committed under src/data/overlays.
+# Refresh them separately via npm run overlays:fetch when source datasets change.
 
 USER node
 CMD ["dumb-init", "npm", "run", "start"]
@@ -29,5 +49,3 @@ CMD ["dumb-init", "npm", "run", "start"]
 LABEL org.opencontainers.image.source="https://github.com/UPRI-earthquake/earthquake-hub-backend"
 LABEL org.opencontainers.image.description="Base docker image for EarthquakeHub backend"
 LABEL org.opencontainers.image.authors="earthquake@science.upd.edu.ph"
-
-

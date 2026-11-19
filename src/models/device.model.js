@@ -85,6 +85,14 @@ const DeviceSchema = new Schema({
   activityToggleTime: {
     type: Date,
     default: new Date(0),
+  },
+  rshakeAlertCredentialHash: {
+    type: String,
+    default: null,
+  },
+  rshakeAlertCredentialIssuedAt: {
+    type: Date,
+    default: null,
   }
 })
 

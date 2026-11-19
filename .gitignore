@@ -9,5 +9,6 @@ pseudo_tests
 https_data/certbot/conf/*
 !https_data/certbot/conf/options-ssl-nginx.conf
 !https_data/certbot/conf/ssl-dhparams.pem
-
+public/uploads_dev/*
+!public/uploads_dev/.gitkeep
 

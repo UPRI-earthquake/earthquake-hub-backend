@@ -3,7 +3,9 @@ const DeviceController = require('../controllers/device.controller');
 const {
   getTokenFromCookie,
   getTokenFromBearer,
-  verifyTokenWithRole
+  getTokenFromBearerIfPresent,
+  verifyTokenWithRole,
+  verifyTokenWithRoleOptional,
 } = require('../middlewares/token.middleware')
 
 const router = express.Router(); 
@@ -11,97 +13,10 @@ const router = express.Router();
 
 /**
   * @swagger
-  * /device/add:
-  *   post:
-  *     summary: Add a device to the user's account
-  *     tags: [Device]
-  *     security:
-  *       - cookieAuth: []
-  *     requestBody:
-  *       description: Device data to be added
-  *       required: true
-  *       content:
-  *         application/json:
-  *           schema:
-  *             type: object
-  *             properties:
-  *               network:
-  *                 type: string
-  *                 description: The network code of the device
-  *               station:
-  *                 type: string
-  *                 description: The station code of the device
-  *               latitude:
-  *                 type: string
-  *                 description: The latitude of the device (in degree coordinates)
-  *               longitude:
-  *                 type: string
-  *                 description: The longitude of the device (in degree coordinates)
-  *               elevation:
-  *                 type: string
-  *                 description: The elevation of the device (in meters)
-  *           example:
-  *             network: "AM"
-  *             station: "R3B2D"
-  *             latitude: "40.123456"
-  *             longitude: "120.654321"
-  *             elevation: "50"
-  *     responses:
-  *       200:
-  *         description: Device added to records of the user account
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_SUCCESS
-  *                 message:
-  *                   type: string
-  *                   example: "Successfully added device"
-  *       '400':
-  *         description: Device already belongs to an account
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Device details already used"
-  *       '500':
-  *         description: Internal server error
-  *         content:
-  *           application/json:
-  *             schema:
-  *               type: object
-  *               properties:
-  *                 status:
-  *                   type: number
-  *                   example: responseCodes.GENERIC_ERROR
-  *                 message:
-  *                   type: string
-  *                   example: "Server error occured"
-  */
-router.route('/add').post( // Citizen users should have verified token to add devices to their profile via webapp
-  getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  DeviceController.addDevice
-);
-
-
-/**
-  * @swagger
   * /device/link:
   *   post:
-  *     summary: Bind sensor's MAC address and streamId to the user's device record
+  *     summary: Creates a device record under device list of a user
   *     tags: [Device]
-  *     security:
-  *       - bearerAuth: []  # Indicates that bearer token in header is required
   *     requestBody:
   *       required: true
   *       description: Physical identification of the device/sensor
@@ -110,6 +25,30 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *           schema:
   *             type: object
   *             properties:
+  *               username:
+  *                 type: string
+  *                 description: Registered username
+  *                 example: "user-name-123"
+  *               password:
+  *                 type: string
+  *                 description: Account's password
+  *                 example: "very_secure_password"
+  *               role:
+  *                 type: string
+  *                 description: Should be "sensor"
+  *                 example: "sensor"
+  *               latitude:
+  *                 type: string
+  *                 description: The latitude of the device (in degree coordinates)
+  *                 example: "1.123"
+  *               longitude:
+  *                 type: string
+  *                 description: The longitude of the device (in degree coordinates)
+  *                 example: "-11.123"
+  *               elevation:
+  *                 type: string
+  *                 description: The elevation of the device (in meters)
+  *                 example: "50"
   *               macAddress:
   *                 type: string
   *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
@@ -120,7 +59,7 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                 description: Stream ID of a device (format XX_XXXXX_.*&#8205;/MSEED)
   *     responses:
   *       '200':
-  *         description: Device-account linking successful
+  *         description: Device-account linking response
   *         content:
   *           application/json:
   *             schema:
@@ -129,45 +68,37 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                 status:
   *                   type: number
   *                   description: The status code for the response.
-  *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
   *                   description: The message associated with the response.
-  *                   example: 'Device-Account Linking Successful'
   *                 payload:
   *                   type: object
   *                   description: The payload containing device information.
-  *                   properties:
-  *                     deviceInfo:
-  *                       type: object
-  *                       properties:
-  *                         network:
-  *                           type: string
-  *                           description: The network of the device.
-  *                           example: 'AM'
-  *                         station:
-  *                           type: string
-  *                           description: The code of the device station.
-  *                           example: 'RE722'
-  *                         longitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The longitude of the device location.
-  *                           example: -122.4194
-  *                         latitude:
-  *                           type: number
-  *                           format: float
-  *                           description: The latitude of the device location.
-  *                           example: 37.7749
-  *                         elevation:
-  *                           type: number
-  *                           format: float
-  *                           description: The elevation of the device location in meters.
-  *                           example: 100.5
-  *                         streamId:
-  *                           type: string
-  *                           description: The stream ID of the device.
-  *                           pattern: '^[A-Z]{2}_[A-Z0-9]{5}_\.\*\/MSEED$'
+  *             examples:
+  *               success:
+  *                 value:
+  *                   status: responseCodes.LINKING_SUCCESS
+  *                   message: Device-account linking successful
+  *                   payload:
+  *                     network: 'AM'
+  *                     station: 'RE722'
+  *                     longitude: -122.4194
+  *                     latitude: 37.7749
+  *                     elevation: 100.5
+  *                     streamId: 'AM_RE722_LOC_CHANNEL/MSEED'
+  *                     accessToken: 'your-access-token-here'
+  *               alreadyLinked:
+  *                 value:
+  *                   status: responseCodes.LINKING_ALREADY_DONE
+  *                   message: Device-account already linked
+  *                   payload:
+  *                     network: 'AM'
+  *                     station: 'RE722'
+  *                     longitude: -122.4194
+  *                     latitude: 37.7749
+  *                     elevation: 100.5
+  *                     streamId: 'AM_RE722_LOC_CHANNEL/MSEED'
+  *                     accessToken: 'your-access-token-here'
   *       '400':
   *         description: Bad request
   *         content:
@@ -182,22 +113,35 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                   type: string
   *                   description: The message associated with the response.
   *             examples:  # Provide multiple examples for different error cases
-  *               alreadyLinked:
+  *               accountNotExists:
+  *                 value:
+  *                   status: responseCodes.AUTHENTICATION_USER_NOT_EXIST
+  *                   message: "User doesn't exists!"
+  *               alreadyLinkedToSomeone:
   *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is already linked to an existing account"
+  *                   message: "Device is already linked to someone else!"
   *               usernameNotFound:
   *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
   *                   message: "User not found"
-  *               deviceNotFound:
-  *                 value:
+  *               incorrectAMStation:
+  *                 value: 
   *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device doesn't exist in the database!"
-  *               deviceNotOwned:
-  *                 value:
-  *                   status: responseCodes.GENERIC_ERROR
-  *                   message: "Device is not yet added to user's device list"
+  *                   message: "Station code incorrect for an AM device"
+  *       '401':
+  *         description: Linking failed due to wrong password
+  *         content:
+  *           application/json:
+  *             schema:
+  *               type: object
+  *               properties:
+  *                 status:
+  *                   type: number
+  *                   example: responseCodes.AUTHENTICATION_WRONG_PASSWORD
+  *                 message:
+  *                   type: string
+  *                   example: "Wrong password"
   *       '500':
   *         description: Internal server error
   *         content:
@@ -212,10 +156,19 @@ router.route('/add').post( // Citizen users should have verified token to add de
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/link').post( // Sensor devices that will request for linking with a citizen acct requires bearer token
+router.route('/link').post(
+  DeviceController.linkDevice
+);
+
+// Exchange refresh token for new access/refresh pair
+router.route('/refresh-token').post(
+  DeviceController.refreshToken
+);
+
+router.route('/alert-credential').post(
   getTokenFromBearer,
   verifyTokenWithRole('sensor'),
-  DeviceController.linkDevice
+  DeviceController.issueRshakeAlertCredential,
 );
 
 
@@ -294,9 +247,82 @@ router.route('/link').post( // Sensor devices that will request for linking with
   */
 router.route('/unlink').post( // Sensor devices that will request for unlinking with a citizen acct requires bearer token
 getTokenFromBearer,
-verifyTokenWithRole('sensor'),
+verifyTokenWithRole('sensor', true),
 DeviceController.unlinkDevice
 )
+
+/**
+  * @swagger
+  * /device/reset-link:
+  *   post:
+  *     summary: Hard reset a device link and delete the device record
+  *     tags: [Device]
+  *     requestBody:
+  *       content:
+  *         application/json:
+  *           schema:
+  *             type: object
+  *             properties:
+  *               macAddress:
+  *                 type: string
+  *                 pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+  *               streamId:
+  *                 type: string
+  *                 pattern: '^[A-Z]{2}_[A-Z0-9]{5}_.*\/MSEED$'
+  *             required:
+  *               - macAddress
+  *               - streamId
+  *     responses:
+  *       200:
+  *         description: Device reset and record removed
+  *       403:
+  *         description: Device belongs to another account
+  *       404:
+  *         description: Device not found
+  *       409:
+  *         description: Identifier mismatch
+  */
+router.route('/reset-link').post(
+  getTokenFromBearerIfPresent,
+  verifyTokenWithRoleOptional('sensor', true),
+  DeviceController.resetDeviceLink,
+);
+
+router.route('/tunnel/enroll').post(
+  getTokenFromBearer,
+  verifyTokenWithRole('sensor'),
+  DeviceController.enrollDeviceTunnel,
+);
+
+router.route('/tunnel/mappings').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.listDeviceTunnels,
+);
+
+router.route('/tunnel/revoke').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('admin'),
+  DeviceController.revokeDeviceTunnel,
+);
+
+router.route('/remote-actions/capabilities').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionCapabilities,
+);
+
+router.route('/remote-actions/servers').get(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.getRemoteActionServers,
+);
+
+router.route('/remote-actions/execute').post(
+  getTokenFromCookie,
+  verifyTokenWithRole('citizen'),
+  DeviceController.executeRemoteAction,
+);
 
 
 /**
@@ -378,7 +404,10 @@ DeviceController.unlinkDevice
   *                   type: string
   *                   example: "Server error occured"
   */
+// Short cache lifetime is acceptable for station list (SSE updates will refine status)
+// TODO(perf): Revisit TTL if backend adds ETag/Last-Modified support
 router.route('/all').get(
+  require('../middlewares/cache.middleware').cacheSeconds(60),
   DeviceController.getAllDeviceLocations
 );
 
@@ -407,7 +436,7 @@ router.route('/all').get(
   *                   type: string
   *                   description: The message associated with the response.
   *                   example: 'All device locations found'
-  *                 payload:
+  *                 devices:
   *                   type: array
   *                   description: An array of device objects
   *                   items:
@@ -433,6 +462,23 @@ router.route('/all').get(
   *                         type: string
   *                         description: Timestamp indicating when the device status changed (Not Available if Not Yet Linked)
   *                         example: "Fri, 14 Jul 2023 12:40:37 GMT"
+  *                 releasedDevices:
+  *                   type: array
+  *                   description: An array of released device history entries
+  *                   items:
+  *                     type: object
+  *                     properties:
+  *                       network:
+  *                         type: string
+  *                       station:
+  *                         type: string
+  *                       description:
+  *                         type: string
+  *                       streamId:
+  *                         type: string
+  *                       releasedAt:
+  *                         type: string
+  *                         format: date-time
   *       '403':
   *         description: When no token is present in sent cookie
   *         content:
@@ -460,10 +506,11 @@ router.route('/all').get(
   *                   type: string
   *                   example: "Server error occured"
   */
-router.route('/my-devices').get( 
+router.route('/my-devices').get(
+  // Allow both citizen and brgy accounts to view their linked devices
   getTokenFromCookie,
-  verifyTokenWithRole('citizen'),
-  DeviceController.getOwnedDevices
+  verifyTokenWithRole(['citizen', 'brgy']),
+  DeviceController.getOwnedDevices,
 );
 
 

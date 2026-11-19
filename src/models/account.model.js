@@ -60,6 +60,14 @@ const AccountSchema = new mongoose.Schema({
   username: String,
   password: String,
   roles: [String], // sensor, citizen, brgy, admin
+  passwordPolicyVersion: {
+    type: Number,
+    default: 1, // legacy until explicitly updated
+  },
+  passwordUpdatedAt: Date,
+  passwordResetTokenId: String, // hashed token id for single-use resets
+  passwordResetIssuedAt: Date,
+  passwordResetUsedAt: Date,
   isApproved: { // inactive, active
     type: Boolean,
     default: false
@@ -68,8 +76,28 @@ const AccountSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Device'
   },],
+  releasedDevices: [{
+    deviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device' },
+    streamId: String,
+    macAddress: String,
+    network: String,
+    station: String,
+    description: String,
+    longitude: Number,
+    latitude: Number,
+    elevation: Number,
+    releasedAt: { type: Date, default: Date.now },
+    reason: { type: String, default: 'unlink' },
+  }],
   ringserverUrl: String,
   ringserverPort: Number,
+  alertPreferences: {
+    rshakeEmailEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    updatedAt: Date,
+  },
 }, {
 
   timestamps: { //Mongoose automatic timestamps
