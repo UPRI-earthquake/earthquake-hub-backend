@@ -1,6 +1,6 @@
-// POST /device/reset-link for a device that earthquake history lists, with accounts and devices on
-// PostgreSQL: event_stations keeps such a device (ON DELETE RESTRICT), so the reset clears it instead
-// of deleting it, and linking the sensor again takes the same record back.
+// POST /device/reset-link for a device that earthquake history lists: event_stations keeps such a device
+// (ON DELETE RESTRICT), so the reset clears it instead of deleting it, and linking the sensor again takes
+// the same record back.
 jest.mock('../src/services/email.service', () => ({ sendMail: jest.fn().mockResolvedValue({}) }));
 jest.mock('axios', () => ({ get: () => Promise.reject(new Error('no network in tests')) }));
 
@@ -13,7 +13,7 @@ const MAC = 'B8:27:EB:12:AB:CD';
 const STATION = generateAMStationCode(MAC);
 const STREAM_ID = `AM_${STATION}_.*/MSEED`;
 
-describe('reset-link for a device with earthquake history (PEOPLE_AND_SENSORS_DB=postgres)', () => {
+describe('reset-link for a device with earthquake history', () => {
   let pg;
   let app;
 

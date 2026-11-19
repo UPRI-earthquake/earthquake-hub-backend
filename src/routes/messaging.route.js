@@ -252,7 +252,7 @@ router.post(`${restrictedPath}/rshake-alert`,
   *     description: >
   *       !! Access to this endpoint is restricted to trusted network only (via reverse-proxy).
   *       Emits a `STATION_STATUS` message on the `/messaging` SSE stream and optionally updates
-  *       the matching device's `activity` and `activityToggleTime` in MongoDB.
+  *       the matching device's `activity` and `activityToggleTime` in the database.
   *     tags: [Messaging]
   *     requestBody:
   *       required: true

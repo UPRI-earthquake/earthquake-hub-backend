@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const AccountsRepo = require('../repositories/accounts.repo');
 const DevicesRepo = require('../repositories/devices.repo');
 const { DuplicateKeyError } = require('../repositories/errors');
-const { withTransaction, isTransactionUnsupported } = require('../repositories/transactions');
+const { withTransaction } = require('../repositories/transactions');
 const {
   passwordSchema,
   usernameSchema,
@@ -693,37 +693,19 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
   const deviceIds = await DevicesRepo.listAccountDeviceIds(account.id);
   const newDescription = `${nextUsername}'s device`;
 
-  const applyUpdates = async (tx = null) => {
-    const renamed = await AccountsRepo.update(account.id, { username: nextUsername }, { tx });
-    if (!renamed) {
-      throw new Error('accountMissingDuringUpdate');
-    }
-    return DevicesRepo.setDescription(deviceIds, newDescription, { tx });
-  };
-
   let updatedDevices = 0;
-  let usedTransaction = false;
-
   try {
-    updatedDevices = await withTransaction((tx) => applyUpdates(tx));
-    usedTransaction = true;
+    updatedDevices = await withTransaction(async (tx) => {
+      const renamed = await AccountsRepo.update(account.id, { username: nextUsername }, { tx });
+      if (!renamed) {
+        throw new Error('accountMissingDuringUpdate');
+      }
+      return DevicesRepo.setDescription(deviceIds, newDescription, { tx });
+    });
   } catch (err) {
     const duplicate = duplicateKeyResult(err);
     if (duplicate) return { str: duplicate };
-    if (!isTransactionUnsupported(err)) {
-      throw err;
-    }
-  }
-
-  if (!usedTransaction) {
-    try {
-      updatedDevices = await applyUpdates(null);
-    } catch (err) {
-      await AccountsRepo.update(account.id, { username: currentUsername }).catch(() => {});
-      const duplicate = duplicateKeyResult(err);
-      if (duplicate) return { str: duplicate };
-      throw err;
-    }
+    throw err;
   }
 
   return {

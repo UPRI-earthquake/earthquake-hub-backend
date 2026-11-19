@@ -18,7 +18,6 @@ jest.mock('../src/repositories/comments.repo', () => ({
 // Runs the function with a stand-in transaction
 jest.mock('../src/repositories/communityTransactions', () => ({
   withTransaction: jest.fn((fn) => fn('tx')),
-  isTransactionUnsupported: jest.fn(() => false),
 }));
 
 jest.mock('../src/services/contributions.service', () => ({
@@ -139,17 +138,6 @@ describe('comments.service', () => {
       imageURL: '/uploads/only.jpg',
       status: 'approved',
     }, { tx: 'tx' });
-  });
-
-  test("createComment falls back to plain writes on a MongoDB that can't run transactions", async () => {
-    mockEventLookup({ _id: '69c217dc9728d1ee7fcb8ea6', publicID: 'gfz2025tean' });
-    CommentsRepo.create.mockResolvedValue(storedComment());
-    CommunityTransactions.withTransaction.mockRejectedValueOnce(new Error('Transaction numbers are only allowed on a replica set member'));
-    CommunityTransactions.isTransactionUnsupported.mockReturnValueOnce(true);
-
-    await CommentsService.createComment({ eventId: '69c217dc9728d1ee7fcb8ea6', content: 'Felt it.' });
-
-    expect(CommentsRepo.create).toHaveBeenCalledWith(expect.objectContaining({ content: 'Felt it.' }), { tx: undefined });
   });
 
   test("createComment fails when its points can't be written (the transaction undoes the comment)", async () => {

@@ -1,8 +1,9 @@
-// Earthquake events in PostgreSQL: the same functions and event shape as mongodb/events.repo.js, which
-// both must keep (__tests__/events.repo.integration.test.js). Events come back in the shape the API
-// sends (`_id`, OT, latitude_value, ...), put together from four tables:
-//   events                  the event; `_id` is legacy_mongo_id: copied events keep their old _id, new
-//                           ones get a new ObjectId, so comments keep finding them by the id they hold
+// Earthquake events in PostgreSQL, as ../events.repo.js exports them
+// (__tests__/events.repo.integration.test.js). Events come back in the shape the API sends (`_id`, OT,
+// latitude_value, ...), put together from four tables:
+//   events                  the event; `_id` is legacy_mongo_id: events copied from MongoDB kept their
+//                           old _id, new ones get a new one (newLegacyId), so comments keep finding them
+//                           by the id they hold
 //   event_stations          candidateStations / recordingStations, as the devices' station codes
 //   event_catalog_matches   additionalInformation[], in its order
 //   event_catalog_status    pendingCatalogSources, catalogEnrichmentStatus / Attempts, and the legacy
@@ -11,9 +12,9 @@
 // (eventMappings.displayStations). Station codes that match no device can't be stored and are left out.
 //
 // Writes that touch several tables run in one transaction, and every write to an event's rows also
-// moves the event's updated_at, so the copy script can treat an event and its rows as one unit.
-const { Types } = require('mongoose');
+// moves the event's updated_at, so an event and its rows change as one unit.
 const { normalizeStations, displayStations, toMatchColumns, toCatalogEntry } = require('./eventMappings');
+const { newLegacyId } = require('./legacyIds');
 const {
   PHILIPPINES_OUTLINE_WKT, ZERO_WEIGHT_KM, SIGNIFICANT_SCORE, REPORT_POINTS, MAX_REPORTERS,
 } = require('../../services/significance');
@@ -225,7 +226,7 @@ const createEventsRepo = (db, {
       if (clearPlace) merge.place = null;
 
       const [saved] = await trx('events')
-        .insert({ ...columns, public_id: String(publicID), legacy_mongo_id: new Types.ObjectId().toString() })
+        .insert({ ...columns, public_id: String(publicID), legacy_mongo_id: newLegacyId() })
         .onConflict('public_id')
         .merge(merge)
         .where(trx.raw('excluded.last_modification IS NULL OR events.last_modification IS NULL OR events.last_modification <= excluded.last_modification'))
@@ -381,6 +382,30 @@ const createEventsRepo = (db, {
     });
   }
 
+  /***************************************************************************
+    * queueCatalogSource:
+    *     Queues one searched catalog (phivolcs or usgs) for the nightly enrichment job on every event
+    *     it hasn't matched: the event's status row for it becomes pending with no attempts (made if
+    *     missing). Events it has matched keep theirs. Resolves to how many events were queued.
+    ***************************************************************************/
+  async function queueCatalogSource(source) {
+    const name = String(source ?? '').trim().toLowerCase();
+    if (!SEARCHED_SOURCES.includes(name)) {
+      throw new Error(`Unknown catalog "${source}": one of ${SEARCHED_SOURCES.join(', ')}`);
+    }
+    const { rowCount } = await db.raw(`
+      WITH queued AS (
+        INSERT INTO event_catalog_status (event_id, source, status, attempts)
+        SELECT e.id, ?, 'pending', 0 FROM events e
+        WHERE NOT EXISTS (SELECT 1 FROM event_catalog_matches m WHERE m.event_id = e.id AND m.source = ?)
+        ON CONFLICT (event_id, source) DO UPDATE SET status = 'pending', attempts = 0
+        RETURNING event_id
+      )
+      UPDATE events SET updated_at = now() WHERE id IN (SELECT event_id FROM queued)
+    `, [name, name]);
+    return rowCount;
+  }
+
   // --- Significant earthquakes ---
 
   /***************************************************************************
@@ -473,6 +498,7 @@ const createEventsRepo = (db, {
     countEnrichmentEligible,
     listEnrichmentEligible,
     saveEnrichment,
+    queueCatalogSource,
   };
 };
 

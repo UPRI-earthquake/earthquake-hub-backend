@@ -4,25 +4,22 @@
 // responses (community.golden.postgres.integration.test.js).
 //
 // Points aren't returned by any endpoint: after each request that can write them, the stored entries are
-// recorded the same way (or checked to be unchanged), read from where the area keeps them.
+// recorded the same way (or checked to be unchanged).
 //
-// The data is always seeded in MongoDB. Each area on PostgreSQL is then copied with the real copy scripts
-// (accounts, then events, then comments and points) and removed from MongoDB, so the responses come
-// from where the settings say. The seeded records only hold what both databases can represent.
+// The data is defined as MongoDB stored it, and seeded in PostgreSQL as the copy from MongoDB wrote it
+// (fixtures/copiedRows.js): accounts, then events, then comments. The seeded records only hold what both
+// databases could represent.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
-const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
-const { copyEarthquakes } = require('../../scripts/copy-earthquakes-to-postgres');
-const { copyCommunity } = require('../../scripts/copy-community-to-postgres');
+const { insertPeopleAndSensors, insertEvents, insertComments } = require('./copiedRows');
 
-const oid = (hex) => new mongoose.Types.ObjectId(hex);
+// A MongoDB id, as the data and the API name records
+const oid = (hex) => hex;
 const at = (iso) => new Date(iso);
 
 const PASSWORD = 'Golden-Password-2026!';
@@ -153,15 +150,7 @@ const COMMENTS = [
   }),
 ];
 
-// Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
-const ALL_ON_POSTGRES = {
-  PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', JOB_LOCKS_DB: 'postgres', COMMUNITY_DB: 'postgres',
-};
-
-const describeCommunityGolden = () => describeCommunityGoldenWith(ALL_ON_POSTGRES, 'every area on PostgreSQL');
-
-const describeCommunityGoldenWith = (settings, label) => describe(`Community: recorded API responses (${label})`, () => {
-  let mongo;
+const describeCommunityGolden = () => describe('Community: recorded API responses', () => {
   let pg;
   let app;
   let adminCookie;
@@ -188,39 +177,23 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
     return res;
   };
 
-  // The stored points entries, sorted by dedupeKey, with ids MongoDB-style, read from where the area is
+  // The stored points entries, sorted by dedupeKey, with ids MongoDB-style
   const storedPoints = async () => {
-    if (settings.COMMUNITY_DB === 'postgres') {
-      const rows = await pg.db('contribution_events AS ce')
-        .join('accounts AS a', 'a.id', 'ce.account_id')
-        .leftJoin('events AS e', 'e.id', 'ce.event_id')
-        .select('ce.*', 'a.legacy_mongo_id AS account_legacy_id', 'e.legacy_mongo_id AS event_legacy_id', 'e.public_id');
-      return rows
-        .map((row) => ({
-          dedupeKey: row.dedupe_key,
-          accountId: row.account_legacy_id.trim(),
-          actionType: row.action_type,
-          targetType: row.target_type,
-          targetId: row.target_id,
-          eventId: row.event_legacy_id ? row.event_legacy_id.trim() : null,
-          eventPublicID: row.public_id || row.metadata.eventPublicID || null,
-          points: row.points,
-          reason: row.reason,
-        }))
-        .sort((a, b) => (a.dedupeKey < b.dedupeKey ? -1 : 1));
-    }
-    const docs = await mongoose.connection.collection('contributionevents').find().toArray();
-    return docs
-      .map((doc) => ({
-        dedupeKey: doc.dedupeKey,
-        accountId: String(doc.accountId),
-        actionType: doc.actionType,
-        targetType: doc.targetType,
-        targetId: doc.targetId ?? null,
-        eventId: doc.eventId ? String(doc.eventId) : null,
-        eventPublicID: doc.eventPublicID ?? null,
-        points: doc.points,
-        reason: doc.reason ?? null,
+    const rows = await pg.db('contribution_events AS ce')
+      .join('accounts AS a', 'a.id', 'ce.account_id')
+      .leftJoin('events AS e', 'e.id', 'ce.event_id')
+      .select('ce.*', 'a.legacy_mongo_id AS account_legacy_id', 'e.legacy_mongo_id AS event_legacy_id', 'e.public_id');
+    return rows
+      .map((row) => ({
+        dedupeKey: row.dedupe_key,
+        accountId: row.account_legacy_id.trim(),
+        actionType: row.action_type,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        eventId: row.event_legacy_id ? row.event_legacy_id.trim() : null,
+        eventPublicID: row.public_id || row.metadata.eventPublicID || null,
+        points: row.points,
+        reason: row.reason,
       }))
       .sort((a, b) => (a.dedupeKey < b.dedupeKey ? -1 : 1));
   };
@@ -243,10 +216,10 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
   const list = (query) => ({ method: 'GET', path: `/comments?${query}` });
 
   beforeAll(async () => {
-    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
+    pg = await startPostgres();
     uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ehub-golden-uploads-'));
-    // Before the app loads: repositories pick their database, and the routes read these on load
-    Object.assign(process.env, pg.env, settings, {
+    // Before the app loads: src/db/knex.js and the routes read these on load
+    Object.assign(process.env, pg.env, {
       UPLOAD_DIR: uploadDir,
       UPLOAD_PUBLIC_PATH: '/uploads',
       COMMENTS_DEFAULT_STATUS: 'approved',
@@ -255,34 +228,16 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
     app = require('../../src/app');
     const { generateAccessToken } = require('../../src/controllers/helpers');
     adminCookie = `accessToken=${generateAccessToken(ADMIN, 'web')}`;
-    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
-  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
+  }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'trace').mockImplementation(() => {});
-    await Promise.all([mongo.clear(), pg.clear()]);
-    await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
-    await mongoose.connection.collection('events').insertMany(EVENTS);
-    await mongoose.connection.collection('comments').insertMany(COMMENTS);
-    // Each area on PostgreSQL: copied with its real copy script, then removed from MongoDB
-    const quiet = { db: pg.db, log: () => {} };
-    const moved = [];
-    if (settings.PEOPLE_AND_SENSORS_DB === 'postgres') {
-      if (!(await copyPeopleAndSensors(quiet)).ok) throw new Error('Copying the seeded accounts to PostgreSQL failed');
-      moved.push('accounts');
-    }
-    if (settings.EARTHQUAKES_DB === 'postgres') {
-      if (!(await copyEarthquakes(quiet)).ok) throw new Error('Copying the seeded events to PostgreSQL failed');
-      moved.push('events');
-    }
-    if (settings.COMMUNITY_DB === 'postgres') {
-      const copied = await copyCommunity(quiet);
-      if (!copied.ok || copied.comments.skipped.length > 0) throw new Error('Copying the seeded comments to PostgreSQL failed');
-      moved.push('comments', 'contributionevents');
-    }
-    await Promise.all(moved.map((name) => mongoose.connection.collection(name).deleteMany({})));
+    await pg.clear();
+    await insertPeopleAndSensors(pg.db, { accounts: ACCOUNTS });
+    await insertEvents(pg.db, EVENTS);
+    await insertComments(pg.db, COMMENTS);
   });
 
   afterEach(() => {
@@ -291,7 +246,7 @@ const describeCommunityGoldenWith = (settings, label) => describe(`Community: re
 
   afterAll(async () => {
     await require('../../src/db/knex').db.destroy();
-    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
+    if (pg) await pg.stop();
     if (uploadDir) fs.rmSync(uploadDir, { recursive: true, force: true });
   });
 

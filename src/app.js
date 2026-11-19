@@ -59,7 +59,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
         },
       },
     },
-    apis: ['./src/routes/*.js', './src/models/*.js'],
+    apis: ['./src/routes/*.js'],
     failOnErrors: true,
   };
   const specs = swaggerJsDoc(options);

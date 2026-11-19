@@ -1,6 +1,5 @@
-// Job locks in PostgreSQL (`job_locks` table): the implementation used when JOB_LOCKS_DB=postgres.
-// Keep it behaving like mongodb/jobLocks.repo.js: both must pass
-// __tests__/jobLocks.repo.integration.test.js.
+// Job locks in PostgreSQL (`job_locks` table), as ../jobLocks.repo.js exports them
+// (__tests__/jobLocks.repo.integration.test.js).
 
 // `db` is a Knex instance (src/db/knex.js in the app, a test container's in integration tests)
 const createJobLocksRepo = (db) => {

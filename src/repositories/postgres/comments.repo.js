@@ -1,18 +1,17 @@
-// Comments in PostgreSQL: the same functions and comment shape as mongodb/comments.repo.js, which both
-// must keep (__tests__/community.repo.integration.test.js). A comment is put together from:
+// Comments in PostgreSQL, as ../comments.repo.js exports them (__tests__/community.repo.integration.test.js).
+// A comment is put together from:
 //   comments                the comment; its event and account are foreign keys, shown as their
 //                           MongoDB-style ids (eventId, accountId) with the event's public_id as
 //                           eventPublicID
 //   comment_helpful_marks   helpfulAccountIds, one row per account
 //   comment_issue_reports   issueReports, one row per account
-// Account ids going in (from session tokens) are MongoDB-style too, and are found in accounts here, so
-// sessions from before the switch keep working (see legacyIds.js).
+// Account ids going in (from session tokens) are MongoDB-style too, and are found in accounts here (see
+// legacyIds.js).
 //
 // Visible comments are the approved ones (copied comments from before moderation are approved). A
-// commentId that isn't a UUID finds nothing, as an unknown one did in MongoDB. Every write to a
-// comment's marks or reports also moves the comment's updated_at, as MongoDB's did, so the copy script
-// can treat a comment and its rows as one unit. Functions that take { tx } run on that Knex transaction
-// (postgres/transactions.js).
+// commentId that isn't a UUID finds nothing, as an unknown one does. Every write to a comment's marks or
+// reports also moves the comment's updated_at, so a comment and its rows change as one unit. Functions
+// that take { tx } run on that Knex transaction (postgres/transactions.js).
 const { isUuid, byLegacyId, accountIdFor, eventIdFor, shownId } = require('./legacyIds');
 
 const MAX_CONTENT_LENGTH = 1000;
@@ -117,7 +116,8 @@ const createCommentsRepo = (db) => {
     return findOne({ 'c.id': id }, tx);
   }
 
-  // One page of an event's visible comments, newest first; see mongodb/comments.repo.js
+  // One page of an event's visible comments, newest first: by cursor (the last comment's createdAt and
+  // commentId) or by offset
   async function listVisibleForEvent(event, { limit, offset = 0, after = null }) {
     // The event's row, by its MongoDB-style id or its publicID
     const eventRows = db('events').select('id').where((where) => {

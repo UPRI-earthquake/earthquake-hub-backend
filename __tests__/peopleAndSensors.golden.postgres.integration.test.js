@@ -1,4 +1,4 @@
-// Accounts and devices on PostgreSQL: must match the same recordings as on MongoDB
+// Accounts and devices on PostgreSQL: must match the recordings made on MongoDB
 jest.mock('../src/services/email.service', () => ({
   sendMail: jest.fn().mockResolvedValue({ accepted: [] }),
 }));
@@ -17,4 +17,4 @@ jest.mock('../src/services/tunnelEnrollment.service', () => ({
 
 const { describePeopleAndSensorsGolden } = require('./fixtures/peopleAndSensorsGolden');
 
-describePeopleAndSensorsGolden({ PEOPLE_AND_SENSORS_DB: 'postgres' });
+describePeopleAndSensorsGolden();

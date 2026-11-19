@@ -1,5 +1,5 @@
-// Devices, account device lists and release history in PostgreSQL: the same functions and shapes as
-// ../devices.repo.js (MongoDB), which both must keep (__tests__/peopleAndSensors.repo.integration.test.js).
+// Devices, account device lists and release history in PostgreSQL, as ../devices.repo.js exports them
+// (__tests__/peopleAndSensors.repo.integration.test.js).
 //
 // What MongoDB kept in one array per account is split here:
 //   - a citizen/sensor account's list = the devices it owns (devices.owner_account_id), oldest first
@@ -9,11 +9,11 @@
 // Functions that take { tx } run on that Knex transaction (postgres/transactions.js).
 //
 // legacyId is the device's MongoDB-style id (legacy_mongo_id), which the API returns as deviceId
-// (alert credentials, released devices) so clients see the same ids as before the move. Copied
-// devices keep their old _id; devices created here get a new ObjectId. Released devices keep it in
+// (alert credentials, released devices) so clients see the same ids as before the move. Devices copied
+// from MongoDB kept their old _id; new devices get a new one (newLegacyId). Released devices keep it in
 // device_legacy_mongo_id, so the history still shows it after the device is deleted.
-const { Types } = require('mongoose');
 const { fromPostgresError, StillReferencedError } = require('../errors');
+const { newLegacyId } = require('./legacyIds');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (id) => UUID.test(String(id));
@@ -34,7 +34,7 @@ const COLUMN_OF = {
   rshakeAlertCredentialIssuedAt: 'rshake_alert_credential_issued_at',
 };
 
-// null when there's no row, as the MongoDB repository returns
+// null when there's no row
 const toDevice = (row) => (!row ? null : {
   id: row.id,
   legacyId: row.legacy_mongo_id ? row.legacy_mongo_id.trim() : null,
@@ -138,7 +138,7 @@ const createDevicesRepo = (db) => {
     let id;
     try {
       [{ id }] = await q(tx)('devices')
-        .insert({ ...toColumns(fields), legacy_mongo_id: new Types.ObjectId().toString() })
+        .insert({ ...toColumns(fields), legacy_mongo_id: newLegacyId() })
         .returning('id');
     } catch (err) {
       throw fromPostgresError(err);

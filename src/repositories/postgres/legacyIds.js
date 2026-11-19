@@ -1,6 +1,9 @@
 // Callers (services, session tokens, other repositories) still name accounts and events by their
 // MongoDB-style id (legacy_mongo_id): these find the PostgreSQL row for such an id. A row's own uuid is
-// accepted too, for rows that have no legacy id.
+// accepted too, for rows that have no legacy id. New accounts, devices and events get a new one
+// (newLegacyId), so ids the API shows keep the same form (POSTGRES.md, "Ids the API shows").
+const { ObjectId } = require('bson');
+
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,10 +35,15 @@ async function eventIdFor(k, { _id, publicID } = {}) {
 // The MongoDB-style id a row shows: its legacy_mongo_id, or its uuid when it has none
 const shownId = (legacyMongoId, id) => (legacyMongoId ? legacyMongoId.trim() : id);
 
+// A new MongoDB-style id (24 hex characters: creation time, then random and counter bytes), as MongoDB
+// gave new documents, for a new row's legacy_mongo_id
+const newLegacyId = () => new ObjectId().toString();
+
 module.exports = {
   isUuid,
   byLegacyId,
   accountIdFor,
   eventIdFor,
   shownId,
+  newLegacyId,
 };

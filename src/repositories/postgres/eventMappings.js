@@ -1,6 +1,6 @@
 // How earthquake events map between the shape the API sends (MongoDB's field names) and the PostgreSQL
-// tables. Shared by postgres/events.repo.js and scripts/copy-earthquakes-to-postgres.js, so the copy
-// stores exactly what the repository reads back.
+// tables, for postgres/events.repo.js (and the copy from MongoDB, while it existed, so it stored exactly
+// what the repository reads back).
 
 // --- Station lists ---
 

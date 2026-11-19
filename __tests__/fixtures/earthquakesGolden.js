@@ -6,24 +6,22 @@
 // Two jobs aren't endpoints: the station check of one new event (run by a timer after ingest) is
 // called directly and its result recorded the same way.
 //
-// The data is always seeded in MongoDB. With EARTHQUAKES_DB=postgres it is then copied with the real
-// copy scripts (accounts and devices first, then events) and removed from MongoDB, so the responses
-// come from PostgreSQL alone. The seeded records only hold what both databases can represent: e.g. an
-// ingested event's legacy fields are null (as ingest writes them), not missing.
+// The data is defined as MongoDB stored it, and seeded in PostgreSQL as the copy from MongoDB wrote it
+// (fixtures/copiedRows.js): accounts and devices first, then events. The seeded records only hold what
+// both databases could represent: e.g. an ingested event's legacy fields are null (as ingest writes
+// them), not missing.
 //
 // The test file must mock axios and puppeteer-core with the fakes (see earthquakesExternal.js).
 const http = require('http');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
 const { expectGolden } = require('./golden');
 const External = require('./earthquakesExternal');
-const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
-const { copyEarthquakes } = require('../../scripts/copy-earthquakes-to-postgres');
+const { insertPeopleAndSensors, insertEvents } = require('./copiedRows');
 
-const oid = (hex) => new mongoose.Types.ObjectId(hex);
+// A MongoDB id, as the data and the API name records
+const oid = (hex) => hex;
 const at = (iso) => new Date(iso);
 
 const PASSWORD = 'Golden-Password-2026!';
@@ -256,15 +254,7 @@ const newEventMessage = (fields = {}) => ({
   ...fields,
 });
 
-// Every area pinned, so a developer's .env (which the app loads) can't decide where the data is read
-const ALL_ON_POSTGRES = {
-  PEOPLE_AND_SENSORS_DB: 'postgres', EARTHQUAKES_DB: 'postgres', JOB_LOCKS_DB: 'postgres', COMMUNITY_DB: 'postgres',
-};
-
-const describeEarthquakesGolden = () => describeEarthquakesGoldenWith(ALL_ON_POSTGRES, 'every area on PostgreSQL');
-
-const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes: recorded API responses (${label})`, () => {
-  let mongo;
+const describeEarthquakesGolden = () => describe('Earthquakes: recorded API responses', () => {
   let pg;
   let app;
   let EQEventsService;
@@ -302,16 +292,15 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
   const getEvent = (publicID) => ({ method: 'GET', path: `/eq-events/${publicID}` });
 
   beforeAll(async () => {
-    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
-    // Before the app loads: repositories pick their database, and the services read these on load
-    Object.assign(process.env, pg.env, JOB_ENV, settings);
+    pg = await startPostgres();
+    // Before the app loads: src/db/knex.js and the services read these on load
+    Object.assign(process.env, pg.env, JOB_ENV);
     app = require('../../src/app');
     EQEventsService = require('../../src/services/EQevents.service');
     EventsRepo = require('../../src/repositories/events.repo');
     const { generateAccessToken } = require('../../src/controllers/helpers');
     adminCookie = `accessToken=${generateAccessToken(ADMIN, 'web')}`;
-    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
-  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
+  }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -321,17 +310,9 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
     jest.spyOn(global, 'fetch').mockImplementation(External.usgsFetch);
     External.setGeoserveDown(false);
     EQEventsService._test.resetGeoserveLookups(); // a test with GeoServe down pauses its lookups
-    await Promise.all([mongo.clear(), pg.clear()]);
-    await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
-    await mongoose.connection.collection('devices').insertMany(DEVICES);
-    await mongoose.connection.collection('events').insertMany(EVENTS);
-    if (settings.EARTHQUAKES_DB === 'postgres') {
-      const quiet = { db: pg.db, log: () => {} };
-      if (!(await copyPeopleAndSensors(quiet)).ok || !(await copyEarthquakes(quiet)).ok) {
-        throw new Error('Copying the seeded data to PostgreSQL failed');
-      }
-      await Promise.all(['accounts', 'devices', 'events'].map((name) => mongoose.connection.collection(name).deleteMany({})));
-    }
+    await pg.clear();
+    await insertPeopleAndSensors(pg.db, { accounts: ACCOUNTS, devices: DEVICES });
+    await insertEvents(pg.db, EVENTS);
   });
 
   afterEach(() => {
@@ -340,7 +321,7 @@ const describeEarthquakesGoldenWith = (settings, label) => describe(`Earthquakes
 
   afterAll(async () => {
     await require('../../src/db/knex').db.destroy();
-    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
+    if (pg) await pg.stop();
   });
 
   describe('GET /eq-events', () => {

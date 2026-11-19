@@ -248,4 +248,48 @@ router.delete('/:commentId/helpful', getTokenFromCookieIfPresent, verifyTokenWit
 router.post('/:commentId/issues', getTokenFromCookieIfPresent, verifyTokenWithRoleOptional('citizen'), CommentsController.reportCommentIssue);
 router.patch('/:commentId/status', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.updateCommentStatus);
 router.delete('/:commentId', getTokenFromCookie, verifyTokenWithRole('admin'), CommentsController.deleteComment);
+// The API docs' schemas for these routes (they were defined with the Mongoose models)
+/**
+ * @swagger
+ *   components:
+ *     schemas:
+ *       Comment:
+ *         type: object
+ *         properties:
+ *           _id:
+ *             type: string
+ *             description: Auto-generated ObjectId
+ *           commentId:
+ *             type: string
+ *             description: Unique comment identifier (unique index enforced)
+ *           eventId:
+ *             type: string
+ *             description: Reference to the Event ObjectId
+ *           eventPublicID:
+ *             type: string
+ *             description: Stable SeisComP publicID for the referenced event
+ *           username:
+ *             type: string
+ *             description: Account identifier or Anonymous when not provided
+ *           accountId:
+ *             type: string
+ *             description: Authenticated Account ObjectId when the comment is posted by a signed-in citizen
+ *           content:
+ *             type: string
+ *             description: The text content of the comment
+ *           imageURL:
+ *             type: string
+ *             description: Optional URL to an image attached to the comment
+ *           status:
+ *             type: string
+ *             enum: [pending, approved, rejected]
+ *             description: Moderation status for public display
+ *           createdAt:
+ *             type: string
+ *             format: date-time
+ *           updatedAt:
+ *             type: string
+ *             format: date-time
+ */
+
 module.exports = router;

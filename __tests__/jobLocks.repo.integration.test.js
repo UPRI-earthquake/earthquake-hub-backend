@@ -1,36 +1,12 @@
-// Behavior both job-locks repositories must have. The same tests run against MongoDB and PostgreSQL,
-// so switching JOB_LOCKS_DB can't change how locking works.
+// Behavior the job-locks repository must have (it ran against MongoDB too, until MongoDB was removed).
 const knex = require('knex');
-const JobLock = require('../src/models/jobLock.model');
-const mongoJobLocksRepo = require('../src/repositories/mongodb/jobLocks.repo');
 const { createJobLocksRepo } = require('../src/repositories/postgres/jobLocks.repo');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 
 const TTL_MS = 60 * 1000;
 
 // Each backend: the repository plus helpers to look at and set up stored locks directly
 const backends = [
-  {
-    name: 'mongodb',
-    timeout: MONGO_STARTUP_TIMEOUT_MS,
-    start: async () => {
-      const mongo = await startMongo();
-      return {
-        repo: mongoJobLocksRepo,
-        // Another process: same database, its own repository instance (one shared connection here)
-        startOtherProcess: async () => ({ repo: mongoJobLocksRepo, stop: async () => {} }),
-        getLock: async (name) => {
-          const doc = await JobLock.findOne({ name }).lean();
-          return doc && { owner: doc.owner, expiresAt: doc.expiresAt };
-        },
-        insertLock: ({ name, owner, expiresAt }) => JobLock.create({ name, owner, expiresAt }),
-        countLocks: () => JobLock.countDocuments(),
-        clear: mongo.clear,
-        stop: mongo.stop,
-      };
-    },
-  },
   {
     name: 'postgres',
     timeout: PG_STARTUP_TIMEOUT_MS,
@@ -146,7 +122,7 @@ describe.each(backends)('jobLocks.repo ($name)', ({ start, timeout }) => {
   });
 
   test('deleteExpired deletes only locks that have expired', async () => {
-    // Far in the future, so MongoDB's TTL monitor leaves these alone during the test
+    // Far in the future, so the locks the test inserts aren't expired by anything else meanwhile
     const now = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await backend.insertLock({ name: 'expired', owner: 'host-a:1', expiresAt: new Date(now.getTime() - 1) });
     await backend.insertLock({ name: 'held', owner: 'host-a:1', expiresAt: new Date(now.getTime() + TTL_MS) });

@@ -3,21 +3,19 @@
 // recorded with accounts and devices on MongoDB: the app on PostgreSQL must give identical responses
 // (peopleAndSensors.golden.postgres.integration.test.js).
 //
-// The data is always seeded in MongoDB. With PEOPLE_AND_SENSORS_DB=postgres it is then copied with the
-// real copy script (scripts/copy-people-and-sensors-to-postgres.js) and removed from MongoDB, so the
-// responses come from PostgreSQL alone and show that copied data keeps its ids.
+// The data is defined as MongoDB stored it, and seeded in PostgreSQL as the copy from MongoDB wrote it
+// (fixtures/copiedRows.js), so the responses also show that copied data keeps its ids.
 //
 // The test file must mock src/services/email.service (password reset sends mail).
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./postgres.fixture');
+const { insertPeopleAndSensors } = require('./copiedRows');
 const { expectGolden } = require('./golden');
 const { generateAMStationCode } = require('../../src/controllers/helpers');
-const { copyPeopleAndSensors } = require('../../scripts/copy-people-and-sensors-to-postgres');
 
-const oid = (hex) => new mongoose.Types.ObjectId(hex);
+// A MongoDB id, as the data and the API name records
+const oid = (hex) => hex;
 const at = (iso) => new Date(iso);
 
 const PASSWORD = 'Golden-Password-2026!';
@@ -167,17 +165,12 @@ const linkBody = (fields = {}) => ({
   ...fields,
 });
 
-// settings: the area settings to run the app with, e.g. { PEOPLE_AND_SENSORS_DB: 'postgres' }
-const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sensors: recorded API responses (${
-  Object.entries(settings).map(([key, value]) => `${key}=${value}`).join(', ') || 'defaults'
-})`, () => {
-  let mongo;
+const describePeopleAndSensorsGolden = () => describe('People & Sensors: recorded API responses', () => {
   let pg;
   let app;
   let EmailService;
   let AccountsRepo;
   let DevicesRepo;
-  const onPostgres = settings.PEOPLE_AND_SENSORS_DB === 'postgres';
   const webOrigin = () => `http://${process.env.CLIENT_DEV_HOST}:${process.env.CLIENT_DEV_PORT}`;
 
   const send = (req, agent = null) => {
@@ -207,27 +200,20 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
   };
 
   beforeAll(async () => {
-    [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
-    // Before the app loads: repositories pick their database, and src/db/knex.js its connection, on load
-    Object.assign(process.env, pg.env, settings);
+    pg = await startPostgres();
+    // Before the app loads: src/db/knex.js reads its connection on load
+    Object.assign(process.env, pg.env);
     app = require('../../src/app');
     EmailService = require('../../src/services/email.service');
     AccountsRepo = require('../../src/repositories/accounts.repo');
     DevicesRepo = require('../../src/repositories/devices.repo');
-    await Promise.all(Object.values(mongoose.models).map((model) => model.init()));
-  }, Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS));
+  }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    await Promise.all([mongo.clear(), pg.clear()]);
-    await mongoose.connection.collection('accounts').insertMany(ACCOUNTS);
-    await mongoose.connection.collection('devices').insertMany(DEVICES);
-    if (onPostgres) {
-      const copied = await copyPeopleAndSensors({ db: pg.db, log: () => {} });
-      if (!copied.ok) throw new Error('Copying the seeded accounts and devices to PostgreSQL failed');
-      await Promise.all(['accounts', 'devices'].map((name) => mongoose.connection.collection(name).deleteMany({})));
-    }
+    await pg.clear();
+    await insertPeopleAndSensors(pg.db, { accounts: ACCOUNTS, devices: DEVICES });
   });
 
   afterEach(() => {
@@ -236,7 +222,7 @@ const describePeopleAndSensorsGolden = (settings = {}) => describe(`People & Sen
 
   afterAll(async () => {
     await require('../../src/db/knex').db.destroy();
-    await Promise.all([mongo && mongo.stop(), pg && pg.stop()]);
+    if (pg) await pg.stop();
   });
 
   describe('POST /accounts/register', () => {

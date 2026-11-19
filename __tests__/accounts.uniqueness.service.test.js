@@ -18,7 +18,7 @@ jest.mock('../src/controllers/helpers', () => ({
 }));
 
 const AccountsRepo = require('../src/repositories/accounts.repo');
-const { DuplicateKeyError, fromMongoError } = require('../src/repositories/errors');
+const { DuplicateKeyError, fromPostgresError } = require('../src/repositories/errors');
 const AccountsService = require('../src/services/accounts.service');
 
 describe('accounts.service uniqueness', () => {
@@ -64,15 +64,16 @@ describe('accounts.service uniqueness', () => {
   });
 });
 
-describe('repositories/errors fromMongoError', () => {
-  const e11000 = (fields) => Object.assign(new Error('E11000 duplicate key error'), fields);
+describe('repositories/errors fromPostgresError', () => {
+  const uniqueViolation = (constraint) => Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505', constraint });
 
   it.each([
-    [{ code: 11000, keyPattern: { email: 1 } }, ['email']],
-    [{ code: 11000, keyValue: { username: 'juan' } }, ['username']],
-    [{ code: 11000, keyPattern: { network: 1, station: 1 } }, ['network', 'station']],
-  ])('turns E11000 %j into DuplicateKeyError(%j)', (fields, expected) => {
-    const err = fromMongoError(e11000(fields));
+    ['accounts_email_unique', ['email']],
+    ['accounts_username_unique', ['username']],
+    ['devices_network_station_unique', ['network', 'station']],
+    ['some_other_unique', ['some_other_unique']],
+  ])('turns a unique violation of %s into DuplicateKeyError(%j)', (constraint, expected) => {
+    const err = fromPostgresError(uniqueViolation(constraint));
 
     expect(err).toBeInstanceOf(DuplicateKeyError);
     expect(err.fields).toEqual(expected);
@@ -81,6 +82,6 @@ describe('repositories/errors fromMongoError', () => {
   it('returns other errors unchanged', () => {
     const err = new Error('connection lost');
 
-    expect(fromMongoError(err)).toBe(err);
+    expect(fromPostgresError(err)).toBe(err);
   });
 });

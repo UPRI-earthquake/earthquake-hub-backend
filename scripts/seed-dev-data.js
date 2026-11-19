@@ -23,7 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const bcrypt = require('bcryptjs');
-const { Types } = require('mongoose');
+const { newLegacyId } = require('../src/repositories/postgres/legacyIds');
 
 const DATA_FILE = path.join(__dirname, 'seed-data', 'dev-earthquakes.json.gz');
 const QA_PASSWORD = 'Qa-Password-2026!';
@@ -75,8 +75,8 @@ async function seedDevData({ db, log = console.log }) {
     // Accounts
     const passwordHash = bcrypt.hashSync(QA_PASSWORD, 10);
     const accountIds = new Map();
-    // A MongoDB-style id, as AccountsRepo.create gives an account: sign-in puts it in the session token
-    const newLegacyId = () => new Types.ObjectId().toString();
+    // A MongoDB-style id (newLegacyId), as AccountsRepo.create gives an account: sign-in puts it in the
+    // session token
     for (const account of ACCOUNTS) {
       const existing = await trx('accounts').where({ username: account.username }).first('id', 'legacy_mongo_id');
       if (existing) {

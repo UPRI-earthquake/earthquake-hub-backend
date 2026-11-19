@@ -1,14 +1,9 @@
-// The app with every area on PostgreSQL and no MongoDB at all: no MongoDB container, no connection, and
-// the area settings unset (as in .env.example), so each area takes its default. The main flows must work:
-// sign in, list events, post and list comments, and my devices.
-//
-// Mongoose's command buffering is off, so any MongoDB call fails at once instead of waiting for a
-// connection; and no Mongoose model may even be loaded.
+// The app on PostgreSQL, with no MongoDB anywhere: no MongoDB container, and no Mongoose to connect with.
+// The main flows must work: sign in, list events, post and list comments, and my devices.
 jest.mock('../src/services/email.service', () => ({ sendMail: jest.fn().mockResolvedValue({}) }));
 jest.mock('axios', () => ({ get: jest.fn().mockRejectedValue(new Error('no network in tests')), create: jest.fn() }));
 
 const request = require('supertest');
-const mongoose = require('mongoose');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 const { generateAMStationCode } = require('../src/controllers/helpers');
 
@@ -18,10 +13,9 @@ const STATION = generateAMStationCode(MAC);
 const STREAM_ID = `AM_${STATION}_.*/MSEED`;
 const PUBLIC_ID = 'upri2026pgonly';
 
-describe('the app with every area on PostgreSQL and no MongoDB', () => {
+describe('the app on PostgreSQL, with no MongoDB', () => {
   let pg;
   let app;
-  let areaLogs;
 
   const signIn = (identifier, agent = request(app)) => agent.post('/accounts/authenticate')
     .send({ identifier, password: PASSWORD, role: 'citizen' });
@@ -47,15 +41,8 @@ describe('the app with every area on PostgreSQL and no MongoDB', () => {
 
   beforeAll(async () => {
     pg = await startPostgres();
-    // The area settings are already empty (fixtures/integrationEnv.js), so each area takes its default
     Object.assign(process.env, pg.env, { COMMENTS_DEFAULT_STATUS: 'approved' });
-    mongoose.set('bufferCommands', false);
-
-    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
     app = require('../src/app');
-    require('../src/repositories/jobLocks.repo'); // the background jobs' area, which the routes don't load
-    areaLogs = log.mock.calls.map(([line]) => String(line)).filter((line) => line.startsWith('[db] '));
-    log.mockRestore();
   }, PG_STARTUP_TIMEOUT_MS);
 
   beforeEach(async () => {
@@ -77,18 +64,9 @@ describe('the app with every area on PostgreSQL and no MongoDB', () => {
     if (pg) await pg.stop();
   });
 
-  test('starts with every area on PostgreSQL, without connecting to MongoDB or loading a Mongoose model', () => {
-    expect(areaLogs).toEqual(expect.arrayContaining([
-      '[db] accounts: postgres (PEOPLE_AND_SENSORS_DB)',
-      '[db] devices: postgres (PEOPLE_AND_SENSORS_DB)',
-      '[db] earthquake events: postgres (EARTHQUAKES_DB)',
-      '[db] comments: postgres (COMMUNITY_DB)',
-      '[db] contribution points: postgres (COMMUNITY_DB)',
-      '[db] job locks: postgres (JOB_LOCKS_DB)',
-    ]));
-    expect(areaLogs.filter((line) => !line.includes(': postgres ('))).toEqual([]);
-    expect(mongoose.connection.readyState).toBe(0); // disconnected: nothing ever connected
-    expect(mongoose.modelNames()).toEqual([]);
+  test('has no MongoDB client to load', () => {
+    expect(() => require.resolve('mongoose')).toThrow();
+    expect(() => require.resolve('mongodb')).toThrow();
   });
 
   test('sign in', async () => {

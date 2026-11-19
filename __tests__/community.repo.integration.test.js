@@ -1,14 +1,9 @@
-// Behavior both versions of the comments and contributions repositories must have, run against MongoDB
-// and PostgreSQL alike, so switching community to PostgreSQL can't change what services see.
-const mongoose = require('mongoose');
-const mongoCommentsRepo = require('../src/repositories/mongodb/comments.repo');
-const mongoContributionsRepo = require('../src/repositories/mongodb/contributions.repo');
-const mongoTransactions = require('../src/repositories/mongodb/transactions');
+// Behavior the comments and contributions repositories must have. Until MongoDB was removed these tests
+// ran against both databases, so moving community to PostgreSQL couldn't change what services see.
 const { createCommentsRepo } = require('../src/repositories/postgres/comments.repo');
 const { createContributionsRepo } = require('../src/repositories/postgres/contributions.repo');
 const { createPostgresTransactions } = require('../src/repositories/postgres/transactions');
-const { copyCommunity } = require('../scripts/copy-community-to-postgres');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
+const { newLegacyId } = require('../src/repositories/postgres/legacyIds');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 
 const at = (iso) => new Date(iso);
@@ -38,47 +33,48 @@ const seeded = (commentId, fields = {}) => ({
   ...fields,
 });
 
-// Stored in MongoDB as-is, without the model's defaults (status: undefined leaves it out, as on records
-// from before moderation)
-const insertIntoMongo = (docs) => {
-  const toObjectId = (id) => (id ? new mongoose.Types.ObjectId(id) : id);
-  return mongoose.connection.collection('comments').insertMany(docs.map((doc) => {
-    const stored = {
-      ...doc,
-      eventId: toObjectId(doc.eventId),
-      accountId: toObjectId(doc.accountId),
-      helpfulAccountIds: (doc.helpfulAccountIds || []).map(toObjectId),
-      issueReports: (doc.issueReports || []).map((report) => ({ ...report, accountId: toObjectId(report.accountId) })),
-    };
-    Object.keys(stored).forEach((key) => stored[key] === undefined && delete stored[key]);
-    return stored;
-  }));
+// Older comments, as the copy from MongoDB wrote them (Phase 3): no status means approved (from before
+// moderation); the event is found by its MongoDB id, or else its publicID, and the account by its MongoDB
+// id; each helpful mark is dated with the comment's updatedAt (MongoDB kept no time per mark), and each
+// issue report with its own time
+const insertCopied = async (db, docs) => {
+  const idOf = async (table, legacyId) => (legacyId
+    ? (await db(table).where({ legacy_mongo_id: legacyId }).first('id'))?.id ?? null : null);
+  const trimmedOrNull = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
+  for (const doc of docs) {
+    const eventId = await idOf('events', doc.eventId)
+      ?? (await db('events').where({ public_id: doc.eventPublicID }).first('id'))?.id;
+    const updatedAt = doc.updatedAt || doc.createdAt;
+    const [{ id }] = await db('comments').insert({
+      legacy_mongo_id: newLegacyId(),
+      comment_id: doc.commentId,
+      event_id: eventId,
+      account_id: await idOf('accounts', doc.accountId),
+      username: trimmedOrNull(doc.username) || 'Anonymous',
+      content: trimmedOrNull(doc.content),
+      image_url: trimmedOrNull(doc.imageURL),
+      status: doc.status ?? 'approved',
+      created_at: doc.createdAt,
+      updated_at: updatedAt,
+    }).returning('id');
+    for (const accountId of doc.helpfulAccountIds || []) {
+      await db('comment_helpful_marks').insert({ comment_id: id, account_id: await idOf('accounts', accountId), created_at: updatedAt });
+    }
+    for (const report of doc.issueReports || []) {
+      await db('comment_issue_reports').insert({
+        comment_id: id, account_id: await idOf('accounts', report.accountId), reason: report.reason, created_at: report.createdAt || updatedAt,
+      });
+    }
+  }
 };
 
 // Each backend: the repositories, its transactions, and helpers to store or count records directly
 const backends = [
   {
-    name: 'mongodb',
-    timeout: MONGO_STARTUP_TIMEOUT_MS,
-    start: async () => {
-      const mongo = await startMongo();
-      return {
-        Comments: mongoCommentsRepo,
-        Contributions: mongoContributionsRepo,
-        withTransaction: mongoTransactions.withTransaction,
-        insertComments: insertIntoMongo,
-        countContributions: () => mongoose.connection.collection('contributionevents').countDocuments(),
-        clear: mongo.clear,
-        stop: mongo.stop,
-      };
-    },
-  },
-  {
     name: 'postgres',
-    timeout: Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS),
+    timeout: PG_STARTUP_TIMEOUT_MS,
     start: async () => {
-      // MongoDB too: an older comment arrives in PostgreSQL the way it really would, through the copy script
-      const [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
+      const pg = await startPostgres();
       // The accounts and events (copied in Steps 2 and 3) these tests name by their MongoDB ids
       const seed = async () => {
         await pg.db('accounts').insert([AUTHOR, VOTER, OTHER_VOTER].map((legacyId, i) => ({
@@ -93,20 +89,14 @@ const backends = [
         Comments: createCommentsRepo(pg.db),
         Contributions: createContributionsRepo(pg.db),
         withTransaction: createPostgresTransactions(pg.db).withTransaction,
-        insertComments: async (docs) => {
-          await insertIntoMongo(docs);
-          const copied = await copyCommunity({ db: pg.db, log: () => {} });
-          if (!copied.ok || copied.comments.skipped.length > 0) throw new Error('Copying the comments to PostgreSQL failed');
-        },
+        insertComments: (docs) => insertCopied(pg.db, docs),
         countContributions: async () => Number((await pg.db('contribution_events').count({ n: '*' }).first()).n),
         pg,
         clear: async () => {
-          await Promise.all([mongo.clear(), pg.clear()]);
+          await pg.clear();
           await seed();
         },
-        stop: async () => {
-          await Promise.all([mongo.stop(), pg.stop()]);
-        },
+        stop: () => pg.stop(),
       };
     },
   },

@@ -1,16 +1,16 @@
-// Accounts in PostgreSQL (`accounts` table): the same functions and account shape as ../accounts.repo.js
-// (MongoDB), which both must keep (__tests__/peopleAndSensors.repo.integration.test.js).
+// Accounts in PostgreSQL (`accounts` table), as ../accounts.repo.js exports them
+// (__tests__/peopleAndSensors.repo.integration.test.js).
 //
 // email and username are citext columns, so lookups match them without regard to case: no lowercasing
-// in code. Writes still store the email trimmed and lowercased, as the MongoDB model's setter did, so
-// the API shows the same values. A write that breaks a unique rule throws DuplicateKeyError.
+// in code. Writes still store the email trimmed and lowercased, as the API has always shown it. A write
+// that breaks a unique rule throws DuplicateKeyError.
 //
 // legacyId is the account's MongoDB-style id (legacy_mongo_id). Session tokens carry it, not the uuid,
-// so sessions and the ids comments and points name accounts by stay the same on either database
-// (POSTGRES.md, "Ids the API shows"). Copied accounts keep their old _id; accounts created here get a
-// new ObjectId.
-const { Types } = require('mongoose');
+// so sessions and the ids comments and points name accounts by stay as they were before PostgreSQL
+// (POSTGRES.md, "Ids the API shows"). Accounts copied from MongoDB kept their old _id; new accounts get
+// a new one (newLegacyId).
 const { fromPostgresError } = require('../errors');
+const { newLegacyId } = require('./legacyIds');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,7 +34,7 @@ const COLUMN_OF = {
 // responses built from accounts leave the same fields out.
 const opt = (value) => (value === null ? undefined : value);
 
-// null when there's no row, as the MongoDB repository returns
+// null when there's no row
 const toAccount = (row) => (!row ? null : {
   id: row.id,
   legacyId: row.legacy_mongo_id ? row.legacy_mongo_id.trim() : null,
@@ -100,7 +100,7 @@ const createAccountsRepo = (db) => {
     let id;
     try {
       [{ id }] = await db('accounts')
-        .insert({ ...toColumns(fields), legacy_mongo_id: new Types.ObjectId().toString() })
+        .insert({ ...toColumns(fields), legacy_mongo_id: newLegacyId() })
         .returning('id');
     } catch (err) {
       throw fromPostgresError(err);

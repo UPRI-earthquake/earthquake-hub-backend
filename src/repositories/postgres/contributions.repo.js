@@ -1,5 +1,5 @@
-// Contribution points in PostgreSQL (`contribution_events`): the same function and entry shape as
-// mongodb/contributions.repo.js, which both must keep (__tests__/community.repo.integration.test.js).
+// Contribution points in PostgreSQL (`contribution_events`), as ../contributions.repo.js exports them
+// (__tests__/community.repo.integration.test.js).
 //
 // Account and event ids go in and come out MongoDB-style (see legacyIds.js). eventPublicID has no
 // column: it's the event's public_id, or metadata.eventPublicID for an entry whose event is gone.

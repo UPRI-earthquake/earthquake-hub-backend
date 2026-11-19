@@ -12,8 +12,7 @@ const config = {
 
 let cleanupTimer = null;
 
-// Deletes expired job locks: PostgreSQL has no TTL index to do it, so this scheduled run replaces it
-// (on MongoDB the TTL index does it too, and this finds nothing left).
+// Deletes expired job locks: PostgreSQL has no TTL index to do it, so this scheduled run replaces it.
 async function runJobLockCleanup() {
   const now = new Date();
   const removedLocks = await JobLocksRepo.deleteExpired(now);

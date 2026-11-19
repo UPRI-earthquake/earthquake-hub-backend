@@ -1,15 +1,10 @@
-// Behavior both versions of the accounts and devices repositories must have, run against MongoDB and
-// PostgreSQL alike, so switching accounts and devices to PostgreSQL can't change what services see.
-// Behavior only one database has (case-insensitive lookups, legacy records) is tested per database.
-const mongoose = require('mongoose');
-const mongoAccountsRepo = require('../src/repositories/mongodb/accounts.repo');
-const mongoDevicesRepo = require('../src/repositories/mongodb/devices.repo');
-const mongoTransactions = require('../src/repositories/mongodb/transactions');
+// Behavior the accounts and devices repositories must have. Until MongoDB was removed these tests ran
+// against both databases, so moving accounts and devices to PostgreSQL couldn't change what services
+// see. What only PostgreSQL does (case-insensitive lookups, MongoDB-style ids) is tested apart.
 const { createAccountsRepo } = require('../src/repositories/postgres/accounts.repo');
 const { createDevicesRepo } = require('../src/repositories/postgres/devices.repo');
 const { createPostgresTransactions } = require('../src/repositories/postgres/transactions');
 const { DuplicateKeyError } = require('../src/repositories/errors');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 
 const account = (fields = {}) => ({
@@ -30,27 +25,6 @@ const device = (fields = {}) => ({
 
 // Each backend: the repositories, its transactions, and helpers to look at stored data directly
 const backends = [
-  {
-    name: 'mongodb',
-    timeout: MONGO_STARTUP_TIMEOUT_MS,
-    start: async () => {
-      const mongo = await startMongo();
-      const oid = (id) => new mongoose.Types.ObjectId(id);
-      return {
-        Accounts: mongoAccountsRepo,
-        Devices: mongoDevicesRepo,
-        withTransaction: mongoTransactions.withTransaction,
-        unknownId: () => new mongoose.Types.ObjectId().toString(),
-        storedAccount: async (id) => {
-          const doc = await mongoose.connection.collection('accounts').findOne({ _id: oid(id) });
-          return { email: doc.email, passwordResetTokenId: doc.passwordResetTokenId ?? null };
-        },
-        storedLocation: async (id) => (await mongoose.connection.collection('devices').findOne({ _id: oid(id) })).location.coordinates,
-        clear: mongo.clear,
-        stop: mongo.stop,
-      };
-    },
-  },
   {
     name: 'postgres',
     timeout: PG_STARTUP_TIMEOUT_MS,
@@ -115,7 +89,7 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
       expect(await Accounts.findById(created.id)).toMatchObject({ id: created.id });
     });
 
-    test('every account has a MongoDB-style legacyId (what session tokens carry until Step 4)', async () => {
+    test('every account has a MongoDB-style legacyId (what session tokens carry)', async () => {
       const first = await Accounts.create(account());
       const second = await Accounts.create(account({ username: 'maria', email: 'maria@example.org' }));
 
@@ -415,32 +389,6 @@ describe.each(backends)('accounts and devices repositories ($name)', ({ name, st
       expect(await Accounts.findById(owner.id)).toMatchObject({ username: 'juan' });
     });
   });
-
-  if (name === 'mongodb') {
-    describe('MongoDB only', () => {
-      test('legacyId is the account id itself', async () => {
-        const created = await Accounts.create(account());
-
-        expect(created.legacyId).toBe(created.id);
-      });
-
-      test('an older device missing a required field can still be updated (e.g. unlinked)', async () => {
-        const { insertedId } = await mongoose.connection.collection('devices').insertOne({ network: 'AM', station: 'R0009', latitude: 14, longitude: 121 });
-
-        await expect(Devices.update(String(insertedId), { activity: 'unlinked' })).resolves.toMatchObject({ activity: 'unlinked' });
-      });
-
-      test('an account listing a device that no longer exists skips it', async () => {
-        const owner = await Accounts.create(account());
-        const [first, second] = [await Devices.create(device()), await Devices.create(device({ station: 'R0002' }))];
-        await Devices.addToAccount(owner.id, [first.id, second.id]);
-        await Devices.remove(first.id);
-
-        expect((await Devices.listAccountDevices(owner.id)).map((d) => d.station)).toEqual(['R0002']);
-        expect(await Devices.listAccountDeviceIds(owner.id)).toEqual([first.id, second.id]);
-      });
-    });
-  }
 
   if (name === 'postgres') {
     describe('PostgreSQL only', () => {

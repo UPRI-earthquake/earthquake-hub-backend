@@ -38,16 +38,9 @@ function getHelpfulAccountIds(source) {
   return Array.isArray(source?.helpfulAccountIds) ? source.helpfulAccountIds : [];
 }
 
-// Runs a comment write and the points it earns together: in one transaction, so a failed step leaves
-// neither, or one after the other on a MongoDB that can't run transactions
-async function writeTogether(fn) {
-  try {
-    return await CommunityTransactions.withTransaction(fn);
-  } catch (err) {
-    if (!CommunityTransactions.isTransactionUnsupported(err)) throw err;
-    return fn(undefined);
-  }
-}
+// Runs a comment write and the points it earns together in one transaction, so a failed step leaves
+// neither
+const writeTogether = (fn) => CommunityTransactions.withTransaction(fn);
 
 // source: a comment as the comments repository returns it
 function toPublicComment(source, { viewerAccountId } = {}) {

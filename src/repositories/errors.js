@@ -1,5 +1,5 @@
-// Errors repositories throw in place of database-specific ones, so services handle them the same way
-// whichever database backs an area.
+// Errors repositories throw in place of PostgreSQL's own, so services handle them without knowing the
+// database.
 
 // A write broke a unique rule. `fields` names what collided (e.g. ['email']).
 class DuplicateKeyError extends Error {
@@ -20,11 +20,6 @@ class StillReferencedError extends Error {
   }
 }
 
-// MongoDB's E11000 as a DuplicateKeyError; any other error is returned unchanged
-const fromMongoError = (err) => (
-  err?.code === 11000 ? new DuplicateKeyError(Object.keys(err.keyPattern || err.keyValue || {})) : err
-);
-
 // PostgreSQL unique constraints, as the fields services know them by
 const PG_UNIQUE_FIELDS = {
   accounts_email_unique: ['email'],
@@ -43,6 +38,5 @@ const fromPostgresError = (err) => (
 module.exports = {
   DuplicateKeyError,
   StillReferencedError,
-  fromMongoError,
   fromPostgresError,
 };

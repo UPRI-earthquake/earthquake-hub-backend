@@ -5,8 +5,8 @@ const config = require('./knexfile');
 // Creating the instance doesn't connect; the pool opens connections on the first query
 const db = knex(config);
 
-// Checks PostgreSQL is reachable and logs where. Like the MongoDB connect, a failure is logged but
-// doesn't stop the backend. Doesn't look at tables, so an unmigrated database is fine.
+// Checks PostgreSQL is reachable and logs where. A failure is logged but doesn't stop the backend.
+// Doesn't look at tables, so an unmigrated database is fine.
 const connect = async () => {
   try {
     const { rows: [server] } = await db.raw(

@@ -98,8 +98,8 @@ const eventCache = new EventCache(30); // will contain last 30 EQevents added vi
   *       process.env.RINGSERVER_PORT).
   *     - The function listens for SSE events, specifically 'ringserver-connections-status', 'open', 'error', and 'close'.
   *     - When the 'ringserver-connections-status' event is received, the function extracts the connections data from the event,
-  *       filters connections with the role 'sensor', and saves the current_time to the MongoDB for each sensor connection by
-  *       updating the 'updatedAt' property of the corresponding user in the Users collection.
+  *       filters connections with the role 'sensor', and records the current_time for each sensor connection on its
+  *       account (AccountsRepo.recordRingserverConnection).
   *     - The function handles 'open' and 'close' events by logging messages to the console.
   *     - For 'error' events, the function keeps track of the number of errors (sseConnectionsErrorFlag) and logs error messages.
   *       If there are repeated errors (3 or more), it logs a specific message indicating that it will keep retrying the connection.

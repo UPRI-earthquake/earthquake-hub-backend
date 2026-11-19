@@ -1,21 +1,15 @@
 const AccountsRepo = require('../repositories/accounts.repo');
 const DevicesRepo = require('../repositories/devices.repo');
 const { DuplicateKeyError, StillReferencedError } = require('../repositories/errors');
-const { withTransaction, isTransactionUnsupported } = require('../repositories/transactions');
+const { withTransaction } = require('../repositories/transactions');
 const {generateAMStationCode} = require('../controllers/helpers')
 
-// Runs a link's writes (device + account list + release history) together: in a transaction, so a
-// failed step leaves nothing half-done, or as plain writes on a MongoDB that can't run transactions.
-// Resolves to null instead of throwing when the device collides with another device's identity
-// (network+station, streamId or macAddress).
+// Runs a link's writes (device + account list + release history) together in a transaction, so a
+// failed step leaves nothing half-done. Resolves to null instead of throwing when the device collides
+// with another device's identity (network+station, streamId or macAddress).
 async function writeLinkTogether(fn) {
   try {
-    try {
-      return await withTransaction(fn);
-    } catch (err) {
-      if (!isTransactionUnsupported(err)) throw err;
-      return await fn(null);
-    }
+    return await withTransaction(fn);
   } catch (err) {
     if (err instanceof DuplicateKeyError) return null;
     throw err;
@@ -493,7 +487,7 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
     reason: 'unlink',
   };
 
-  const applyRelease = async (tx = null) => {
+  await withTransaction(async (tx) => {
     await DevicesRepo.update(device.id, {
       activity: 'unlinked',
       activityToggleTime: releaseTimestamp,
@@ -501,16 +495,7 @@ exports.unlinkDevice = async(username, macAddress, streamId) => {
       rshakeAlertCredentialIssuedAt: null,
     }, { tx });
     await DevicesRepo.recordRelease(user.id, device.id, releaseSnapshot, { tx });
-  };
-
-  try {
-    await withTransaction((tx) => applyRelease(tx));
-  } catch (err) {
-    if (!isTransactionUnsupported(err)) {
-      throw err;
-    }
-    await applyRelease();
-  }
+  });
 
   return {str:'success'}
 }

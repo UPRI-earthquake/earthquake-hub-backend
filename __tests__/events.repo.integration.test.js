@@ -1,16 +1,42 @@
-// Behavior both versions of the earthquake events repository must have, run against MongoDB and
-// PostgreSQL alike, so switching events to PostgreSQL can't change what services see. Behavior only
-// PostgreSQL has (stations as device links, onlineStations worked out on read, transactions) is
-// tested separately.
-const mongoose = require('mongoose');
-const mongoEventsRepo = require('../src/repositories/mongodb/events.repo');
+// Behavior the earthquake events repository must have. Until MongoDB was removed these tests ran against
+// both databases, so moving events to PostgreSQL couldn't change what services see. What only PostgreSQL
+// does (stations as device links, onlineStations worked out on read, transactions) is tested apart.
 const { createEventsRepo } = require('../src/repositories/postgres/events.repo');
-const { copyEarthquakes } = require('../scripts/copy-earthquakes-to-postgres');
-const { startMongo, MONGO_STARTUP_TIMEOUT_MS } = require('./fixtures/mongo.fixture');
+const { newLegacyId } = require('../src/repositories/postgres/legacyIds');
 const { startPostgres, PG_STARTUP_TIMEOUT_MS } = require('./fixtures/postgres.fixture');
 
 const SOURCES = ['phivolcs', 'usgs'];
+const MAX_ENRICHMENT_ATTEMPTS = 3;
 const at = (iso) => new Date(iso);
+
+// An older record, as the copy from MongoDB wrote it (Phase 3): the fields it lacked stay NULL, it was
+// created when its MongoDB id says, and its old enrichment fields became one status row per searched
+// catalog: no_match once enrichment had finished (upForEnrichment false), failed when its attempts ran
+// out, pending otherwise (also with no tracking at all). Resolves to its MongoDB-style id.
+const insertCopied = async (db, { _id, ...doc }) => {
+  const legacyId = _id || newLegacyId();
+  const createdAt = new Date(parseInt(legacyId.slice(0, 8), 16) * 1000);
+  const [{ id }] = await db('events').insert({
+    legacy_mongo_id: legacyId,
+    public_id: doc.publicID,
+    is_legacy_record: Boolean(doc.isLegacyRecord),
+    legacy_imported_at: doc.legacyImportedAt ?? null,
+    legacy_source_public_id: doc.legacySourcePublicID ?? null,
+    origin_time: doc.OT ?? null,
+    latitude: doc.latitude_value ?? null,
+    longitude: doc.longitude_value ?? null,
+    place: typeof doc.place === 'string' ? doc.place : null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  }).returning('id');
+  const tracked = doc.pendingCatalogSources !== undefined || doc.upForEnrichment !== undefined || doc.enrichmentAttempts !== undefined;
+  const attempts = tracked ? doc.enrichmentAttempts || 0 : 0;
+  let status = 'pending';
+  if (doc.upForEnrichment === false) status = 'no_match';
+  else if (doc.upForEnrichment === true && attempts >= MAX_ENRICHMENT_ATTEMPTS) status = 'failed';
+  await db('event_catalog_status').insert(SOURCES.map((source) => ({ event_id: id, source, status, attempts })));
+  return legacyId;
+};
 
 // An event as SeisComP ingest saves it
 const seiscomp = (fields = {}) => ({
@@ -33,28 +59,10 @@ const seiscomp = (fields = {}) => ({
 // Each backend: the repository, and helpers to store or look at records directly
 const backends = [
   {
-    name: 'mongodb',
-    timeout: MONGO_STARTUP_TIMEOUT_MS,
-    start: async () => {
-      const mongo = await startMongo();
-      const events = () => mongoose.connection.collection('events');
-      return {
-        Events: mongoEventsRepo,
-        unknownId: () => new mongoose.Types.ObjectId().toString(),
-        // A record as an older version of the app (or a legacy import) left it: no defaults applied
-        insertRaw: async (doc) => String((await events().insertOne({ ...doc })).insertedId),
-        stored: (publicID) => events().findOne({ publicID }),
-        clear: mongo.clear,
-        stop: mongo.stop,
-      };
-    },
-  },
-  {
     name: 'postgres',
-    timeout: Math.max(MONGO_STARTUP_TIMEOUT_MS, PG_STARTUP_TIMEOUT_MS),
+    timeout: PG_STARTUP_TIMEOUT_MS,
     start: async () => {
-      // MongoDB too: an older record arrives in PostgreSQL the way it really would, through the copy script
-      const [mongo, pg] = await Promise.all([startMongo(), startPostgres()]);
+      const pg = await startPostgres();
       // The devices the station codes in these tests belong to
       const seedDevices = () => pg.db('devices').insert(['R3B2D', 'R0001', 'RE722'].map((station, i) => ({
         network: 'AM', station, latitude: 14.6, longitude: 121 + i, elevation_m: 50,
@@ -62,13 +70,8 @@ const backends = [
       await seedDevices();
       return {
         Events: createEventsRepo(pg.db),
-        unknownId: () => new mongoose.Types.ObjectId().toString(),
-        insertRaw: async (doc) => {
-          const { insertedId } = await mongoose.connection.collection('events').insertOne({ ...doc });
-          const copied = await copyEarthquakes({ db: pg.db, log: () => {} });
-          if (!copied.ok) throw new Error('Copying the record to PostgreSQL failed');
-          return String(insertedId);
-        },
+        unknownId: () => newLegacyId(),
+        insertRaw: (doc) => insertCopied(pg.db, doc),
         stored: async (publicID) => {
           const row = await pg.db('events')
             .select('place', 'summary_override_text', pg.db.raw('ST_AsGeoJSON(location)::json AS location'))
@@ -77,10 +80,10 @@ const backends = [
         },
         pg,
         clear: async () => {
-          await Promise.all([mongo.clear(), pg.clear()]);
+          await pg.clear();
           await seedDevices();
         },
-        stop: () => Promise.all([mongo.stop(), pg.stop()]),
+        stop: () => pg.stop(),
       };
     },
   },
@@ -275,7 +278,7 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
       expect((await backend.stored('ev-1')).place).toBe('10 km N of Manila, Philippines');
 
       await backend.clear();
-      await backend.insertRaw({ _id: new mongoose.Types.ObjectId(_id), publicID: 'ev-1', ...fields });
+      await backend.insertRaw({ _id, publicID: 'ev-1', ...fields });
       await Events.savePlace({ _id }, '12 km S of Manila, Philippines');
       expect((await backend.stored('ev-1')).place).toBe('12 km S of Manila, Philippines');
     });
@@ -438,6 +441,28 @@ describe.each(backends)('events repository ($name)', ({ name, start, timeout }) 
       });
       expect(await Events.findByPublicID('ev-1')).toMatchObject({ pendingCatalogSources: [], upForEnrichment: false, enrichmentAttempts: 2 });
       await expect(Events.countEnrichmentEligible(options)).resolves.toBe(0);
+    });
+
+    test('queueCatalogSource queues a catalog again on every event it has not matched, and on no other', async () => {
+      await ingest('ev-matched', { OT: at('2026-04-01T12:00:00.000Z') });
+      await ingest('ev-unmatched', { OT: at('2026-04-02T12:00:00.000Z') });
+      const usgsMatch = { source: 'usgs', sourceLabel: 'USGS', title: 'M4.4 - 10 km N of Manila', magnitude: 4.4, score: 1.2, matchQuality: 'high', raw: { id: 'y' } };
+      await Events.saveEnrichment((await Events.findByPublicID('ev-matched'))._id, {
+        additionalInformation: [usgsMatch], pendingCatalogSources: [], catalogEnrichmentAttempts: { phivolcs: 3, usgs: 2 }, catalogEnrichmentStatus: { phivolcs: 'no_match', usgs: 'done' },
+      });
+      await Events.saveEnrichment((await Events.findByPublicID('ev-unmatched'))._id, {
+        pendingCatalogSources: [], catalogEnrichmentAttempts: { phivolcs: 3, usgs: 3 }, catalogEnrichmentStatus: { phivolcs: 'no_match', usgs: 'failed' },
+      });
+
+      await expect(Events.queueCatalogSource('USGS')).resolves.toBe(1);
+
+      expect(await Events.findByPublicID('ev-unmatched')).toMatchObject({
+        pendingCatalogSources: ['usgs'], catalogEnrichmentStatus: { phivolcs: 'no_match', usgs: 'pending' }, catalogEnrichmentAttempts: { phivolcs: 3 },
+      });
+      expect(await Events.findByPublicID('ev-matched')).toMatchObject({
+        pendingCatalogSources: [], catalogEnrichmentStatus: { phivolcs: 'no_match', usgs: 'done' }, catalogEnrichmentAttempts: { phivolcs: 3, usgs: 2 },
+      });
+      await expect(Events.queueCatalogSource('emsc')).rejects.toThrow('Unknown catalog "emsc"');
     });
   });
 
