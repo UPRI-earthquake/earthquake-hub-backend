@@ -8,7 +8,7 @@
     ```bash
     git clone git@github.com:UPRI-earthquake/earthquake-hub-backend.git
     ```
-2. Create a file named `.env` and set its values based on `.env.example`. You can keep most of the default values, but set your own `PG_PASSWORD` (see [POSTGRES.md, 1.1](POSTGRES.md#11-add-the-postgresql-keys-to-your-env)). No MongoDB keys are needed.
+2. Create a file named `.env` and set its values based on `.env.example`. You can keep most of the default values, but set your own `PG_PASSWORD` (see [POSTGRES.md, 1.1](POSTGRES.md#11-add-the-postgresql-keys-to-your-env)).
 3. Install all dependencies via:
     ```bash
     npm install

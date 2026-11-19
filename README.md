@@ -4,9 +4,9 @@ earthquake-hub-backend program is the server-side component of the EarthquakeHub
 ## Development Setup
 To run this repository on your local machine, please follow the instructions provided under the [Setting Up The Repository On Your Local Machine](CONTRIBUTING.md#setting-up-the-repository-on-your-local-machine) section of the [contributing.md](CONTRIBUTING.md)
 
-The backend runs on PostgreSQL + PostGIS. For its setup, migrations, tables and connecting with a GUI client (pgAdmin, DBeaver), see [POSTGRES.md](POSTGRES.md).
+The backend runs on PostgreSQL + PostGIS, and only on it: `docker-compose.yml` starts the backend and PostgreSQL. For its setup, migrations and connecting with a GUI client (pgAdmin, DBeaver), see [POSTGRES.md](POSTGRES.md); for the tables and their rules, [DB_SCHEMA.md](DB_SCHEMA.md).
 
-Dev no longer uses MongoDB: `docker-compose.yml` starts only the backend and PostgreSQL. [MONGODB.md](MONGODB.md) (the old MongoDB setup) and [DB_SCHEMA.md](DB_SCHEMA.md) (its collections, fields and indexes) are kept for the servers that still run MongoDB, and for going back to it ([POSTGRES.md, section 8](POSTGRES.md#8-the-final-mongodb-dump)).
+It moved there from MongoDB, which has been removed: the history, and how the old dev data was kept, are in [POSTGRES.md, sections 6 and 8](POSTGRES.md#6-history-the-move-from-mongodb).
 
 ## Email Branding
 Outgoing HTML emails (device alerts and password-reset emails) support logo branding through environment variables:

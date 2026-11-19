@@ -1,6 +1,6 @@
 # End-to-end check results: MongoDB vs PostgreSQL
 
-Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same backend ran twice on the same production data: once with every area on MongoDB, once with every area on PostgreSQL. The API responses and the frontend were then compared. How to run it: [`README.md`](README.md).
+Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same backend ran twice on the same production data: once with every area on MongoDB, once with every area on PostgreSQL. The API responses and the frontend were then compared. The scripts it used (two backends, the import and the copy) were removed with MongoDB; they're in git history, last at `f4e7db9`. How the check runs now, against a saved baseline: [`README.md`](README.md).
 
 | | |
 |---|---|
@@ -9,12 +9,14 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
 | Data | production export `latestEQs.110526` (MongoDB, exported Nov 5, 2026) |
 | Frontend | `earthquake-hub-frontend` as it is, unchanged (production build) |
 | Re-run after Part 4 | Nov 19, 2026, on PostgreSQL only, against this run's saved MongoDB results ([below](#re-run-after-part-4)) |
+| After the MongoDB code was removed | Nov 19, 2026, against a baseline recorded just before the removal, on the seeded test data ([below](#after-the-mongodb-code-was-removed)) |
 
 **Result: no differences that matter between the two backends.**
 - One finding was a real bug, the "[object Object]" title. It was fixed, and the whole check run again.
 - Two findings need action before production moves to PostgreSQL: fields only production has, and an email clash.
 - The rest are explained below and accepted.
 - **The re-run after Part 4**, with MongoDB gone, gives the same results against this run's MongoDB responses and pages. It found two gaps in the check itself (findings 12 and 13), and one page changed on purpose (finding 14).
+- **After the MongoDB code was removed**, the backend gives exactly the responses it gave just before the removal: every read and every write step identical.
 
 **Contents**
 1. [Summary](#summary)
@@ -26,6 +28,7 @@ Phase 4 - Part 1 of the PostgreSQL migration, dev environment only. The same bac
     - [Screenshots](#screenshots)
 7. [Coverage](#coverage)
 8. [Re-run after Part 4](#re-run-after-part-4)
+9. [After the MongoDB code was removed](#after-the-mongodb-code-was-removed)
 
 ## Summary
 
@@ -474,7 +477,7 @@ Tables no frontend call reaches:
 
 ## Re-run after Part 4
 
-Since Phase 4 the backend no longer connects to MongoDB, and its areas accept only `postgres`. The check was run again with no MongoDB, against what this run saved from it. How to run it: [`README.md`, "Re-run after Part 4"](README.md#re-run-after-part-4).
+MongoDB had left the dev setup (Phase 4 - Ticket 3): the backend no longer connected to it, and its areas accepted only `postgres`. The MongoDB code itself was still there; it was removed afterwards ([below](#after-the-mongodb-code-was-removed)). The check was run again with no MongoDB, against what this run saved from it, with the scripts' `--baseline` mode of the time (now how they always compare: [`README.md`](README.md)).
 
 | | |
 |---|---|
@@ -659,3 +662,39 @@ MongoDB (the first run) on the left, PostgreSQL only (the re-run) on the right.
 <td><img src="screenshots/mongodb/significant-eqs.jpg" width="420" alt="Significant earthquakes, MongoDB: the 404"></td>
 <td><img src="screenshots/postgres-only/significant-eqs.jpg" width="420" alt="Significant earthquakes, PostgreSQL only: 16 earthquakes"></td>
 </tr></table>
+
+## After the MongoDB code was removed
+
+Phase 4 - Part 3 removed MongoDB from the code: Mongoose and its models, the MongoDB repositories, the per-area switch, and the copy, MongoDB maintenance and import scripts. The end-to-end check was run again against a saved baseline, to show the backend's responses didn't change.
+
+**This ticket's own baseline wasn't available any more:** the re-run above was done before the code removal, and its baseline (production data) was deleted with the export when Ticket 1 closed. So a new baseline was recorded **just before the removal**, from the backend as it was then, on the seeded test data (`npm run db:pg:seed`, no personal data), and the backend without the MongoDB code was compared with it. Together with the re-run above (MongoDB's responses = PostgreSQL's, before the removal), this shows the removal changed nothing.
+
+| | |
+|---|---|
+| Run on | Nov 19, 2026 |
+| Baseline | recorded on `feat/postgres-migration` at `f4e7db9` (the last commit with the MongoDB code), with `scripts/e2e/seed-baseline.js` and `--record` |
+| Data | the seeded test data: dev's 906 earthquakes, the 4 `qa_` accounts, 17 made-up sensors, 2 brgy forwarding links |
+| Code | branch `feat/postgres-migration`, the commit that adds this section |
+| Frontend | not run: the build the browser tests are written for was deleted with Ticket 1's output |
+
+**Result: identical.** The comparison was first run against the code that recorded the baseline, to check it's stable (0 differences), then against the code without MongoDB:
+
+| Stage | What was checked | Result |
+|---|---|---|
+| Restore | the seeded dump into an empty database | 12 tables, each with the same count as the baseline |
+| API reads | every read the frontend makes, for every record | 2,743 requests: 2,743 identical, 0 different |
+| API writes | the 49 steps of every write flow | 49 steps, 49 the same, 0 different |
+
+| Endpoint | Requests | Identical |
+|---|---|---|
+| GET /eq-events (each event in the list) | 906 | 906 |
+| GET /eq-events (order) | 906 / 906 events | same order |
+| GET /eq-events/:publicID | 906 | 906 |
+| GET /comments | 906 | 906 |
+| GET /device/all | 1 | 1 |
+| GET /device/status, each station | 17 | 17 |
+| GET /accounts/ringserver-hosts | 1 | 1 |
+| GET /accounts/profile | 3 | 3 |
+| GET /device/my-devices | 3 | 3 |
+
+The seeded data has no comments, so the comment pages by cursor and by offset weren't called; the write flows post, mark, flag, moderate and list comments. The test suites back this up on the same code: the golden tests (recorded on MongoDB) pass unchanged, with their data now seeded straight into PostgreSQL.

@@ -1,561 +1,279 @@
-# Database Schema Guide
+# Database schema
 
-Everything you need to understand the Earthquake Hub database: what each collection holds, how the collections relate, which code writes what, and the rules and gotchas that aren't obvious from the model files.
+The backend's data is in **PostgreSQL 18 with PostGIS 3.6**. The schema is whatever the Knex migrations in [`src/db/migrations/`](src/db/migrations/) build; this page describes the tables and the rules they enforce. Setting up PostgreSQL, running migrations and the rest are in [`POSTGRES.md`](POSTGRES.md).
 
-- **Engine:** MongoDB 8.0 (single-node replica set `rs0`, auth on), accessed through Mongoose 8.
-- **Database name:** `latestEQs` (`MONGO_NAME` in `.env`).
-- **Source of truth for fields:** the model files in [`src/models/`](src/models/). This document explains them; if the two ever disagree, the model wins, and this file should be fixed in the same PR.
-- **Setting up and connecting** (Docker, `.env`, Compass): see [MONGODB.md](MONGODB.md).
+Until Phase 4 the data was in MongoDB. It moved one area at a time, and the MongoDB code was removed afterwards ([`POSTGRES.md`, section 6](POSTGRES.md#6-history-the-move-from-mongodb)). Some columns still show that history:
+- Every table's key is a `uuid` (`uuidv7()`), used only inside PostgreSQL.
+- Rows that clients name (accounts, devices, events, comments, points) also have `legacy_mongo_id`, a MongoDB-style id. It's what the API shows, for rows copied from MongoDB and for new ones alike ([`POSTGRES.md`, "Ids the API shows"](POSTGRES.md#ids-the-api-shows-mongodb-style)).
 
----
+## Diagram
 
-## Contents
+[`docs/postgres-schema.dbml`](docs/postgres-schema.dbml) is the schema in [DBML](https://dbml.dbdiagram.io): every enum, table, column, index, check rule and foreign key, with its `ON DELETE` rule. Paste it into [dbdiagram.io](https://dbdiagram.io) to see the diagram.
 
-1. [The big picture](#1-the-big-picture)
-2. [Collections at a glance](#2-collections-at-a-glance)
-3. [Relationships](#3-relationships)
-4. [Collections in detail](#4-collections-in-detail)
-   - [events](#41-events)
-   - [accounts](#42-accounts)
-   - [devices](#43-devices)
-   - [comments](#44-comments)
-   - [contributionevents](#45-contributionevents)
-   - [subscriptions](#46-subscriptions)
-   - [significant-eqs](#47-significant-eqs)
-   - [joblocks](#48-joblocks)
-5. [How data flows](#5-how-data-flows)
-6. [Conventions and gotchas](#6-conventions-and-gotchas)
-7. [Migration and maintenance scripts](#7-migration-and-maintenance-scripts)
-8. [Known issues and tech debt](#8-known-issues-and-tech-debt)
-9. [Changing the schema: checklist](#9-changing-the-schema-checklist)
-10. [Glossary](#10-glossary)
-
----
-
-## 1. The big picture
-
-Earthquake Hub collects earthquakes detected by **SeisComP** (UPRI's seismic processing system) from a network of citizen-hosted **Raspberry Shake** sensors, and shows them on a public map.
-
-```
-Raspberry Shake sensors ──stream──▶ ringserver ──▶ SeisComP ──detects quake──▶ backend ──▶ MongoDB
-         (devices)                  (stream status ─────────────────────────▶ backend)        │
-                                                                                               ▼
-                      citizens, barangays, admins ◀── frontend (map, event pages, reports) ◀── API
-```
-
-The database stores four kinds of things:
-
-| Kind | Collections |
-|---|---|
-| **Earthquakes** and what we know about them | `events`, `significant-eqs` |
-| **People** and their **sensors** | `accounts`, `devices` |
-| **Community input** on earthquakes | `comments`, `contributionevents` |
-| **Infrastructure** state | `subscriptions` (web push, deprecated), `joblocks` (background job mutex) |
-
-The backend does **no seismic processing**. Magnitude, location and origin time all come from SeisComP. The backend stores them, enriches them (place names, matching PHIVOLCS/USGS reports, which stations recorded the quake) and serves them.
-
----
-
-## 2. Collections at a glance
-
-| Collection | Model file | Mongoose model | What one document is | Main writers |
-|---|---|---|---|---|
-| `events` | `events.model.js` | `Event` | One earthquake detected by SeisComP | SeisComP via `/messaging`, enrichment job, station refinement, users editing the summary |
-| `accounts` | `account.model.js` | `Account` | One user (citizen, barangay, admin) | Registration, profile settings, device link/unlink |
-| `devices` | `device.model.js` | `Device` | One Raspberry Shake sensor | Device linking, ringserver stream status, alert-credential setup |
-| `comments` | `comments.model.js` | `Comment` | One community report on an earthquake | Public report form, helpful/issue buttons, admin moderation |
-| `contributionevents` | `contributionEvent.model.js` | `ContributionEvent` | One points-earning action (ledger entry) | Comments service |
-| `subscriptions` | (removed) | `Subscription` | One browser's web-push subscription (deprecated: no longer read or written) | Nobody (push notifications were removed) |
-| `significant-eqs` | (removed) | `significant-eq` | One hand-curated notable earthquake (deprecated: no longer read) | Nobody in the app (curated directly in the database) |
-| `joblocks` | `jobLock.model.js` | `JobLock` | One lock held by a background job | Enrichment job |
-
-Rough sizes on a copy of real data (Oct 2026): ~900 events, ~85 accounts, ~26 devices. All collections are small today; the indexes are there so they stay fast as they grow.
-
----
-
-## 3. Relationships
-
-```mermaid
-erDiagram
-    ACCOUNT ||--o{ DEVICE : "devices[] (owns)"
-    ACCOUNT ||--o{ RELEASED_DEVICE : "releasedDevices[] (history, embedded)"
-    ACCOUNT |o--o{ COMMENT : "accountId (null = anonymous)"
-    ACCOUNT }o--o{ COMMENT : "helpfulAccountIds[] / issueReports[].accountId"
-    ACCOUNT ||--o{ CONTRIBUTIONEVENT : "accountId"
-    EVENT ||--o{ COMMENT : "eventId + eventPublicID"
-    EVENT |o--o{ CONTRIBUTIONEVENT : "eventId + eventPublicID"
-    EVENT ||--o{ CATALOG_MATCH : "additionalInformation[] (embedded)"
-    DEVICE }o--o{ EVENT : "station codes in candidate/recording/onlineStations"
-```
-
-How each link is stored:
-
-| From | To | Stored as | Notes |
-|---|---|---|---|
-| account → devices | `devices` | `accounts.devices[]` (array of `devices._id`) | Ownership lives **on the account side only**. "Who owns device X?" is answered with `Account.findOne({ devices: X })`. A device has at most one owner (enforced by `linkDevice`, not by the database). |
-| account → released devices | (embedded) | `accounts.releasedDevices[]` | A snapshot of each device the account unlinked. History only. |
-| comment → event | `events` | `comments.eventId` (ObjectId) **and** `comments.eventPublicID` (SeisComP ID) | Both are kept; queries use either. |
-| comment → author | `accounts` | `comments.accountId` | `null` for anonymous reports. `username` is copied onto the comment. |
-| comment → helpful voters | `accounts` | `comments.helpfulAccountIds[]` | One entry per account. |
-| comment → issue reporters | `accounts` | `comments.issueReports[].accountId` | Private moderation signals. |
-| contribution → account / event | `accounts`, `events` | `accountId`, `eventId`, `eventPublicID` | Ledger of points. |
-| event → stations | `devices` | `events.candidateStations[]`, `recordingStations[]`, `onlineStations[]` | **Station codes** (e.g. `R3B2D`), not ObjectIds. They match `devices.station`. |
-
-There are **no foreign-key constraints** in MongoDB. Deleting an account or event does not delete or update the documents that point to it; the code that deletes is responsible for clean-up.
-
----
-
-## 4. Collections in detail
-
-Legend for the field tables: **Req** = required by the schema. Defaults are applied by Mongoose when a document is created through the model (not when you insert directly with `mongosh` or `.collection.insertOne`).
-
-### 4.1 `events`
-
-One document per earthquake, keyed by SeisComP's `publicID`. Field names like `OT` and `latitude_value` mirror SeisComP's naming and are part of the public API, so they're kept as-is.
-
-#### Core earthquake data (from SeisComP)
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `_id` | ObjectId | auto | Internal ID. Comments reference it as `eventId`. |
-| `publicID` | String | **Req**, unique | SeisComP event ID, e.g. `upri2026tqzx`. The stable public identifier used in URLs. |
-| `OT` | Date | | **Origin time** of the earthquake (UTC). |
-| `latitude_value` | Number | | Epicenter latitude, −90…90. |
-| `longitude_value` | Number | | Epicenter longitude, −180…180. |
-| `location` | GeoJSON Point | absent if coordinates invalid | **Derived** from `latitude_value`/`longitude_value` on every write: `{ type: 'Point', coordinates: [longitude, latitude] }`. Used for `$near`/`$geoWithin` queries. Never set it by hand. |
-| `depth_value` | Number | | Depth in km. |
-| `magnitude_value` | Number | | Magnitude. |
-| `type` | String | | Latest SeisComP message type: `NEW` or `UPDATE`. |
-| `text` | String | | SeisComP's region description. |
-| `last_modification` | Date | | SeisComP's modification timestamp. Used to **ignore out-of-order updates**: an incoming update older than this is dropped. |
-
-#### Provenance
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `sourceCatalog` | String | `'upri-current'` | Which catalog the event came from (`EVENT_SOURCE_CATALOG`). |
-| `sourceServer` | String | | SeisComP server name. |
-| `sourceSeiscompVersion` | String | | SeisComP version that produced it. |
-| `isLegacyRecord` | Boolean | `false` | `true` for events imported from an older catalog. Reset to `false` if SeisComP later sends the same `publicID`. |
-| `legacyImportedAt` | Date | | When the legacy import happened. |
-| `legacySourcePublicID` | String | | The event's ID in the legacy catalog. |
-
-#### Place name (Geoserve)
-
-| Field | Type | Notes |
-|---|---|---|
-| `place` | String | Human-readable place, e.g. "12 km NE of Baler, Philippines". **Filled lazily**: when the event list or detail is read and `place` is missing or a placeholder, the backend asks Geoserve and saves the answer. It's **cleared** whenever an update moves the epicenter by more than `GEOSERVE_PLACE_REFRESH_DISTANCE_KM` (1 km), so the next read recomputes it. |
-
-#### Stations that recorded the quake
-
-These answer "which sensors near the epicenter actually recorded this earthquake?". All three arrays hold **station codes** (uppercase), nearest first.
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `candidateStations` | [String] | `[]` | Active stations nearest to the epicenter **at ingest time**. A guess, not a confirmation. |
-| `recordingStations` | [String] | `[]` | Stations **confirmed** by FDSN to have waveform data for the event window. |
-| `onlineStations` | [String] | `[]` | What the UI shows. Derived from the two above depending on the status (see [5.2](#52-recording-availability-which-stations-recorded-the-quake)). Kept for API compatibility. |
-| `recordingAvailabilityStatus` | String enum | `'pending'` | `pending` · `partial` · `verified` · `unavailable`. |
-| `recordingAvailabilityCheckedAt` | Date | | Last FDSN check. |
-| `recordingAvailabilityAttempts` | Number | `0` | FDSN check count; stops retrying at `RECORDING_AVAILABILITY_MAX_ATTEMPTS` (4). |
-
-#### Catalog enrichment (PHIVOLCS / USGS)
-
-The enrichment job looks for the same earthquake in the PHIVOLCS and USGS catalogs and stores the best match from each.
-
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `additionalInformation` | [CatalogSource] | `[]` | One entry per matched source. Sub-schema below. |
-| `pendingCatalogSources` | [String] | `['phivolcs', 'usgs']` | Sources still to try. The job only picks events where this isn't empty. |
-| `catalogEnrichmentStatus` | Map<String, String> | `{}` (set to `pending` per source on insert) | Per source: `pending` · `done` (match saved) · `no_match` (searched, nothing close enough) · `failed` (gave up after `MAX_ENRICHMENT_ATTEMPTS`). |
-| `catalogEnrichmentAttempts` | Map<String, Number> | `{}` | Per-source attempt counter. |
-| `upForEnrichment` | Boolean | `true` | **Legacy.** Old global "needs enrichment" flag. Still read and written by the enrichment job for old records; kept on purpose (see [section 8](#8-known-issues-and-tech-debt)). |
-| `enrichmentAttempts` | Number | `0` | **Legacy.** Old global attempt counter. Same status as `upForEnrichment`. |
-
-**`additionalInformation[]` entry (CatalogSource)** — `_id: false`, `strict: false` (unknown keys from upstream are stored too):
-
-| Field | Type | Notes |
-|---|---|---|
-| `source` | String, **Req** | `phivolcs` or `usgs`. |
-| `sourceLabel`, `sourceIconUrl` | String | Display name and icon. |
-| `id`, `title`, `place`, `location`, `detail` | String | The upstream event's identifiers and descriptions. |
-| `url`, `detailUrl`, `queryUrl` | String | Links to the upstream page / API query. |
-| `time` | Date | Upstream origin time. `dateTime` (String) is the raw text PHIVOLCS shows (Philippine time, GMT+8). |
-| `latitude`, `longitude`, `depth`, `depthKm`, `magnitude` | Number | Upstream values. |
-| `hasFeltIntensity` | Boolean | Upstream has felt-intensity reports. Copied, not computed. |
-| `distanceKm`, `timeDifferenceMinutes`, `magnitudeDifference` | Number | How far the upstream event is from ours. |
-| `latitudeFloorMatch`, `longitudeFloorMatch` | Boolean | Whether whole-degree coordinates match. |
-| `score` | Number | Match score (lower is better). |
-| `matchQuality` | String | `high` (≤2 min, ≤100 km, ≤0.5 mag) · `medium` (≤5 min, ≤250 km, ≤1.0) · `low` (≤10 min, ≤500 km, ≤1.5). |
-| `raw` | Mixed | The full upstream payload. Can be large. |
-
-#### Community summary
-
-| Field | Type | Notes |
-|---|---|---|
-| `summaryOverride` | `{ text (Req), editedAt (default now), editedBy }` or `null` | A user-edited summary that replaces the generated one. Set/removed via `PATCH`/`DELETE /eq-events/:publicID/summary` (admins and citizens). `editedBy` is a username or account ID. |
-
-Every event also has `createdAt` and `updatedAt` (Mongoose timestamps).
-
-#### Indexes
-
-| Index | Used by |
-|---|---|
-| `publicID_1` (unique) | Event detail page, ingest upsert, comment lookups |
-| `OT_-1` | Event list (time range), enrichment job (`OT <= cutoff`, oldest first) |
-| `location_2dsphere` | Location queries (`$near`, `$geoWithin`) |
-| `sourceCatalog_1`, `isLegacyRecord_1` | Catalog / legacy filters |
-| `recordingAvailabilityStatus_1` | Finding events still being checked |
-| `pendingCatalogSources_1` | Enrichment job eligibility |
-| `upForEnrichment_1` | Legacy enrichment eligibility |
-
----
-
-### 4.2 `accounts`
-
-One document per user. A user can have several roles.
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `_id` | ObjectId | auto | |
-| `username` | String | unique | Case-sensitive. Validated by `usernameSchema` (pattern from `USERNAME_ALLOWED_PATTERN`). |
-| `email` | String | unique, **stored lowercase and trimmed** | Looked up by exact match. Users can log in with username **or** email. |
-| `password` | String | | **bcrypt hash**, never plain text. Never return it from the API. |
-| `roles` | [String] | | `citizen`, `sensor`, `brgy`, `admin`. Citizens are created with `['citizen', 'sensor']`; barangays with `['brgy']`. `admin` is granted manually. |
-| `isApproved` | Boolean | `false` | Barangay accounts can't log in until an admin approves them (`brgyAccountInactive`). Not used for citizens. |
-| `passwordPolicyVersion` | Number | `1` | Which password rules the current password met. Below the current version (2) means a "legacy" password and the UI asks the user to change it. |
-| `passwordUpdatedAt` | Date | | |
-| `passwordResetTokenId` | String | | **SHA-256 hash** of the active reset token's ID (single use). Never return it. |
-| `passwordResetIssuedAt`, `passwordResetUsedAt` | Date | | Reset token lifecycle. |
-| `devices` | [ObjectId → `devices`] | `[]` | Devices this account currently owns. |
-| `releasedDevices` | [ReleasedDevice] | `[]` | Snapshot history of unlinked devices (sub-schema below). |
-| `ringserverUrl`, `ringserverPort` | String, Number | | Barangays only: their own ringserver that relays sensor data. |
-| `alertPreferences.rshakeEmailEnabled` | Boolean | `false` | Email the owner when their Raspberry Shake triggers a shaking alert. |
-| `alertPreferences.updatedAt` | Date | | |
-| `createdAt`, `updatedAt` | Date | auto | |
-
-**`releasedDevices[]` entry:** `deviceId` (→ devices), `streamId`, `macAddress`, `network`, `station`, `description`, `longitude`, `latitude`, `elevation`, `releasedAt` (default now), `reason` (default `'unlink'`). Entries are removed again if the same device is linked back.
-
-**Indexes:** `email_1` (unique), `username_1` (unique).
-
-**Uniqueness rules:** registration, email changes and username changes check for duplicates first (for a friendly message) **and** catch the database's duplicate-key error (code `11000`), so two simultaneous sign-ups can't both succeed. See `duplicateKeyResult()` in `accounts.service.js`.
-
----
-
-### 4.3 `devices`
-
-One document per Raspberry Shake sensor.
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `_id` | ObjectId | auto | |
-| `network` | String | **Req** | Seismic network code, e.g. `AM` (Raspberry Shake). Stored uppercase. |
-| `station` | String | **Req** | Station code, e.g. `R3B2D`. For `AM` devices it's derived from the MAC address (`generateAMStationCode`). Stored uppercase. |
-| `streamId` | String | `null` | Stream pattern, e.g. `AM_R3B2D_.*/MSEED`. `null` = not linked yet. |
-| `macAddress` | String | `null` | Device MAC. `null` = not linked yet. |
-| `description` | String | | Usually `"<username>'s device"`; updated when the owner renames themselves. |
-| `latitude`, `longitude`, `elevation` | Number | **Req** | Sensor position (elevation in metres). |
-| `location` | GeoJSON Point | derived | **Derived** from `latitude`/`longitude` by a `pre('validate')` hook on every save. Never set it by hand. |
-| `activity` | String enum | `'inactive'` | `active` (streaming) · `inactive` (not streaming) · `unlinked` (released by its owner). |
-| `activityToggleTime` | Date | epoch (1970) | When `activity` last changed. |
-| `rshakeAlertCredentialHash` | String | `null` | Hash of the shared secret the device uses to send shaking alerts. Never return it. Cleared on unlink. |
-| `rshakeAlertCredentialIssuedAt` | Date | `null` | |
-| `createdAt`, `updatedAt` | Date | auto | Only on devices created/updated after Oct 2026; older records don't have them. |
-
-**Indexes:**
-
-| Index | Notes |
-|---|---|
-| `network_1_station_1` (unique) | One device per station. |
-| `streamId_1` (unique, partial `streamId > ''`) | Unique only when set, so any number of unlinked (`null`) devices can exist. |
-| `macAddress_1` (unique, partial `macAddress > ''`) | Same. |
-| `activity_1` | "All active devices". |
-| `location_2dsphere` | Nearest-station queries. |
-
-The partial filter is `$gt: ''` rather than `$type: 'string'` on purpose: MongoDB only uses a partial index when the query implies its filter, and an equality lookup like `{ macAddress: 'aa:bb:..' }` implies `> ''` but not `$type`.
-
----
-
-### 4.4 `comments`
-
-Community reports on an earthquake ("I felt it", photos). Shown publicly on the event page.
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `_id` | ObjectId | auto | |
-| `commentId` | String | unique, random UUID | The public ID used in URLs/API. |
-| `eventId` | ObjectId → `events` | **Req** | |
-| `eventPublicID` | String | | The event's `publicID`, copied for convenience. Older comments may lack it. |
-| `username` | String | `'Anonymous'` | Display name, copied from the account at post time. Empty values become `Anonymous`. |
-| `accountId` | ObjectId → `accounts` | `null` | `null` for anonymous reports. |
-| `content` | String | max 1000 chars | Report text. |
-| `imageURL` | String | | Uploaded photo URL. A report needs text **or** an image (validation hook). |
-| `status` | String enum | `'approved'` | `pending` · `approved` · `rejected`. Reports are published immediately; admins can reject later. Older comments may have no `status`; treat that as approved. |
-| `moderatedBy`, `moderatedAt` | String, Date | | Who/when an admin changed the status. |
-| `helpfulAccountIds` | [ObjectId → accounts] | `[]` | Accounts that marked it helpful (one each). |
-| `issueReports` | [{ `accountId` (Req), `reason` (Req), `createdAt` }] | `[]` | Private flags for moderators. `reason`: `duplicate` · `unclear` · `wrong_location` · `not_related` · `inappropriate`. |
-| `createdAt`, `updatedAt` | Date | auto | |
-
-**Indexes:** `commentId_1` (unique); `{eventId, status, createdAt:-1, commentId:-1}` and `{eventPublicID, status, createdAt:-1, commentId:-1}` (list visible comments for an event, newest first); plus single-field indexes on `eventId`, `eventPublicID`, `accountId`, `status`, `username`, `helpfulAccountIds`, `issueReports.accountId`.
-
-**API:** `POST /comments` (anyone; citizens get attribution), `PUT|DELETE /comments/:commentId/helpful`, `POST /comments/:commentId/issues`, `PATCH /comments/:commentId/status` and `DELETE /comments/:commentId` (admin).
-
----
-
-### 4.5 `contributionevents`
-
-An append-only **ledger of points** earned by citizens for contributing reports. A user's score is the sum of their entries.
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `dedupeKey` | String | **Req**, unique | Makes each action count once, even if the request is retried. |
-| `accountId` | ObjectId → `accounts` | **Req** | Who earned the points. |
-| `actionType` | String enum | **Req** | See points table. |
-| `targetType` | String enum | **Req**, `'comment'` | `comment` or `event`. |
-| `targetId` | String | | The comment's `commentId` (or event ID). |
-| `eventId`, `eventPublicID` | ObjectId, String | | The earthquake involved. |
-| `points` | Number | **Req**, `0` | Points for this entry. |
-| `reason` | String | | Free-text note. |
-| `metadata` | Mixed | | Extra context. |
-| `createdAt`, `updatedAt` | Date | auto | |
-
-| `actionType` | Points | Recorded when |
-|---|---:|---|
-| `report_posted` | 5 | A logged-in user posts a report |
-| `image_report_posted` | 8 | The report has a photo (an **extra** entry, so a photo report earns 5 + 8 = 13) |
-| `report_marked_helpful` | 1 | You mark someone else's report helpful |
-| `report_received_helpful` | 2 | Someone marks your report helpful |
-| `report_issue_submitted` | 0 | You flag a report (tracked, no points) |
-
-Anonymous reports and marking your own report helpful earn nothing. Points live in `CONTRIBUTION_POINTS` in `contributions.service.js`.
-
-**Indexes:** `dedupeKey_1` (unique); `{accountId, createdAt:-1}`, `{eventId, createdAt:-1}`, `{eventPublicID, createdAt:-1}`; single-field `accountId`, `actionType`, `targetId`, `eventId`, `eventPublicID`.
-
----
-
-### 4.6 `subscriptions`
-
-> **Deprecated:** the backend no longer sends push notifications or accepts subscriptions (the `/notifications` endpoints were removed). The records stay here, and in the final MongoDB dump.
-
-One browser that had opted in to **web push** earthquake notifications. Not linked to accounts (anyone could subscribe).
-
-| Field | Type | Req / default | Notes |
-|---|---|---|---|
-| `endpoint` | String | **Req**, unique | The push service URL for this browser. |
-| `keys.auth`, `keys.p256dh` | String | **Req** | Encryption keys from the browser. |
-| `expirationTime` | Number | | From the browser, usually null. |
-| `status` | String enum | `'active'` | `active` or `invalid`. |
-| `lastSeenAt` | Date | now | Last time the browser re-registered. |
-| `lastDeliveredAt`, `lastFailureAt` | Date | | |
-| `lastFailureCode` | Number | | HTTP status of the last failed push. |
-| `consecutiveFailures` | Number | `0` | |
-| `invalidatedAt` | Date | | |
-| `cleanupAfter` | Date | | **TTL**: MongoDB deletes the document once this time passes. |
-| `sourceSwScript` | String | | Which service worker registered it. |
-| `clientMeta.userAgent`, `.appVersion`, `.clientTime` | String, String, Date | | Diagnostics. |
-| `createdAt`, `updatedAt` | Date | auto | |
-
-**Lifecycle (until push notifications were removed):** a push that failed with 400/404/410 marked the subscription `invalid` and set `cleanupAfter` 7 days ahead. A cleanup scheduler also invalidated subscriptions not seen for 90 days or with 3+ failures in a row, and a re-registration reset everything to `active`. Nothing updates the records now. The TTL index on `cleanupAfter` still deletes the ones already marked invalid once that time passes; the rest stay.
-
-**Indexes:** `endpoint_1` (unique), `status_1`, `lastSeenAt_1`, `{status, lastSeenAt, consecutiveFailures}`, `cleanupAfter_1` (TTL, `expireAfterSeconds: 0`).
-
----
-
-### 4.7 `significant-eqs`
-
-> **Deprecated:** the backend no longer reads this collection (the `/significant-eqs` endpoints were removed), and it has no PostgreSQL table. The records stay here, and in the final MongoDB dump.
-
-Hand-curated notable earthquakes for the "Significant Earthquakes" page. **The app only reads this collection**; records are added directly in the database by the team.
-
-| Field | Type | Notes |
-|---|---|---|
-| `title` | String | |
-| `magnitude`, `depth` | Number | |
-| `latitude`, `longitude` | Number | |
-| `location` | String | **A place name**, not GeoJSON (unlike `events.location` / `devices.location`). |
-| `eventTime` | Date | |
-| `eventSummary` | String | |
-| `instrumentRecordings` | Array (untyped) | |
-| `references` | Array (untyped) | |
-
-No validation, no timestamps, no indexes beyond `_id`. Check existing documents for the expected shape of the arrays before adding one.
-
----
-
-### 4.8 `joblocks`
-
-> **Moved to PostgreSQL in dev** (`job_locks`) when `JOB_LOCKS_DB=postgres`; this collection is then no longer used. See [POSTGRES.md](POSTGRES.md#job_locks).
-
-A tiny mutex so only one backend instance runs a background job at a time.
-
-| Field | Type | Notes |
-|---|---|---|
-| `name` | String, **Req**, unique | Job name. Currently only `additional-information-enrichment` (the nightly enrichment job). |
-| `owner` | String, **Req** | `hostname:pid` of the holder. |
-| `expiresAt` | Date, **Req** | Lock expiry. A job can take over an expired lock. |
-| `createdAt`, `updatedAt` | Date | auto |
-
-**Indexes:** `name_1` (unique), `expiresAt_1` (**TTL**, `expireAfterSeconds: 0`): MongoDB deletes a lock shortly after it expires (the TTL monitor runs about every 60 s). Acquisition also treats an expired lock as free, so locking doesn't depend on the deletion timing.
-
-Don't add `index: true` to `expiresAt` in the model: a plain index would take the name `expiresAt_1` first and the TTL index would silently fail to build. That was a real bug until Oct 2026; databases created before then are fixed by `migrate-event-indexes.js`.
-
----
-
-## 5. How data flows
-
-### 5.1 Earthquake ingest
-
-```
-SeisComP detects / updates a quake
-  └─▶ POST /messaging/restricted/...  (messaging.controller → addEQEvent)
-        1. Find active stations nearest the epicenter          → candidateStations
-        2. Drop the message if older than the stored last_modification
-        3. Upsert by publicID: core fields, location, provenance;
-           on insert also pendingCatalogSources=[phivolcs,usgs], statuses=pending
-        4. If the epicenter moved > 1 km, clear `place`
-        5. Schedule the recording-availability check (5.2)
-        6. SSE update to open browsers
-```
-
-There is exactly **one write path** for event core data: `addEQEvent` in `EQevents.service.js`. That's why `location` is computed there.
-
-### 5.2 Recording availability (which stations recorded the quake)
-
-For each event, the backend asks the FDSN dataselect service (`FDSNWS_DATASELECT_URL`) whether each station has waveform data for a 30-second window after `OT`.
-
-| Status | Meaning | `onlineStations` shows |
-|---|---|---|
-| `pending` | No confirmations yet, still within the 30-min grace period | `candidateStations` |
-| `partial` | Some candidate stations confirmed | Within grace: confirmed + candidates. After: confirmed only. |
-| `verified` | All candidates (or more) confirmed | `recordingStations` |
-| `unavailable` | Nothing confirmed after the grace period | `[]` |
-
-`pending`/`partial` events are re-checked every 5 minutes, up to 4 attempts. If every FDSN request fails (network problem), the attempt is counted but the station lists aren't changed. Admins can recompute all events with `POST /eq-events/restricted/update-online-stations` (processed in batches of `ONLINE_STATIONS_BATCH_SIZE`).
-
-### 5.3 Catalog enrichment (PHIVOLCS / USGS)
-
-A cron job (`ENRICHMENT_CRON`, default 02:00 Asia/Manila) takes the `joblocks` lock, then processes events that are at least `ENRICHMENT_MIN_AGE_HOURS` (12) old and still have `pendingCatalogSources`, oldest first. For each pending source it searches the catalog and stores the best match in `additionalInformation`:
-
-```
-pending ──match found──▶ done
-   │──nothing close enough──▶ no_match
-   │──lookup error──▶ pending (attempts+1) ──after MAX_ENRICHMENT_ATTEMPTS (3)──▶ failed
-```
-
-A source leaves `pendingCatalogSources` once it reaches `done`, `no_match` or `failed`. Admins can trigger a run with `POST /eq-events/restricted/scrape-additional-information`.
-
-### 5.4 Device lifecycle
-
-```
-link (new MAC)        ─▶ create device (activity=inactive), push _id into account.devices
-ringserver: streaming ─▶ activity=active,   activityToggleTime=latest packet time
-ringserver: silent>30s─▶ activity=inactive, activityToggleTime=last packet time
-(status messages via /messaging can also set activity + activityToggleTime directly)
-unlink                ─▶ activity=unlinked, alert credential cleared,
-                         _id pulled from account.devices, snapshot pushed to account.releasedDevices
-relink (same MAC)     ─▶ same device document reused, activity=inactive, release snapshot removed
-```
-
-- A device whose MAC/stream/station is already taken by another document is rejected (`alreadyLinkedToSomeone`), thanks to the unique indexes.
-- Unlinking keeps `macAddress`/`streamId` on the device, so the hardware can be linked again later (by anyone, once no account owns it).
-
-### 5.5 Accounts
-
-- **Register:** `citizen` → roles `['citizen','sensor']`, usable immediately. `brgy` → roles `['brgy']`, needs `ringserverUrl`, can't log in until an admin sets `isApproved: true`.
-- **Login:** by username or email (email is matched lowercase), for a specific role (`citizen`, `sensor` or `brgy`). Barangay logins are refused until the account is approved.
-- **Password reset:** a signed token is emailed; only its ID's hash is stored (`passwordResetTokenId`), and it works once.
-- **Username change:** also renames the user's devices' `description`, in one transaction.
-
-### 5.6 Reports and points
-
-Posting a report creates a `comments` document. If the author is logged in, it also creates a `report_posted` entry (5 points), plus an `image_report_posted` entry (8 points) when there's a photo. Marking someone else's report helpful adds the voter to `helpfulAccountIds` and creates two entries (1 point for the voter, 2 for the author). `dedupeKey` stops double counting when a request is retried.
-
----
-
-## 6. Conventions and gotchas
-
-| Topic | What to know |
-|---|---|
-| **Three kinds of IDs** | `_id` (ObjectId, internal), `publicID` (SeisComP event ID, public), `commentId` (UUID, public). Prefer the public ones in URLs and API responses. |
-| **Field naming** | Event fields follow SeisComP (`OT`, `latitude_value`). Devices use plain `latitude`/`longitude`. Both are part of the API, so don't rename them. |
-| **`location` means different things** | GeoJSON Point on `events` and `devices` (derived, indexed); a **place name string** on `significant-eqs` and in `additionalInformation[]`. |
-| **Never set `location` directly** | It's derived from the coordinates. Out-of-range coordinates leave it unset instead of failing the write (a 2dsphere index rejects invalid points). |
-| **Times are UTC** | All `Date` fields are UTC. Only PHIVOLCS' raw `dateTime` text is in Philippine time (GMT+8). |
-| **Station codes link events to devices** | Event station arrays hold `devices.station` values, uppercase. They aren't ObjectIds and aren't updated if a device is renamed. |
-| **Denormalized copies** | `comments.eventPublicID`, `comments.username`, `onlineStations` are copies; they can drift from their source. |
-| **Not-yet-linked devices** | `streamId`/`macAddress` are `null`. Old data used the string `"TO_BE_LINKED"`; the uniqueness migration converts it. Check with `!device.macAddress`. |
-| **Defaults and `.lean()`** | `.lean()` returns raw documents **without** Mongoose defaults. If code relies on a default (e.g. `activityToggleTime`), don't use `lean()` or handle the missing value. |
-| **Direct inserts skip the model** | `mongosh` inserts and `Model.collection.insert*` bypass defaults, enums, hooks (`location`, email lowercasing) and validation. Use the model in app code. |
-| **Duplicate-key errors are expected** | Code `11000` on save means a unique index blocked a duplicate. Map it to a friendly result (see `duplicateKeyResult`, `saveDeviceIfUnique`) instead of returning a 500. |
-| **Sensitive fields** | Never return `accounts.password`, `passwordResetTokenId`, or `devices.rshakeAlertCredentialHash`. Build response objects field by field. |
-| **Transactions work** | The database is a replica set, so `session.withTransaction()` is real. The fallback branches for "transactions not supported" are only for old setups. |
-| **Don't load whole collections** | Filter and project (`find(filter, fields)`). For big jobs, page by `_id` in batches. See `findStationDevices()` and `updateOnlineStations()` for the pattern. |
-| **Indexes on startup** | The app builds missing indexes on startup (Mongoose `autoIndex`). On a database with existing data, run the migration scripts instead; a failed index build at startup only logs a warning. |
-| **Dev server restarts** | Code changes under `/mnt/c` don't always reach nodemon in Docker. After pulling model changes run `docker restart earthquake-hub-backend-dev`. |
-
----
-
-## 7. Migration and maintenance scripts
-
-All in [`scripts/`](scripts/). Run them **inside the backend container**, where the `mongodb` hostname resolves:
+It's generated from a migrated database, so don't edit it by hand. After a migration changes the schema, regenerate it against a database migrated to the latest version (e.g. your dev one):
 
 ```sh
-docker exec -w /app earthquake-hub-backend-dev node scripts/<script>.js [--dry-run]
-# on a server: docker exec ehub-backend node scripts/<script>.js [--dry-run]
+npm run db:pg:migrate
+npm run db:pg:dbml > docs/postgres-schema.dbml
 ```
 
-| Script | npm alias | What it does | Changes data? |
-|---|---|---|---|
-| `find-duplicates.js` | `db:find-duplicates` | Lists records that would block the account/device unique indexes, plus device `activity` values. Exit 1 if there are blockers. | No |
-| `migrate-unique-indexes.js` | `db:migrate-unique-indexes` | Duplicate check (stops if blocked) → lowercase emails → `TO_BE_LINKED` → `null` → builds account/device indexes → verifies they're used. | Yes, re-runnable |
-| `migrate-event-indexes.js` | `db:migrate-event-indexes` | Backfills `location` on events and devices → builds event/device indexes (`OT`, 2dsphere) and the `joblocks` TTL index → verifies queries use them. | Yes, re-runnable |
-| `migrate-catalog-info-to-array.js` | — | One-off: converted old object-shaped `additionalInformation` to the array format. Historical. | Yes |
-| `queue-catalog-source.js` | — | Re-queues a catalog source for enrichment on existing events. | Yes |
+## Tables
 
-A **fresh, empty database needs none of these**: the app builds the indexes on startup and new records get `location` automatically. They exist for databases that already have data. Order and details for servers: [MONGODB.md section 5](MONGODB.md#5-uniqueness-migration-accounts--devices).
-
----
-
-## 8. Known issues and tech debt
-
-| Issue | Impact | Fix |
+| Table | Replaces (MongoDB) | Migration |
 |---|---|---|
-| Duplicate index declarations on `comments.accountId` (and redundant single-field indexes that are prefixes of compound ones) | "Duplicate schema index" warnings at startup; slightly slower writes | Remove `index: true` where `unique: true` or a `schema.index()` already covers the field, and drop single-field indexes that are the first key of a compound index. |
-| Legacy enrichment fields `upForEnrichment` / `enrichmentAttempts` | Two ways of tracking enrichment | Refactor the enrichment eligibility check, backfill events missing `pendingCatalogSources` (2 in current data), then drop them. Deliberately kept for now. |
-| Device ownership only on `accounts.devices[]` | "Who owns this device?" needs a scan of `accounts` (no index on `devices`) | Add `ownerAccountId` on `devices`, or at least an index on `accounts.devices`. |
-| `significant-eqs` has no validation | Bad records can break the page that shows them | Add required fields, ranges and timestamps. |
-| `comments.helpfulAccountIds` / `issueReports` grow without limit | Fine at current scale | Move to a separate collection if a comment ever gets thousands of marks. |
-| Deleting accounts/events doesn't clean up references | Orphaned comments/contributions | Handle in the deleting service when such deletes are added. |
+| `job_locks` | `joblocks` | `20261022000100_create_job_locks.js` |
+| `accounts` | `accounts` | `20261026000000_create_accounts.js` |
+| `devices` | `devices` (and `accounts.devices[]`) | `20261026000100_create_devices.js` |
+| `device_releases` | `accounts.releasedDevices[]` | `20261026000200_create_device_releases.js`, `20261028000000_add_device_legacy_id_to_device_releases.js` |
+| `brgy_forwarded_devices` | brgy accounts' `devices[]` | `20261027000000_create_brgy_forwarded_devices.js` |
+| `events` | `events` | `20261029000000_create_events.js` |
+| `event_stations` | `events.candidateStations[]`, `recordingStations[]` | `20261029000100_create_event_stations.js` |
+| `event_catalog_matches` | `events.additionalInformation[]` | `20261029000200_create_event_catalog_matches.js`, `20261030000000_add_position_to_event_catalog_matches.js` |
+| `event_catalog_status` | `events.pendingCatalogSources`, `catalogEnrichment*`, legacy `upForEnrichment` | `20261029000300_create_event_catalog_status.js` |
+| `comments` | `comments` | `20261104000000_create_comments.js` |
+| `comment_helpful_marks` | `comments.helpfulAccountIds[]` | `20261104000100_create_comment_helpful_marks.js` |
+| `comment_issue_reports` | `comments.issueReports[]` | `20261104000200_create_comment_issue_reports.js` |
+| `contribution_events` | `contributionevents` | `20261104000300_create_contribution_events.js` |
+| `significant_eq_details` | `significant-eqs` (its hand-written recordings and references) | `20261111000000_create_significant_eq_details.js` |
 
----
+The backend uses all fourteen tables. Production still runs on MongoDB until its own move. `significant_eqs` (migrations `20261023000000`, `20261029000400`), which held the hand-picked list, was dropped by `20261105000000`. Significant earthquakes came back without a stored list: the significance score picks them from `events`, and `significant_eq_details` holds only what admins add ([`POSTGRES.md`, "Significant earthquakes"](POSTGRES.md#significant-earthquakes-the-significance-score)).
 
-## 9. Changing the schema: checklist
+Every table with an `updated_at` column keeps it current with the `set_updated_at()` trigger: every update gets the current time. A transaction that sets `app.preserve_updated_at = 'on'` keeps the value it writes instead: the copy from MongoDB did, so a copied row kept MongoDB's `updated_at` (migration `20261026000300`).
 
-1. **Edit the model** in `src/models/`. Keep comments that explain *why* a field or index exists.
-2. **New required field or unique index on an existing collection?** Write a re-runnable migration in `scripts/` (copy the structure of `migrate-event-indexes.js`: `--dry-run`, set `autoIndex: false` before loading models, verify with `scripts/lib/query-plan.js`).
-3. **New query?** Make sure an index supports it: run it with `.explain()` and look for `IXSCAN`, not `COLLSCAN`.
-4. **Writes that must stay in sync** (like `location`): put the logic in one place (a model hook or the single service write path).
-5. **Unique index?** Handle error `11000` where documents are saved.
-6. **Update this file** in the same PR.
-7. **Test locally**, including a run of the migration on a copy of real data, then restart the dev backend.
+### `job_locks`
 
----
+A mutex for background jobs (e.g. the nightly catalog enrichment), so only one backend instance runs a job at a time.
 
-## 10. Glossary
+| Column | Type | Notes |
+|---|---|---|
+| `name` | `text`, primary key | e.g. `additional-information-enrichment` |
+| `owner` | `text` | `hostname:pid` of the process holding it |
+| `expires_at` | `timestamptz`, indexed | the lock counts as free after this |
+| `updated_at` | `timestamptz` | |
 
-| Term | Meaning |
-|---|---|
-| **SeisComP** | The seismic processing software that detects earthquakes and sends them to this backend. |
-| **publicID** | SeisComP's ID for an earthquake event. |
-| **OT** | Origin time: when the earthquake started. |
-| **Raspberry Shake** | The low-cost seismometer hosted by citizens and barangays; network code `AM`. |
-| **Station / network** | A sensor's code (`R3B2D`) within a seismic network (`AM`). |
-| **Stream ID** | Identifies a sensor's data stream, e.g. `AM_R3B2D_.*/MSEED`. |
-| **ringserver** | Receives and relays sensor data streams; reports which streams are live. |
-| **FDSN dataselect** | Standard web service for downloading waveform data; used here only to check that data exists. |
-| **Geoserve** | USGS service that turns coordinates into place names. |
-| **PHIVOLCS / USGS** | The Philippine and US agencies whose earthquake catalogs we match against. |
-| **brgy** | Barangay (local government unit) account that runs its own ringserver. |
-| **2dsphere index** | MongoDB index for location queries on GeoJSON points. |
-| **TTL index** | Index that makes MongoDB delete documents automatically after a date. |
-| **Partial index** | Index that only includes documents matching a filter (used so `null` values aren't unique-checked). |
+Taking a lock is one atomic statement: `INSERT … ON CONFLICT (name) DO UPDATE … WHERE` the lock has expired or already belongs to the caller. If two processes race, one gets the row and the other gets nothing back, so only one runs the job.
+
+### `accounts`
+
+One user: a citizen (who may own sensors), a barangay, or an admin.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for an account created here: the id session tokens carry ([ids the API shows](POSTGRES.md#ids-the-api-shows-mongodb-style)) |
+| `email`, `username` | `citext`, required, unique | compared **without regard to case**: `Juan@x.org` and `juan@x.org` are the same account |
+| `password_hash` | `text`, required | bcrypt; never returned by the API |
+| `roles` | `account_role[]` | each one of `citizen`, `sensor`, `brgy`, `admin` |
+| `is_approved` | `boolean`, default false | brgy accounts need admin approval |
+| `password_policy_version`, `password_updated_at` | `int` (default 1), `timestamptz` | |
+| `password_reset_token_id`, `password_reset_issued_at`, `password_reset_used_at` | `text`, `timestamptz` | single-use reset links |
+| `ringserver_url`, `ringserver_port` | `text` (unique), `int` | brgy accounts only |
+| `rshake_email_enabled`, `alert_prefs_updated_at` | `boolean` (default false), `timestamptz` | device alert emails |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: email and username required, not blank, and unique in any case; one brgy per ringserver URL; ringserver port 1–65535; roles limited to the four above.
+
+Usernames were case-sensitive in MongoDB, so `Juan` and `juan` could both exist there. Such pairs can't both be in PostgreSQL: the copy skipped and listed them for the team to resolve (production has one email clash: [`docs/e2e/E2E_RESULTS.md`](docs/e2e/E2E_RESULTS.md), finding 3).
+
+### `devices`
+
+One Raspberry Shake sensor. Ownership moves here from `accounts.devices[]`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row, or a new ObjectId for a device created here: the `deviceId` the API returns |
+| `owner_account_id` | `uuid` → `accounts` | at most one owner; **null when the owner is deleted** (`ON DELETE SET NULL`) |
+| `network`, `station` | `varchar(8)`, `varchar(16)`, required | unique **together** (e.g. `AM` + `R3B2D`) |
+| `description` | `text` | |
+| `stream_id`, `mac_address` | `text`, unique | null = not linked yet; empty strings aren't allowed |
+| `latitude`, `longitude`, `elevation_m` | `double precision`, required | coordinates must be valid |
+| `location` | `geography(Point, 4326)` | **generated** from latitude/longitude, GiST index |
+| `activity`, `activity_toggled_at` | `device_activity` (default `inactive`), `timestamptz` | `active`, `inactive` or `unlinked` |
+| `rshake_alert_credential_hash`, `rshake_alert_credential_issued_at` | `text`, `timestamptz` | never returned by the API |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: one device per network + station; a stream ID or MAC address belongs to one device; latitude −90…90 and longitude −180…180; the owner must be an existing account.
+
+**A device that earthquake history lists can't be deleted** (`event_stations`, `ON DELETE RESTRICT`), so `POST /device/reset-link` keeps such a device instead: it removes it from every account as before, and clears its stream ID, MAC address and alert credential (activity `unlinked`). The history keeps its station, and linking the sensor again takes the same record back, for whichever account links it: a link that finds no device with that MAC reuses a cleared device with the same network and station, after the usual check that an AM station code belongs to that MAC. A device without history is still deleted.
+
+### `device_releases`
+
+One row each time an account unlinked a device, with a snapshot of the device at that moment (replaces `accounts.releasedDevices[]`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | |
+| `legacy_mongo_id` | `char(24)`, unique | `_id` of the MongoDB `releasedDevices[]` entry a copied row came from |
+| `account_id` | `uuid` → `accounts`, required | who released it; **deleted with the account** (`ON DELETE CASCADE`) |
+| `device_id` | `uuid` → `devices` | **null if the device is later deleted** (`ON DELETE SET NULL`); the snapshot stays |
+| `device_legacy_mongo_id` | `char(24)` | the device's `legacy_mongo_id`, returned as `releasedDevices[].deviceId`; **kept after the device is deleted** |
+| `network`, `station`, `stream_id`, `mac_address`, `description`, `latitude`, `longitude`, `elevation_m` | | the device as it was |
+| `reason`, `released_at` | `text` (default `unlink`), `timestamptz` | |
+
+Index: `(account_id, released_at)`, for an account's history in order.
+
+### `brgy_forwarded_devices`
+
+The sensors a barangay ringserver forwards data for. In MongoDB these were in the brgy account's `devices[]` list, mixed with ownership; here ownership is `devices.owner_account_id` and forwarding is this table, so the two can't be confused.
+
+| Column | Type | Notes |
+|---|---|---|
+| `brgy_account_id` | `uuid` → `accounts` | the barangay; **links deleted with the account** |
+| `device_id` | `uuid` → `devices`, indexed | a sensor owned by another account; **links deleted with the device** |
+| `added_at` | `timestamptz` | orders a barangay's list, oldest first |
+
+Primary key `(brgy_account_id, device_id)`: a barangay forwards a sensor only once. A row is added when a sensor's owner verifies with a barangay (`/accounts/verify-sensor-token`) and removed when the sensor is unlinked or the owner removes it from the barangay.
+
+### `events`
+
+One earthquake detected by SeisComP. Column names in brackets are the API field names, which don't change.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `public_id` | `text`, required, unique | SeisComP event id [`publicID`]; one row per earthquake, whether SeisComP said NEW or UPDATE |
+| `source_catalog`, `source_server`, `source_seiscomp_version` | `text` | where the event came from; `source_catalog` defaults to `upri-current` and is indexed |
+| `is_legacy_record`, `legacy_imported_at`, `legacy_source_public_id` | `boolean` (default false, indexed), `timestamptz`, `text` | events imported from the old catalog |
+| `origin_time` | `timestamptz`, indexed | [`OT`] |
+| `latitude`, `longitude` | `double precision` | [`latitude_value`, `longitude_value`]; not range-checked, since old records may hold bad ones |
+| `location` | `geography(Point, 4326)` | **generated** from latitude/longitude, **null when they're missing or out of range**; GiST index |
+| `depth_km`, `magnitude` | `double precision` | [`depth_value`, `magnitude_value`] |
+| `seiscomp_type` | `varchar(10)` | latest SeisComP message type, e.g. `NEW`, `UPDATE`, `M` [`type`] |
+| `region_text` | `text` | SeisComP region text [`text`] |
+| `place` | `text` | GeoServe place name, filled on first read |
+| `recording_status`, `recording_checked_at`, `recording_attempts` | `recording_status` enum (default `pending`, indexed), `timestamptz`, `int` | which nearby stations recorded it: `pending`, `partial`, `verified` or `unavailable` [`recordingAvailability*`] |
+| `last_modification` | `timestamptz` | an update older than this is dropped (SeisComP messages can arrive out of order) |
+| `summary_override_text`, `summary_override_edited_at`, `summary_override_edited_by` | `text`, `timestamptz`, `text` | summary edited by hand [`summaryOverride`] |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: `public_id` unique and not blank; `recording_attempts` not negative; an edit time or editor only with a summary text. `onlineStations` isn't a column: it's worked out from `event_stations` and the recording status, as the app did when storing it.
+
+### `event_stations`
+
+The stations near an earthquake, linked to their devices. Replaces `candidateStations[]` and `recordingStations[]`, which MongoDB stored as station codes nothing tied to a real device.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `device_id` | `uuid` → `devices`, indexed | the station; **the device can't be deleted while listed** (`ON DELETE RESTRICT`) |
+| `kind` | `station_kind` enum | `candidate` (nearest active station at ingest) or `recording` (FDSN has its waveform data) |
+| `position` | `smallint` | order in its list, nearest first |
+
+Primary key `(event_id, device_id, kind)`: a station appears once per list. Unique `(event_id, kind, position)`, so the order is always defined. The `device_id` index answers "which earthquakes did this station record?".
+
+### `event_catalog_matches`
+
+The report another catalog has for the same earthquake: at most one per catalog (unique `(event_id, source)`). Replaces `additionalInformation[]`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | |
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `source` | `catalog_source` enum | `phivolcs`, `usgs`, or `upri-legacy` (the old UPRI catalog's entry on imported records, which the frontend shows) |
+| `source_label`, `source_icon_url`, `external_id`, `title`, `place`, `location_text`, `detail`, `url`, `detail_url`, `query_url` | `text` | [`sourceLabel`, `sourceIconUrl`, `id`, `title`, `place`, `location`, `detail`, `url`, `detailUrl`, `queryUrl`] |
+| `match_time`, `match_time_text` | `timestamptz`, `text` | [`time`]; PHIVOLCS's own date text, GMT+8 [`dateTime`] |
+| `latitude`, `longitude`, `depth_km`, `magnitude` | `double precision` | depth is [`depthKm`] in PHIVOLCS and legacy entries, [`depth`] in USGS ones |
+| `has_felt_intensity`, `latitude_floor_match`, `longitude_floor_match` | `boolean` | [`hasFeltIntensity`, `latitudeFloorMatch`, `longitudeFloorMatch`] |
+| `distance_km`, `time_difference_minutes`, `magnitude_difference`, `score` | `double precision` | how close the match is; lower `score` is better |
+| `match_quality` | `match_quality` enum | `high`, `medium` or `low` [`matchQuality`] |
+| `position` | `smallint`, default 0 | order among the event's matches: the API returns them in `additionalInformation[]`'s order, which the frontend shows |
+| `extra` | `jsonb` object, default `{}` | upstream keys without a column (e.g. a legacy entry's `sourceServer`), and keys whose value is null |
+| `raw` | `jsonb` | the full upstream payload, when kept |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+### `event_catalog_status`
+
+How far the nightly enrichment job got for one earthquake in one catalog. Replaces `pendingCatalogSources`, `catalogEnrichmentStatus`/`Attempts` and the legacy `upForEnrichment`/`enrichmentAttempts`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | `uuid` → `events` | **deleted with the event** |
+| `source` | `catalog_source` | only `phivolcs` or `usgs`, the catalogs the job searches |
+| `status` | `enrichment_status` enum, default `pending` | `pending`, `done`, `no_match` or `failed` |
+| `attempts` | `int`, default 0 | not negative |
+| `updated_at` | `timestamptz` | |
+
+Primary key `(event_id, source)`; index `(source, status)` finds the events still pending for a catalog.
+
+### `comments`
+
+A community report on an earthquake: text, an image, or both. Column names in brackets are the API field names.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()`; what marks and reports point to |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `comment_id` | `uuid`, required, unique | the public id used in URLs [`commentId`]; `gen_random_uuid()` for new rows |
+| `event_id` | `uuid` → `events`, required | **deleted with the event** (`ON DELETE CASCADE`) |
+| `account_id` | `uuid` → `accounts`, indexed | who posted it; null when posted signed out; **null when the account is deleted** (`ON DELETE SET NULL`): the comment and its username stay |
+| `username` | `text`, default `Anonymous` | the name shown |
+| `content` | `varchar(1000)` | the text |
+| `image_url` | `text` | path of the uploaded image [`imageURL`]; the files themselves stay where they are |
+| `status` | `comment_status` enum, default `approved` | `pending`, `approved` or `rejected`; only `approved` is shown |
+| `moderated_by`, `moderated_at` | `text`, `timestamptz` | who set the status, and when |
+| `created_at`, `updated_at` | `timestamptz` | |
+
+Rules: every comment belongs to a real event; text or an image, not blank; text at most 1000 characters; username not blank. Index `(event_id, status, created_at, comment_id)` serves an event's visible reports newest first, in the API's paging order.
+
+There's no `eventPublicID` column: it's the event's `public_id`. On MongoDB, deleting an account left its comments pointing to it; here they stay, unlinked.
+
+### `comment_helpful_marks`
+
+One row per account that marked a report helpful (replaces `helpfulAccountIds[]`). A report's helpful count is its number of rows.
+
+| Column | Type | Notes |
+|---|---|---|
+| `comment_id` | `uuid` → `comments.id` | the internal id, not the public `comment_id`; **deleted with the comment** |
+| `account_id` | `uuid` → `accounts`, indexed | **deleted with the account** |
+| `created_at` | `timestamptz` | copied marks: their comment's `updated_at` (MongoDB kept no time per mark) |
+
+Primary key `(comment_id, account_id)`: **one vote per person**, which MongoDB only kept by how the app wrote the list.
+
+### `comment_issue_reports`
+
+Private moderation flags on a report (replaces `issueReports[]`); never shown publicly.
+
+| Column | Type | Notes |
+|---|---|---|
+| `comment_id` | `uuid` → `comments.id` | **deleted with the comment** |
+| `account_id` | `uuid` → `accounts`, indexed | **deleted with the account** |
+| `reason` | `issue_reason` enum | `duplicate`, `unclear`, `wrong_location`, `not_related` or `inappropriate` |
+| `created_at` | `timestamptz` | when the account last flagged it |
+
+Primary key `(comment_id, account_id)`: **one flag per person per report**; flagging again replaces the reason and time.
+
+### `contribution_events`
+
+The points ledger: one row per action that earns (or records) points. Rows never change once written, so there's no `updated_at`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | MongoDB `_id` of a copied row |
+| `dedupe_key` | `text`, required, unique | `account:action:target type:target id`: **an action never counts twice**, even when two requests race |
+| `account_id` | `uuid` → `accounts`, required | **deleted with the account** |
+| `action_type` | `contribution_action` enum | `report_posted`, `image_report_posted`, `report_marked_helpful`, `report_received_helpful` or `report_issue_submitted` |
+| `target_type`, `target_id` | `contribution_target` enum (default `comment`), `text` | what the action was on: a comment's public `comment_id`, or an event |
+| `event_id` | `uuid` → `events` | **null when the event is deleted** (`ON DELETE SET NULL`); the points stay |
+| `points` | `int`, default 0 | |
+| `reason` | `text` | the issue reason, for `report_issue_submitted` |
+| `metadata` | `jsonb` object, default `{}` | for an entry copied without its event: `eventPublicID` |
+| `created_at` | `timestamptz` | |
+
+Indexes: `(account_id, created_at)` for an account's points over time, `(event_id, created_at)`. Like comments, there's no `eventPublicID` column: it's the event's `public_id`, or `metadata.eventPublicID` for an entry whose event was gone when copied.
+
+### `significant_eq_details`
+
+What admins add to an earthquake for the significant earthquakes page. Which earthquakes are significant isn't stored (see below), and the page's summary is the event's own `summary_override_text`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid`, primary key | `uuidv7()` |
+| `legacy_mongo_id` | `char(24)`, unique | `_id` of the MongoDB `significant-eqs` entry a copied row came from |
+| `event_id` | `uuid` → `events`, required, unique | **one row per event, deleted with the event** |
+| `instrument_recordings` | `text[]`, default `{}` | station codes whose recordings the page shows (API: `instrumentRecordings`) |
+| `reference_urls` | `text[]`, default `{}` | links to reports (API: `references`; `references` is a reserved word in SQL) |
+| `edited_by`, `edited_at` | `text`, `timestamptz` | who last set them, and when |
+| `created_at`, `updated_at` | `timestamptz` | |

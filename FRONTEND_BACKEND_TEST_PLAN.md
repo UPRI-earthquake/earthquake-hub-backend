@@ -35,7 +35,7 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
 ### Backend dev
 
 1. Check out `earthquake-hub-backend` on `feat/postgres-migration`, at `5d5dcd0` or later.
-2. In `.env`, take the keys from `.env.example` and set `PG_PASSWORD`. No `MONGO_*` keys are needed.
+2. In `.env`, take the keys from `.env.example` and set `PG_PASSWORD`.
 3. Point the backend's mail at Mailpit on your machine: set `EMAIL_HOST=host.docker.internal` in `.env`, then start Mailpit:
    ```sh
    docker run --rm -p 1025:1025 -p 8025:8025 axllent/mailpit    # inbox: http://localhost:8025
@@ -46,10 +46,7 @@ This plan covers what those didn't: full flows by hand in a real browser, plus t
    docker compose up -d
    npm run db:pg:migrate
    ```
-5. Check the start-up log with `docker logs earthquake-hub-backend-dev`. You should see:
-   - six `[db] ...: postgres` lines
-   - `[db] MongoDB: not used (every area is on PostgreSQL)`
-   - `Connected to PostgreSQL ...`
+5. Check the start-up log with `docker logs earthquake-hub-backend-dev`. You should see `Connected to PostgreSQL ...`.
 6. Load the test data: `npm run db:pg:seed` ([`POSTGRES.md`, 1.4](POSTGRES.md#14-load-test-data)). It adds dev's 906 earthquakes and these test accounts, all with the password `Qa-Password-2026!`:
    - `qa_citizen_1` and `qa_citizen_2` (citizens)
    - `qa_sensor_owner` (a citizen with three test sensors)
