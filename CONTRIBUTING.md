@@ -13,22 +13,18 @@ This guide outlines the contribution process for the Earthquake Hub backend repo
     ```bash
     npm install
     ```
-4. Build the image via:
-    ```bash
-    docker build -t ghcr.io/upri-earthquake/earthquake-hub-backend:latest .
-    ```
-5. Start the docker containers via:
+4. Start the docker containers via:
     ```bash
     docker compose up
     ```
-    The above command starts the backend (`earthquake-hub-backend-dev`) and PostgreSQL (`earthquake-hub-postgres`) and shows their logs. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
+    The above command starts the backend (`earthquake-hub-backend-dev`) and PostgreSQL (`earthquake-hub-postgres`) and shows their logs. On the first run it also builds the local dev image (`earthquake-hub-backend-dev:1.0.0`); after changing the `Dockerfile`, rebuild it with `docker compose up --build`. Wait for the `earthquake-hub-backend-dev` container to log its “http://IP:PORT” before starting to code/test.
     
     Due to the local bind mount to the docker container, your changes in you the local directory should reflect to changes in the container. As such, you should be able to cycle with code-save-test without having to restart the docker containers.
 
     Installing npm modules should be done simply by running npm install in the local directory. This should also be reflected within the docker container due to the bind mount.
     
     See [this cheatsheet](https://upri-earthquake.github.io/docker-cheatsheet) for useful docker recipes.
-6. Apply the database migrations and load the test data, from the repo root in another terminal:
+5. Apply the database migrations and load the test data, from the repo root in another terminal:
     ```bash
     npm run db:pg:migrate
     npm run db:pg:seed
@@ -107,5 +103,5 @@ For project-specific standards, refer to the repository's current documentation.
 
 ## Miscellaneous Notes
 
-1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (as of writing we are running node v18). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
+1. If you want to develop locally (outside of Docker) make sure you install high enough version of node and npm (the Docker image and CI use Node 22). The npm version is specially important for now to avoid altering the package-lock.json to a version that won’t be compatible to the docker image. 
 2. There are test files available in the __test__/ directory, and this repo uses `jest` as test runner. `npm test` runs the unit tests; `npm run test:integration` runs the `*.integration.test.js` files against throwaway PostgreSQL containers, so it needs Docker (see [POSTGRES.md, section 4](POSTGRES.md#4-integration-tests)).
