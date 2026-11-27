@@ -423,4 +423,192 @@ router.patch('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['adm
 router.delete('/:publicID/summary', getTokenFromCookie, verifyTokenWithRole(['admin', 'citizen']), EQEventsController.deleteEventSummary);
 
 
+// The API docs' schemas for these routes (they were defined with the Mongoose models)
+/**
+ * @swagger
+ *   components:
+ *     schemas:
+ *       Event:
+ *         type: object
+ *         properties:
+ *           _id:
+ *             type: string
+ *             description: Auto-generated ObjectId
+ *           publicID:
+ *             type: string
+ *             description: Unique SeisComP public ID (unique index enforced)
+ *           sourceCatalog:
+ *             type: string
+ *             description: Canonical catalog that supplied the primary event record
+ *           sourceServer:
+ *             type: string
+ *             description: Server/domain that supplied the primary event record
+ *           sourceSeiscompVersion:
+ *             type: string
+ *             description: SeisComP version used by the source server, when known
+ *           isLegacyRecord:
+ *             type: boolean
+ *             description: True when this primary event only exists in the migrated legacy catalog
+ *           legacyImportedAt:
+ *             type: string
+ *             format: date-time
+ *           legacySourcePublicID:
+ *             type: string
+ *             description: Original publicID from the legacy catalog when it differs from the canonical record
+ *           OT:
+ *             type: string
+ *             format: date-time
+ *             description: Origin time of the event
+ *           latitude_value:
+ *             type: number
+ *           longitude_value:
+ *             type: number
+ *           depth_value:
+ *             type: number
+ *           magnitude_value:
+ *             type: number
+ *           type:
+ *             type: string
+ *             description: Upstream event type such as NEW or UPDATE
+ *           text:
+ *             type: string
+ *             description: SeisComP derived place name
+ *           place:
+ *             type: string
+ *             description: Place attribute added via the Geoserve API
+ *           onlineStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Compatibility display list for station recordings
+ *           candidateStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations active near event detection time
+ *           recordingStations:
+ *             type: array
+ *             items:
+ *               type: string
+ *             description: Stations with FDSN-confirmed waveform data
+ *           recordingAvailabilityStatus:
+ *             type: string
+ *             enum: [pending, partial, verified, unavailable]
+ *             description: FDSN recording availability state
+ *           recordingAvailabilityCheckedAt:
+ *             type: string
+ *             format: date-time
+ *           recordingAvailabilityAttempts:
+ *             type: integer
+ *           last_modification:
+ *             type: string
+ *             format: date-time
+ *             description: Used for deterministic conflict resolution
+ *           upForEnrichment:
+ *             type: boolean
+ *             description: >
+ *               True while the event has not yet been enriched with
+ *               additionalInformation. Set to false once enrichment succeeds
+ *               or enrichmentAttempts reaches MAX_ENRICHMENT_ATTEMPTS.
+ *           enrichmentAttempts:
+ *             type: integer
+ *             description: >
+ *               Number of times the enrichment job has attempted to process
+ *               this event. Prevents indefinite retries on persistent failures.
+*           summaryOverride:
+ *             type: object
+ *             nullable: true
+ *             properties:
+ *               text:
+ *                 type: string
+ *                 description: The user-edited summary text, overrides the auto-generated boilerplate.
+ *               editedAt:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Timestamp of when the summary was last edited.
+ *               editedBy:
+ *                 type: string
+ *                 description: The userId or username of the person who edited the summary.
+ *           additionalInformation:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/CatalogSourceInfo'
+ *           pendingCatalogSources:
+ *             type: array
+ *             items:
+ *               type: string
+ *           catalogEnrichmentAttempts:
+ *             type: object
+ *             additionalProperties:
+ *               type: number
+ *           catalogEnrichmentStatus:
+ *             type: object
+ *             additionalProperties:
+ *               type: string
+ *           createdAt:
+ *             type: string
+ *             format: date-time
+ *           updatedAt:
+ *             type: string
+ *             format: date-time
+ *
+ *       CatalogSourceInfo:
+ *         type: object
+ *         properties:
+ *           source:
+ *             type: string
+ *           sourceLabel:
+ *             type: string
+ *           sourceIconUrl:
+ *             type: string
+ *           dateTime:
+ *             type: string
+ *           detailUrl:
+ *             type: string
+ *           hasFeltIntensity:
+ *             type: boolean
+ *           id:
+ *             type: string
+ *           title:
+ *             type: string
+ *           place:
+ *             type: string
+ *           url:
+ *             type: string
+ *           detail:
+ *             type: string
+ *           queryUrl:
+ *             type: string
+ *           time:
+ *             type: string
+ *             format: date-time
+ *           latitude:
+ *             type: number
+ *           longitude:
+ *             type: number
+ *           depthKm:
+ *             type: number
+ *           depth:
+ *             type: number
+ *           magnitude:
+ *             type: number
+ *           location:
+ *             type: string
+ *           distanceKm:
+ *             type: number
+ *           timeDifferenceMinutes:
+ *             type: number
+ *           magnitudeDifference:
+ *             type: number
+ *           score:
+ *             type: number
+ *           matchQuality:
+ *             type: string
+ *             enum: [high, medium, low]
+ *           latitudeFloorMatch:
+ *             type: boolean
+ *           longitudeFloorMatch:
+ *             type: boolean
+ */
+
 module.exports = router;

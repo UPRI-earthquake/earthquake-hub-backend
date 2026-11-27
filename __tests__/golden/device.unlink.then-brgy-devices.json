@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/my-devices"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Get owned devices success",
+      "devices": [],
+      "releasedDevices": []
+    }
+  }
+}

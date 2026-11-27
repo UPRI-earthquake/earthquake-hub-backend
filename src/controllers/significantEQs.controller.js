@@ -1,88 +1,81 @@
-const SignificantEQsService = require('../services/significantEQs.service')
-const {responseCodes} = require('./responseCodes')
+const SignificantEQsService = require('../services/significantEQs.service');
+const { responseCodes } = require('./responseCodes');
+
+// Sends a response and keeps its message for the response logger
+const send = (res, httpStatus, status, message, extra = {}) => {
+  res.status(httpStatus).json({ status, message, ...extra });
+  res.message = message;
+};
 
 exports.getAllSignificantEQs = async (req, res, next) => {
-    // Validation
-
-    try {
-        // Perform Task
-        let returnObj = await SignificantEQsService.getAllSignificantEQs();
-
-        //Respond based on returned value
-        let message = "";
-
-        switch (returnObj.str){
-            case "noSignificantEQsFound":
-                message = "No Significant Earthquakes found in DB!";
-                res.status(400).json({
-                    status: responseCodes.GENERIC_ERROR,
-                    message: message
-                });
-                break;
-            case "success":
-                message = 'All Significant Earthquakes found';
-                res.status(200).json({
-                    status: responseCodes.GENERIC_SUCCESS,
-                    message: message,
-                    payload: returnObj.significantEQs
-                });
-                break;
-            default:
-                throw Error(`Unhandled return value ${returnObj} from service.getAllSignificantEQs()`);
-        }
-
-        res.message = message; // used by next middleware
-
-        return;
-    } catch (error) {
-        console.log(`Getting all significant earthquakes unsuccessful: \n ${error}`);
-        next(error);
-    }
-}
+  try {
+    const significantEQs = await SignificantEQsService.getAllSignificantEQs();
+    send(res, 200, responseCodes.GENERIC_SUCCESS,
+      significantEQs.length > 0 ? 'All Significant Earthquakes found' : 'No significant earthquakes yet',
+      { payload: significantEQs });
+  } catch (error) {
+    console.log(`Getting all significant earthquakes unsuccessful: \n ${error}`);
+    next(error);
+  }
+};
 
 exports.getEarthquakeInfo = async (req, res, next) => {
-    // Validation
-    const { id } = req.body; // Check if the `id` query parameter is present
-
-    try {
-        // Perform Task
-        let returnObj = await SignificantEQsService.getEarthquakeInfo(id);
-
-        //Respond based on returned value
-        let message = "";
-
-        switch (returnObj.str){
-            case "invalidId":
-                message = "Invalid earthquake id";
-                res.status(400).json({
-                    status: responseCodes.VALIDATION_ERROR,
-                    message: message
-                });
-                break;
-            case "noEarthquakeInfoFound":
-                message = "No Earthquake Information found in DB!";
-                res.status(400).json({
-                    status: responseCodes.GENERIC_ERROR,
-                    message: message
-                });
-                break;
-            case "success":
-                message = 'Earthquake Information found';
-                res.status(200).json({
-                    status: responseCodes.GENERIC_SUCCESS,
-                    message: message,
-                    payload: returnObj.earthquakeInfo
-                });
-                break;
-            default:
-                throw Error(`Unhandled return value ${returnObj} from service.getEarthquakeInfo()`);
-        }
-
-        res.message = message; // used by next middleware
-
-        return;
-    } catch (error) {
-        console.log(`Getting earthquake info unsuccessful: \n ${error}`);
-        next(error);
+  try {
+    const result = await SignificantEQsService.getEarthquakeInfo((req.body || {}).id);
+    switch (result.str) {
+      case 'invalidId':
+        return send(res, 400, responseCodes.VALIDATION_ERROR, 'Invalid earthquake id');
+      case 'notFound':
+        return send(res, 404, responseCodes.GENERIC_ERROR, 'No Earthquake Information found');
+      case 'success':
+        return send(res, 200, responseCodes.GENERIC_SUCCESS, 'Earthquake Information found', { payload: result.earthquakeInfo });
+      default:
+        throw Error(`Unhandled return value ${result.str} from service.getEarthquakeInfo()`);
     }
-}
+  } catch (error) {
+    console.log(`Getting earthquake info unsuccessful: \n ${error}`);
+    return next(error);
+  }
+};
+
+exports.setDetails = async (req, res, next) => {
+  try {
+    const result = await SignificantEQsService.setDetails(req.params.id, req.body, req.username);
+    switch (result.str) {
+      case 'invalidId':
+        return send(res, 400, responseCodes.VALIDATION_ERROR, 'Invalid earthquake id');
+      case 'invalidDetails':
+        return send(res, 400, responseCodes.VALIDATION_ERROR, result.message);
+      case 'notFound':
+        return send(res, 404, responseCodes.GENERIC_ERROR, 'No Earthquake Information found');
+      case 'success':
+        return send(res, 200, responseCodes.GENERIC_SUCCESS, 'Earthquake details saved', { payload: result.details });
+      default:
+        throw Error(`Unhandled return value ${result.str} from service.setDetails()`);
+    }
+  } catch (error) {
+    console.log(`Saving earthquake details unsuccessful: \n ${error}`);
+    return next(error);
+  }
+};
+
+exports.removeDetails = async (req, res, next) => {
+  try {
+    const result = await SignificantEQsService.removeDetails(req.params.id);
+    switch (result.str) {
+      case 'invalidId':
+        return send(res, 400, responseCodes.VALIDATION_ERROR, 'Invalid earthquake id');
+      case 'notFound':
+        return send(res, 404, responseCodes.GENERIC_ERROR, 'No Earthquake Information found');
+      case 'noDetails':
+        return send(res, 404, responseCodes.GENERIC_ERROR, 'This earthquake has no details to remove');
+      case 'success':
+        return send(res, 200, responseCodes.GENERIC_SUCCESS, 'Earthquake details removed');
+      default:
+        throw Error(`Unhandled return value ${result.str} from service.removeDetails()`);
+    }
+  } catch (error) {
+    console.log(`Removing earthquake details unsuccessful: \n ${error}`);
+    return next(error);
+  }
+};

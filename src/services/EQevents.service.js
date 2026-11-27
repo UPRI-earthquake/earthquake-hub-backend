@@ -1,7 +1,7 @@
 const axios = require('axios');
 const Joi = require('joi');
-const EQEvents = require('../models/events.model');
-const Device = require('../models/device.model');
+const EventsRepo = require('../repositories/events.repo');
+const DevicesRepo = require('../repositories/devices.repo');
 const puppeteer = require('puppeteer-core');
 
 const FDSNWS_BASE = process.env.FDSNWS_DATASELECT_URL || 'https://earthquake.up.edu.ph/fdsnws/dataselect/1/query';
@@ -13,14 +13,19 @@ const ONLINE_STATION_REFINEMENT_DELAY_MS = Number(process.env.ONLINE_STATION_REF
 const RECORDING_AVAILABILITY_GRACE_PERIOD_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_GRACE_PERIOD_MS', 30 * 60 * 1000);
 const RECORDING_AVAILABILITY_RETRY_DELAY_MS = _positiveNumberEnv('RECORDING_AVAILABILITY_RETRY_DELAY_MS', 5 * 60 * 1000);
 const RECORDING_AVAILABILITY_MAX_ATTEMPTS = _positiveNumberEnv('RECORDING_AVAILABILITY_MAX_ATTEMPTS', 4);
+const ONLINE_STATIONS_BATCH_SIZE = _positiveNumberEnv('ONLINE_STATIONS_BATCH_SIZE', 50);
 const GEOSERVE_REQUEST_TIMEOUT_MS = _positiveNumberEnv('GEOSERVE_REQUEST_TIMEOUT_MS', 3000);
 const GEOSERVE_PLACE_REFRESH_DISTANCE_KM = _positiveNumberEnv('GEOSERVE_PLACE_REFRESH_DISTANCE_KM', 1);
+const GEOSERVE_MAX_CONCURRENT = _positiveNumberEnv('GEOSERVE_MAX_CONCURRENT', 2);
+const GEOSERVE_RETRY_AFTER_MS = _positiveNumberEnv('GEOSERVE_RETRY_AFTER_MS', 60 * 1000);
 const EVENT_SOURCE_CATALOG = process.env.EVENT_SOURCE_CATALOG || 'upri-current';
 const EVENT_SOURCE_SERVER = process.env.EVENT_SOURCE_SERVER || 'earthquake.up.edu.ph';
 const EVENT_SOURCE_SEISCOMP_VERSION = process.env.EVENT_SOURCE_SEISCOMP_VERSION || '';
 
 const turfHelpers  = require('@turf/helpers');
 const turfDistance = require('@turf/distance'); 
+// The two turf functions the station lookups use (the same ones @turf/turf exports)
+const turf = { point: turfHelpers.point, distance: turfDistance.default };
 const scheduledOnlineStationRefinements = new Set();
 
 function _positiveNumberEnv(name, fallback) {
@@ -39,33 +44,13 @@ function _hasUsablePlace(place) {
   );
 }
 
-function _getEventIdentityFilter(eventData) {
-  if (eventData?._id) return { _id: eventData._id };
-  if (eventData?.publicID) return { publicID: eventData.publicID };
-  return null;
-}
-
 async function _persistComputedPlace(eventData, place) {
   if (!_hasUsablePlace(place)) return;
-
-  const identityFilter = _getEventIdentityFilter(eventData);
-  if (!identityFilter) return;
+  if (!eventData?._id && !eventData?.publicID) return;
 
   try {
-    await EQEvents.updateOne(
-      {
-        ...identityFilter,
-        $or: [
-          { place: { $exists: false } },
-          { place: null },
-          { place: '' },
-          { place: 'Unavailable' },
-          { place: 'Unable to geocode' },
-          { place: 'Nominatim unavailable' },
-        ],
-      },
-      { $set: { place } },
-    );
+    // Only fills in a missing or placeholder place; a usable stored one is kept
+    await EventsRepo.savePlace(eventData, place);
   } catch (err) {
     console.error(`addPlacesAttribute [${eventData.publicID || eventData._id}]: place persistence failed - ${err.message}`);
   }
@@ -132,15 +117,11 @@ const USGS_REQUEST_TIMEOUT_MS = _positiveNumberEnv('USGS_REQUEST_TIMEOUT_MS', 15
   * 
  ***************************************************************************/
 async function getEventsList(startTime, endTime){
-  const response = await EQEvents.find({
-    OT: { $gte: startTime, $lte: endTime }
-  });
-
-  return response;
+  return EventsRepo.listByOriginTime(startTime, endTime);
 }
 
 async function getEventByPublicID(publicID) {
-  return EQEvents.findOne({ publicID });
+  return EventsRepo.findByPublicID(publicID);
 }
 
 /***************************************************************************
@@ -233,37 +214,67 @@ function direction(lat, lon, ref_lat, ref_lon){
   *       approximate location description (e.g., distance and direction from a reference point) of the earthquake event.
   *     - The function then returns the updatedData array, where each event object contains the 'place' attribute.
   *     - In case the geoserve API request fails, the function will use 'Unavailable' as the place attribute value for the event.
+  *     - At most GEOSERVE_MAX_CONCURRENT requests run at once, and after GeoServe can't be reached (no
+  *       response) none are sent for GEOSERVE_RETRY_AFTER_MS: those events show 'Unavailable' (see geoserveLookups).
  ***************************************************************************/
-async function addPlacesAttribute(eventsList){
-  var updatedData = [];
+// Each GeoServe request first resolves GEOSERVE_HOST on Node's small DNS thread pool (4 threads), which
+// new PostgreSQL connections share. A list with many events missing a place used to send every request
+// at once; against an unresolvable host each lookup took seconds to fail, the pool stayed busy for
+// minutes, and new database connections timed out. So: a few requests at a time, and a pause after
+// GeoServe couldn't be reached (an error response, e.g. a 400, doesn't count).
+const geoserveLookups = { active: 0, waiting: [], unreachableUntil: 0 };
 
-  await Promise.all(eventsList.map(async (event) => {
-    let eventData;
-    // check event data structure
-    if (event._doc) {
-      // if coming from mongoDB output
-      eventData = event._doc;
-    } else {
-      // others
-      eventData = event;
-    }
+const geoserveUnreachable = () => Date.now() < geoserveLookups.unreachableUntil;
 
-    if (_hasUsablePlace(eventData.place)) {
-      updatedData.push(eventData);
-      return;
-    }
+// Runs fn in one of GEOSERVE_MAX_CONCURRENT slots; a freed slot goes straight to the next caller waiting
+async function withGeoserveSlot(fn) {
+  if (geoserveLookups.active < GEOSERVE_MAX_CONCURRENT) geoserveLookups.active += 1;
+  else await new Promise((resolve) => geoserveLookups.waiting.push(resolve));
+  try {
+    return await fn();
+  } finally {
+    const next = geoserveLookups.waiting.shift();
+    if (next) next();
+    else geoserveLookups.active -= 1;
+  }
+}
 
-    try{
-      const result = await axios.get(
-        // `https://earthquake.usgs.gov`
+// null when GeoServe is paused (unreachable recently)
+function requestGeoservePlace(eventData) {
+  return withGeoserveSlot(async () => {
+    if (geoserveUnreachable()) return null;
+    try {
+      return await axios.get(
         `http://${process.env.GEOSERVE_HOST}:${process.env.GEOSERVE_PORT}`
-        //`http://localhost:8080`
          +'/ws/geoserve/places.json?type=geonames&limit=1&maxradiuskm=250'
          +`&latitude=${eventData.latitude_value}&longitude=${eventData.longitude_value}`,
         {
           timeout: GEOSERVE_REQUEST_TIMEOUT_MS,
         }
       );
+    } catch (err) {
+      if (!err.response) geoserveLookups.unreachableUntil = Date.now() + GEOSERVE_RETRY_AFTER_MS;
+      throw err;
+    }
+  });
+}
+
+function resetGeoserveLookups() {
+  geoserveLookups.unreachableUntil = 0;
+}
+
+async function addPlacesAttribute(eventsList){
+  var updatedData = [];
+
+  await Promise.all(eventsList.map(async (eventData) => {
+    if (_hasUsablePlace(eventData.place)) {
+      updatedData.push(eventData);
+      return;
+    }
+
+    try{
+      const result = await requestGeoservePlace(eventData);
+      if (result === null) throw new Error('GeoServe paused after being unreachable');
       var address = '';
       let shouldPersistAddress = false;
       if (result.data.error){ address = result.data.error }
@@ -353,18 +364,7 @@ async function addEQEvent(
   }
   onlineStations = normalizeStationList(onlineStations);
 
-  const existingEvent = await EQEvents.findOne(
-    { publicID },
-    {
-      depth_value: 1,
-      latitude_value: 1,
-      longitude_value: 1,
-      place: 1,
-      last_modification: 1,
-      recordingStations: 1,
-      recordingAvailabilityStatus: 1,
-    },
-  ).lean();
+  const existingEvent = await EventsRepo.findIngestState(publicID);
 
   // Ignore stale updates: only newer last_modification may overwrite existing
   // event details. This prevents out-of-order proxy messages from regressing
@@ -377,11 +377,9 @@ async function addEQEvent(
     }
   }
 
-  // Idempotent upsert by publicID. This prevents duplicates when a previous
-  // bug or out-of-order messages would otherwise create separate NEW/UPDATE
-  // documents for the same quake. The unique index on publicID enforces this
-  // at the database level as well.
-  const filter = { publicID };
+  // Saved by publicID, so NEW and UPDATE messages for the same quake never
+  // become separate events. The repository repeats the out-of-order check in
+  // the write itself, for two messages that arrive at the same moment.
   const existingRecordingStations = normalizeStationList(existingEvent?.recordingStations);
   const displayStations = existingRecordingStations.length > 0
     ? mergeStationLists(existingRecordingStations, onlineStations)
@@ -392,43 +390,34 @@ async function addEQEvent(
     longitude_value,
   );
 
-  const update = {
-    $set: {
-      OT,
-      latitude_value,
-      longitude_value,
-      depth_value,
-      magnitude_value,
-      type: eventType,
-      text,
-      sourceCatalog: EVENT_SOURCE_CATALOG,
-      sourceServer: EVENT_SOURCE_SERVER,
-      isLegacyRecord: false,
-      legacyImportedAt: null,
-      legacySourcePublicID: null,
-      onlineStations: displayStations,
-      candidateStations: onlineStations,
-      recordingAvailabilityStatus: existingRecordingStations.length > 0
-        ? existingEvent.recordingAvailabilityStatus || 'partial'
-        : 'pending',
-      ...(last_modification ? { last_modification: last_modification } : {}),
-      ...(EVENT_SOURCE_SEISCOMP_VERSION ? { sourceSeiscompVersion: EVENT_SOURCE_SEISCOMP_VERSION } : {}),
-    },
-    $setOnInsert: {
-      publicID,
-      recordingStations: [],
-      recordingAvailabilityAttempts: 0,
-      pendingCatalogSources: CATALOG_SOURCE_NAMES,
-      catalogEnrichmentAttempts: {},
-      catalogEnrichmentStatus: Object.fromEntries(CATALOG_SOURCE_NAMES.map((source) => [source, 'pending'])),
-    },
+  const fields = {
+    OT,
+    latitude_value,
+    longitude_value,
+    depth_value,
+    magnitude_value,
+    type: eventType,
+    text,
+    sourceCatalog: EVENT_SOURCE_CATALOG,
+    sourceServer: EVENT_SOURCE_SERVER,
+    onlineStations: displayStations,
+    candidateStations: onlineStations,
+    recordingAvailabilityStatus: existingRecordingStations.length > 0
+      ? existingEvent.recordingAvailabilityStatus || 'partial'
+      : 'pending',
+    ...(last_modification ? { last_modification: last_modification } : {}),
+    ...(EVENT_SOURCE_SEISCOMP_VERSION ? { sourceSeiscompVersion: EVENT_SOURCE_SEISCOMP_VERSION } : {}),
   };
-  if (shouldRefreshPlace) {
-    update.$unset = { place: '' };
-  }
 
-  await EQEvents.updateOne(filter, update, { upsert: true });
-  scheduleOnlineStationsRefinement(publicID);
+  // A moved event loses its place name, which is recomputed on the next read.
+  // A new event is looked up in every catalog.
+  const saved = await EventsRepo.saveFromSeiscomp(publicID, fields, {
+    clearPlace: shouldRefreshPlace,
+    catalogSources: CATALOG_SOURCE_NAMES,
+  });
+  if (saved) {
+    scheduleOnlineStationsRefinement(publicID);
+  }
   return 'success';
 }
 
@@ -449,6 +438,11 @@ function scheduleOnlineStationsRefinement(publicID, delayMs = ONLINE_STATION_REF
 function formatFdsnTime(date) {
   const iso = date.toISOString();
   return iso.slice(0, 19);
+}
+
+// Station lookups only need devices that can be placed on a map: [{ station, latitude, longitude }]
+function findStationDevices({ activity } = {}) {
+  return DevicesRepo.listStationLocations({ activity });
 }
 
 function getNearestStations(devices, epicenterLng, epicenterLat, turf) {
@@ -563,23 +557,16 @@ async function getNearestActiveStations(latitude_value, longitude_value) {
     return [];
   }
 
-  const activeDevices = await Device.find({ activity: 'active' }).lean();
-  if (activeDevices.length === 0) {
+  const usableDevices = await findStationDevices({ activity: 'active' });
+  if (usableDevices.length === 0) {
     return [];
   }
-
-  const usableDevices = activeDevices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
 
   const nearestStations = getNearestStations(
     usableDevices,
     longitude_value,
     latitude_value,
-    {
-      point: turfHelpers.point,
-      distance: turfDistance.default,
-    },
+    turf,
   );
 
   return nearestStations.map((station) => String(station.station));
@@ -655,30 +642,21 @@ async function getEventOnlineStations(event, stationDevices, turf) {
 }
 
 async function updateOnlineStationsForEvent(publicID) {
-  const turf = await import('@turf/turf');
-
-  const event = await EQEvents.findOne({ publicID }).lean();
+  const event = await EventsRepo.findForStationCheck(publicID);
   if (!event || event.longitude_value == null || event.latitude_value == null) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0, onlineStations: [] };
   }
 
-  const devices = await Device.find({}).lean();
-  const usableDevices = devices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
+  const usableDevices = await findStationDevices();
   const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
   if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
     const attempts = Number(event.recordingAvailabilityAttempts || 0) + 1;
-    await EQEvents.updateOne(
-      { publicID },
-      {
-        $set: {
-          recordingAvailabilityCheckedAt: new Date(),
-          recordingAvailabilityAttempts: attempts,
-          recordingAvailabilityStatus: event.recordingAvailabilityStatus || 'pending',
-        },
-      },
-    );
+    await EventsRepo.saveStationChecks([{
+      _id: event._id,
+      recordingAvailabilityCheckedAt: new Date(),
+      recordingAvailabilityAttempts: attempts,
+      recordingAvailabilityStatus: event.recordingAvailabilityStatus || 'pending',
+    }]);
     if (attempts < RECORDING_AVAILABILITY_MAX_ATTEMPTS) {
       scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
     }
@@ -693,19 +671,7 @@ async function updateOnlineStationsForEvent(publicID) {
   }
 
   const availability = buildRecordingAvailabilityUpdate(event, refinement);
-  const result = await EQEvents.updateOne(
-    { publicID },
-    {
-      $set: {
-        candidateStations: availability.candidateStations,
-        recordingStations: availability.recordingStations,
-        recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-        recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-        recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-        onlineStations: availability.onlineStations,
-      },
-    },
-  );
+  const result = await EventsRepo.saveStationChecks([stationCheckResults(event, availability)]);
 
   if (availability.shouldRetry) {
     scheduleOnlineStationsRefinement(publicID, RECORDING_AVAILABILITY_RETRY_DELAY_MS);
@@ -727,62 +693,67 @@ async function updateOnlineStationsForEvent(publicID) {
 /***************************************************************************
   * updateOnlineStations:
   *     Updates all events with their closest online stations based on geographic distance.
-  * 
+  *     Events are read and written in batches (ONLINE_STATIONS_BATCH_SIZE), so memory stays
+  *     flat as the collection grows and finished batches are kept if the run stops midway.
+  *
   * Outputs:
   *     An object with matchedCount, modifiedCount, and usableDevicesCount.
-  * 
+  *
  ***************************************************************************/
+// What a station check saves for one event
+function stationCheckResults(event, availability) {
+  return {
+    _id: event._id,
+    candidateStations: availability.candidateStations,
+    recordingStations: availability.recordingStations,
+    recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
+    recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
+    recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
+    onlineStations: availability.onlineStations,
+  };
+}
+
 async function updateOnlineStations() {
-  const turf = await import('@turf/turf');
+  const usableDevices = await findStationDevices();
 
-  const [events, devices] = await Promise.all([
-    EQEvents.find({}).lean(),
-    Device.find({}).lean()
-  ]);
+  let processedCount = 0;
+  let skippedCount = 0;
+  let matchedCount = 0;
+  let modifiedCount = 0;
+  let lastId = null;
 
-  const eventsWithCoords = events.filter(event => event.longitude_value != null && event.latitude_value != null);
+  // In batches, each picking up after the last one's _id, rather than one long-lived
+  // cursor: each event waits on FDSN requests, and a cursor left idle that long is
+  // closed by the server.
+  for (;;) {
+    const events = await EventsRepo.listForStationCheck({ after: lastId, limit: ONLINE_STATIONS_BATCH_SIZE });
+    if (events.length === 0) break;
+    lastId = events[events.length - 1]._id;
+    processedCount += events.length;
 
-  if (eventsWithCoords.length === 0) {
+    const results = [];
+    for (const event of events) {
+      const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
+      if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
+        skippedCount += 1;
+        continue;
+      }
+
+      results.push(stationCheckResults(event, buildRecordingAvailabilityUpdate(event, refinement)));
+    }
+
+    if (results.length > 0) {
+      const result = await EventsRepo.saveStationChecks(results);
+      matchedCount += result.matchedCount;
+      modifiedCount += result.modifiedCount;
+    }
+  }
+
+  if (processedCount === 0) {
     return { matchedCount: 0, modifiedCount: 0, usableDevicesCount: 0 };
   }
 
-  const usableDevices = devices.filter(
-    (device) => device.station && device.longitude != null && device.latitude != null,
-  );
-
-  const eventStationPairs = [];
-  let skippedCount = 0;
-  for (let index = 0; index < eventsWithCoords.length; index += 1) {
-    const event = eventsWithCoords[index];
-    const refinement = await getEventOnlineStationsResult(event, usableDevices, turf);
-    if (refinement.checkedCount > 0 && refinement.failedCheckCount === refinement.checkedCount) {
-      skippedCount += 1;
-      continue;
-    }
-
-    eventStationPairs.push({
-      eventId: event._id,
-      availability: buildRecordingAvailabilityUpdate(event, refinement),
-    });
-  }
-
-  const operations = eventStationPairs.map(({ eventId, availability }) => ({
-    updateOne: {
-      filter: { _id: eventId },
-      update: {
-        $set: {
-          candidateStations: availability.candidateStations,
-          recordingStations: availability.recordingStations,
-          recordingAvailabilityStatus: availability.recordingAvailabilityStatus,
-          recordingAvailabilityCheckedAt: availability.recordingAvailabilityCheckedAt,
-          recordingAvailabilityAttempts: availability.recordingAvailabilityAttempts,
-          onlineStations: availability.onlineStations,
-        },
-      },
-    },
-  }));
-
-  if (operations.length === 0) {
+  if (matchedCount === 0 && modifiedCount === 0) {
     return {
       matchedCount: 0,
       modifiedCount: 0,
@@ -792,16 +763,12 @@ async function updateOnlineStations() {
     };
   }
 
-  const result = await EQEvents.bulkWrite(operations);
-
-  const sampleEvent = await EQEvents.findOne({}).lean();
-
   return {
-    matchedCount: result.matchedCount,
-    modifiedCount: result.modifiedCount,
+    matchedCount,
+    modifiedCount,
     usableDevicesCount: usableDevices.length,
     skippedCount,
-    sampleOnlineStations: sampleEvent ? sampleEvent.onlineStations : null
+    sampleOnlineStations: await EventsRepo.sampleOnlineStations(),
   };
 }
 
@@ -971,22 +938,17 @@ function _validateReferenceEvent(ref) {
   return missing;
 }
 
-function _getEnrichmentEligibilityFilter() {
-  const cutoff = new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000);
+// Which events are ready for enrichment: old enough for the catalogs to have published them
+// (ENRICHMENT_MIN_AGE_HOURS), and with a catalog still pending or legacy attempts left
+function _getEnrichmentEligibility() {
   return {
-    OT: { $lte: cutoff },
-    $or: [
-      { pendingCatalogSources: { $exists: true, $ne: [] } },
-      {
-        upForEnrichment: true,
-        enrichmentAttempts: { $lt: MAX_ENRICHMENT_ATTEMPTS },
-      },
-    ],
+    cutoff: new Date(Date.now() - ENRICHMENT_MIN_AGE_HOURS * 60 * 60 * 1000),
+    maxAttempts: MAX_ENRICHMENT_ATTEMPTS,
   };
 }
 
 async function countEligibleEnrichmentEvents() {
-  return EQEvents.countDocuments(_getEnrichmentEligibilityFilter());
+  return EventsRepo.countEnrichmentEligible(_getEnrichmentEligibility());
 }
 
 function _buildPhivolcsUrl(year, month) {
@@ -1212,10 +1174,7 @@ async function addAdditionalInformation() {
     const page          = await browser.newPage();
     const phivolcsCache = new Map();
 
-    const events = await EQEvents.find(_getEnrichmentEligibilityFilter())
-      .sort({ OT: 1 })
-      .limit(ENRICHMENT_BATCH_SIZE)
-      .lean();
+    const events = await EventsRepo.listEnrichmentEligible({ ..._getEnrichmentEligibility(), limit: ENRICHMENT_BATCH_SIZE });
 
     console.log(
       `addAdditionalInformation: processing ${events.length} event(s) ` +
@@ -1256,19 +1215,12 @@ async function addAdditionalInformation() {
           sourceStatus[source] = 'no_match';
           sourceAttempts[source] = (sourceAttempts[source] || 0) + 1;
         });
-        await EQEvents.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              additionalInformation: _normalizeCatalogSources(event.additionalInformation),
-              pendingCatalogSources: [],
-              catalogEnrichmentAttempts: sourceAttempts,
-              catalogEnrichmentStatus: sourceStatus,
-              upForEnrichment: false,
-            },
-            $inc: { enrichmentAttempts: 1 },
-          },
-        );
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+          pendingCatalogSources: [],
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
         process.stdout.write(`skipped (missing: ${missingFields.join(', ')})\n`);
         skippedCount  += 1;
         modifiedCount += 1;
@@ -1332,19 +1284,12 @@ async function addAdditionalInformation() {
         );
         const allCompleted = sourceFailureCount === 0;
 
-        await EQEvents.updateOne(
-          { _id: event._id },
-          {
-            $set: {
-              additionalInformation,
-              pendingCatalogSources,
-              catalogEnrichmentAttempts: sourceAttempts,
-              catalogEnrichmentStatus: sourceStatus,
-              upForEnrichment: pendingCatalogSources.length > 0,
-            },
-            $inc: { enrichmentAttempts: 1 },
-          },
-        );
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation,
+          pendingCatalogSources,
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
 
         const statusNote = allCompleted ? '' : ' (partial — will retry failed source)';
         if (!allCompleted) {
@@ -1368,16 +1313,6 @@ async function addAdditionalInformation() {
         const remainingPendingSources = pendingSources.filter(
           (source) => sourceAttempts[source] < MAX_ENRICHMENT_ATTEMPTS,
         );
-        const updateFields = {
-          $set: {
-            additionalInformation: _normalizeCatalogSources(event.additionalInformation),
-            pendingCatalogSources: remainingPendingSources,
-            catalogEnrichmentAttempts: sourceAttempts,
-            catalogEnrichmentStatus: sourceStatus,
-            upForEnrichment: remainingPendingSources.length > 0,
-          },
-          $inc: { enrichmentAttempts: 1 },
-        };
 
         if (remainingPendingSources.length === 0) {
           exhaustedCount += 1;
@@ -1386,7 +1321,12 @@ async function addAdditionalInformation() {
           process.stdout.write(`error (will retry) -> ${err.message}\n`);
         }
 
-        await EQEvents.updateOne({ _id: event._id }, updateFields);
+        await EventsRepo.saveEnrichment(event._id, {
+          additionalInformation: _normalizeCatalogSources(event.additionalInformation),
+          pendingCatalogSources: remainingPendingSources,
+          catalogEnrichmentAttempts: sourceAttempts,
+          catalogEnrichmentStatus: sourceStatus,
+        });
         modifiedCount += 1;
       }
     }
@@ -1414,19 +1354,7 @@ async function addAdditionalInformation() {
 }
 
 async function setEventSummary(publicID, text, editedBy) {
-  const event = await EQEvents.findOneAndUpdate(
-    { publicID },
-    {
-      $set: {
-        summaryOverride: {
-          text,
-          editedAt: new Date(),
-          ...(editedBy ? { editedBy } : {})
-        }
-      }
-    },
-    { new: true, runValidators: true }
-  );
+  const event = await EventsRepo.setSummary(publicID, text, editedBy);
 
   if (!event) {
     const error = new Error(`Event not found: ${publicID}`);
@@ -1438,11 +1366,7 @@ async function setEventSummary(publicID, text, editedBy) {
 }
 
 async function clearEventSummary(publicID) {
-  const event = await EQEvents.findOneAndUpdate(
-    { publicID },
-    { $unset: { summaryOverride: "" } },
-    { new: true }
-  );
+  const event = await EventsRepo.clearSummary(publicID);
 
   if (!event) {
     const error = new Error(`Event not found: ${publicID}`);
@@ -1476,5 +1400,6 @@ module.exports = {
     resolveRecordingAvailabilityStatus,
     resolveRecordingDisplayStations,
     hasMeaningfulCoordinateChange: _hasMeaningfulCoordinateChange,
+    resetGeoserveLookups,
   },
 };

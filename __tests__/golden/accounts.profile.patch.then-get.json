@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/accounts/profile"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 20,
+      "message": "Token is valid",
+      "payload": {
+        "username": "golden_citizen",
+        "email": "golden.new@example.org",
+        "roles": [
+          "citizen",
+          "sensor"
+        ],
+        "passwordPolicyVersion": 2,
+        "passwordUpdatedAt": "<now>",
+        "passwordStatus": "current",
+        "alertPreferences": {
+          "rshakeEmailEnabled": true,
+          "updatedAt": "2026-02-01T00:00:00.000Z"
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
-const Comment = require('../models/comments.model');
-const Event = require('../models/events.model');
+const CommentsRepo = require('../repositories/comments.repo');
+const CommunityTransactions = require('../repositories/communityTransactions');
+const EventsRepo = require('../repositories/events.repo');
 const ContributionsService = require('./contributions.service');
 
 const COMMENT_STATUS = Object.freeze({
@@ -37,21 +38,13 @@ function getHelpfulAccountIds(source) {
   return Array.isArray(source?.helpfulAccountIds) ? source.helpfulAccountIds : [];
 }
 
-function buildVisibleCommentByIdQuery(commentId) {
-  return {
-    commentId,
-    $or: [
-      { status: COMMENT_STATUS.APPROVED },
-      { status: { $exists: false } },
-    ],
-  };
-}
+// Runs a comment write and the points it earns together in one transaction, so a failed step leaves
+// neither
+const writeTogether = (fn) => CommunityTransactions.withTransaction(fn);
 
-function toPublicComment(comment, { viewerAccountId } = {}) {
-  if (!comment) return null;
-  const source = typeof comment.toObject === 'function'
-    ? comment.toObject()
-    : comment;
+// source: a comment as the comments repository returns it
+function toPublicComment(source, { viewerAccountId } = {}) {
+  if (!source) return null;
   const helpfulAccountIds = getHelpfulAccountIds(source);
   const normalizedViewerAccountId = normalizeAccountId(viewerAccountId);
 
@@ -70,11 +63,8 @@ function toPublicComment(comment, { viewerAccountId } = {}) {
   };
 }
 
-function toAdminComment(comment) {
-  if (!comment) return null;
-  const source = typeof comment.toObject === 'function'
-    ? comment.toObject()
-    : comment;
+function toAdminComment(source) {
+  if (!source) return null;
 
   return {
     ...toPublicComment(source),
@@ -122,38 +112,6 @@ function decodePaginationCursor(cursor) {
   }
 }
 
-function buildVisibleCommentQuery(event, cursor) {
-  const eventPublicID = typeof event.publicID === 'string' ? event.publicID.trim() : '';
-  const query = {
-    $and: [
-      {
-        $or: [
-          { eventId: event._id },
-          ...(eventPublicID ? [{ eventPublicID }] : []),
-        ],
-      },
-      {
-        $or: [
-          { status: COMMENT_STATUS.APPROVED },
-          { status: { $exists: false } },
-        ],
-      },
-    ],
-  };
-
-  const decodedCursor = decodePaginationCursor(cursor);
-  if (decodedCursor) {
-    query.$and.push({
-      $or: [
-        { createdAt: { $lt: decodedCursor.createdAt } },
-        { createdAt: decodedCursor.createdAt, commentId: { $lt: decodedCursor.commentId } },
-      ],
-    });
-  }
-
-  return query;
-}
-
 // Create a new comment
 async function createComment({
   eventId,
@@ -162,26 +120,28 @@ async function createComment({
   content,
   imageURL,
 }) {
-  const event = await Event.findById(eventId).select('_id publicID').lean();
+  const event = await EventsRepo.findRefById(eventId);
   if (!event) {
     return null;
   }
 
   const normalizedContent = typeof content === 'string' ? content.trim() : '';
-  const comment = new Comment({
-    eventId: event._id,
-    eventPublicID: event.publicID,
-    accountId: accountId || null,
-    username: username || 'Anonymous',
-    ...(normalizedContent ? { content: normalizedContent } : {}),
-    ...(imageURL ? { imageURL } : {}),
-    status: getDefaultCommentStatus(),
-  });
-  const savedComment = await comment.save();
-  await ContributionsService.recordReportPosted({
-    accountId,
-    comment: savedComment,
-    hasImage: Boolean(imageURL),
+  const savedComment = await writeTogether(async (tx) => {
+    const saved = await CommentsRepo.create({
+      eventId: event._id,
+      eventPublicID: event.publicID,
+      accountId: accountId || null,
+      username: username || 'Anonymous',
+      ...(normalizedContent ? { content: normalizedContent } : {}),
+      ...(imageURL ? { imageURL } : {}),
+      status: getDefaultCommentStatus(),
+    }, { tx });
+    await ContributionsService.recordReportPosted({
+      accountId,
+      comment: saved,
+      hasImage: Boolean(imageURL),
+    }, { tx });
+    return saved;
   });
   const publicComment = toPublicComment(savedComment);
   return {
@@ -192,26 +152,17 @@ async function createComment({
 
 // Get all comments for a specific event
 async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = '', viewerAccountId = null } = {}) {
-  const event = await Event.findById(eventId).select('_id publicID').lean();
+  const event = await EventsRepo.findRefById(eventId);
   if (!event) {
     return null;
   }
 
-  const query = buildVisibleCommentQuery(event, cursor);
   const shouldUseOffset = !cursor && offset > 0;
-
-  const [comments, total] = await Promise.all([
-    Comment.find(query)
-      .sort({ createdAt: -1, commentId: -1 })
-      .skip(shouldUseOffset ? offset : 0)
-      .limit(limit + 1)
-      .select('commentId username content imageURL helpfulAccountIds createdAt updatedAt -_id')
-      .lean(),
-    Comment.countDocuments(query),
-  ]);
-
-  const hasMore = comments.length > limit;
-  const visibleComments = hasMore ? comments.slice(0, limit) : comments;
+  const { comments: visibleComments, total, hasMore } = await CommentsRepo.listVisibleForEvent(event, {
+    limit,
+    offset: shouldUseOffset ? offset : 0,
+    after: decodePaginationCursor(cursor),
+  });
 
   return {
     comments: visibleComments.map((comment) => toPublicComment(comment, { viewerAccountId })),
@@ -225,7 +176,7 @@ async function getCommentsByEventId(eventId, { limit = 20, offset = 0, cursor = 
 
 // Delete comment (reserved for admin only)
 async function deleteComment(commentId) {
-  return await Comment.findOneAndDelete({ commentId });
+  return CommentsRepo.remove(commentId);
 }
 
 async function updateCommentStatus(commentId, status, moderatedBy) {
@@ -234,17 +185,11 @@ async function updateCommentStatus(commentId, status, moderatedBy) {
     return { invalidStatus: true };
   }
 
-  const updatedComment = await Comment.findOneAndUpdate(
-    { commentId },
-    {
-      $set: {
-        status: normalizedStatus,
-        moderatedBy: moderatedBy || 'admin',
-        moderatedAt: new Date(),
-      },
-    },
-    { new: true },
-  );
+  const updatedComment = await CommentsRepo.setStatus(commentId, {
+    status: normalizedStatus,
+    moderatedBy: moderatedBy || 'admin',
+    moderatedAt: new Date(),
+  });
 
   return toAdminComment(updatedComment);
 }
@@ -254,27 +199,21 @@ async function markCommentHelpful(commentId, accountId) {
     return { unauthenticated: true };
   }
 
-  const updatedComment = await Comment.findOneAndUpdate(
-    {
-      ...buildVisibleCommentByIdQuery(commentId),
-      helpfulAccountIds: { $ne: accountId },
-    },
-    { $addToSet: { helpfulAccountIds: accountId } },
-    { new: true },
-  ).select('commentId username content imageURL accountId eventId eventPublicID helpfulAccountIds createdAt updatedAt');
-
-  if (updatedComment) {
-    await ContributionsService.recordHelpfulMarked({
-      actorAccountId: accountId,
-      comment: updatedComment,
-    });
-    return toPublicComment(updatedComment, { viewerAccountId: accountId });
+  const marked = await writeTogether(async (tx) => {
+    const result = await CommentsRepo.addHelpfulMark(commentId, accountId, { tx });
+    // Points only for a new mark: marking again changes nothing
+    if (result?.added) {
+      await ContributionsService.recordHelpfulMarked({
+        actorAccountId: accountId,
+        comment: result.comment,
+      }, { tx });
+    }
+    return result;
+  });
+  if (!marked) {
+    return null;
   }
-
-  const existingComment = await Comment.findOne(buildVisibleCommentByIdQuery(commentId))
-    .select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
-
-  return toPublicComment(existingComment, { viewerAccountId: accountId });
+  return toPublicComment(marked.comment, { viewerAccountId: accountId });
 }
 
 async function unmarkCommentHelpful(commentId, accountId) {
@@ -282,11 +221,7 @@ async function unmarkCommentHelpful(commentId, accountId) {
     return { unauthenticated: true };
   }
 
-  const updatedComment = await Comment.findOneAndUpdate(
-    buildVisibleCommentByIdQuery(commentId),
-    { $pull: { helpfulAccountIds: accountId } },
-    { new: true },
-  ).select('commentId username content imageURL helpfulAccountIds createdAt updatedAt');
+  const updatedComment = await CommentsRepo.removeHelpfulMark(commentId, accountId);
 
   return toPublicComment(updatedComment, { viewerAccountId: accountId });
 }
@@ -300,32 +235,22 @@ async function reportCommentIssue(commentId, { accountId, reason }) {
     return { invalidReason: true };
   }
 
-  const comment = await Comment.findOne(buildVisibleCommentByIdQuery(commentId));
+  const comment = await writeTogether(async (tx) => {
+    // One report per account: a second one replaces the first
+    const saved = await CommentsRepo.saveIssueReport(commentId, { accountId, reason, createdAt: new Date() }, { tx });
+    if (saved) {
+      await ContributionsService.recordIssueSubmitted({
+        accountId,
+        comment: saved,
+        reason,
+      }, { tx });
+    }
+    return saved;
+  });
   if (!comment) {
     return null;
   }
 
-  const now = new Date();
-  if (!Array.isArray(comment.issueReports)) {
-    comment.issueReports = [];
-  }
-  const existingIssue = comment.issueReports.find(
-    (issue) => normalizeAccountId(issue.accountId) === normalizeAccountId(accountId)
-  );
-
-  if (existingIssue) {
-    existingIssue.reason = reason;
-    existingIssue.createdAt = now;
-  } else {
-    comment.issueReports.push({ accountId, reason, createdAt: now });
-  }
-
-  await comment.save();
-  await ContributionsService.recordIssueSubmitted({
-    accountId,
-    comment,
-    reason,
-  });
   return {
     commentId: comment.commentId,
     issueReported: true,

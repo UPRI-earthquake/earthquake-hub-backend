@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/authenticate",
+    "body": {
+      "username": "pending_brgy",
+      "password": "Golden-Password-2026!",
+      "role": "brgy"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 125,
+      "message": "Account is not yet approved"
+    }
+  }
+}

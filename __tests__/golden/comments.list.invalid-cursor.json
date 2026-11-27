@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/comments?eventId=69000000000000000000e301&cursor=not-a-cursor"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Invalid comment pagination cursor."
+    }
+  }
+}

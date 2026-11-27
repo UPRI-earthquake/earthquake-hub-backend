@@ -1,0 +1,36 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/significant-eqs",
+    "body": {
+      "id": "6a0000000000000000000001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Earthquake Information found",
+      "payload": {
+        "_id": "6a0000000000000000000001",
+        "publicID": "sig2026am70",
+        "title": "M7.0 Earthquake, 3 km N of Quezon City, Metro Manila, Philippines",
+        "magnitude": 7,
+        "depth": 10,
+        "location": "3 km N of Quezon City, Metro Manila, Philippines",
+        "eventTime": "2026-05-01T00:00:00.000Z",
+        "eventSummary": "A magnitude 7.0 earthquake struck 3 km N of Quezon City, Metro Manila, Philippines on May 1, 2026 at a depth of 10 km.",
+        "instrumentRecordings": [
+          "R3B2D",
+          "R1382"
+        ],
+        "references": [
+          "https://earthquake.phivolcs.dost.gov.ph/2026_Earthquake_Information/May/2026_0501_0000_B1.html"
+        ]
+      }
+    }
+  }
+}

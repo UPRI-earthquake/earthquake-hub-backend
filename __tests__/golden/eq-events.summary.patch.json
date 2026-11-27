@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/eq-events/upri2026jabc/summary",
+    "body": {
+      "text": "  Felt in Quezon City.  "
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Event summary updated successfully.",
+      "data": {
+        "text": "Felt in Quezon City.",
+        "editedAt": "<now>"
+      }
+    }
+  }
+}

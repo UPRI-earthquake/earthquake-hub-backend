@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/all"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60"
+    },
+    "body": {
+      "status": 0,
+      "message": "All device locations found",
+      "payload": [
+        {
+          "network": "AM",
+          "code": "R3B2D",
+          "latitude": 14.65,
+          "longitude": 121.07,
+          "activity": "active",
+          "description": "golden_citizen's device"
+        },
+        {
+          "network": "AM",
+          "code": "RE722",
+          "latitude": 14.65,
+          "longitude": 121.07,
+          "activity": "inactive",
+          "description": null
+        },
+        {
+          "network": "AM",
+          "code": "R0001",
+          "latitude": 7.07,
+          "longitude": 125.6,
+          "activity": "inactive",
+          "description": "other_citizen's device"
+        }
+      ]
+    }
+  }
+}

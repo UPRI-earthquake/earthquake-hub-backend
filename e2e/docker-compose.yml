@@ -1,0 +1,33 @@
+# End-to-end check (docs/e2e/README.md): a throwaway PostgreSQL, loaded from a saved baseline, and a mail
+# catcher. Every port is bound to loopback, and nothing here talks to dev or production.
+#
+#   docker compose -f e2e/docker-compose.yml up -d --wait
+#   docker compose -f e2e/docker-compose.yml down -v      # removes the data too
+name: ehub-e2e
+
+services:
+  postgres:
+    image: "postgis/postgis:18-3.6" # same as dev
+    environment:
+      POSTGRES_DB: ehub_e2e
+      POSTGRES_USER: ehub_e2e
+      POSTGRES_PASSWORD: ehub_e2e
+    ports:
+      - "127.0.0.1:55432:5432"
+    # As in dev: the Knex migrations alone decide which extensions exist
+    entrypoint: >
+      sh -c "rm -f /docker-entrypoint-initdb.d/10_postgis.sh && exec docker-entrypoint.sh postgres"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ehub_e2e -d ehub_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Catches every email the backends send (password resets, alerts), so none reaches a real person.
+  # Its API (http://localhost:8125/api/v1/messages) lets the tests read reset links.
+  mailpit:
+    image: "axllent/mailpit:v1.21.8"
+    ports:
+      - "127.0.0.1:1125:1025"
+      - "127.0.0.1:8125:8025"

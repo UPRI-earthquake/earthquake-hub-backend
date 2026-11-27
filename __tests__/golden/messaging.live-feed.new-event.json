@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/messaging",
+    "body": "messages after POST /messaging/restricted/new-event"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": [
+      {
+        "event": "SC_EVENT",
+        "data": {
+          "publicID": "upri2026knew",
+          "OT": "2026-05-20T03:15:00.000Z",
+          "latitude_value": 14.62,
+          "longitude_value": 121.1,
+          "depth_value": 12,
+          "magnitude_value": 4.6,
+          "eventType": "NEW",
+          "method": "automatic",
+          "text": "Luzon, Philippines",
+          "last_modification": "2026-05-20T03:16:00.000Z",
+          "place": "9 km SE of Metro Manila, Philippines"
+        }
+      }
+    ]
+  }
+}

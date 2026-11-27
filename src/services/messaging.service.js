@@ -1,8 +1,8 @@
 const EventEmitter = require('events')
 const EventSource = require('eventsource');
 
-const Devices = require('../models/device.model');
-const Users = require('../models/account.model');
+const AccountsRepo = require('../repositories/accounts.repo');
+const DevicesRepo = require('../repositories/devices.repo');
 
 const EQEventsService = require('./EQevents.service')
 
@@ -98,8 +98,8 @@ const eventCache = new EventCache(30); // will contain last 30 EQevents added vi
   *       process.env.RINGSERVER_PORT).
   *     - The function listens for SSE events, specifically 'ringserver-connections-status', 'open', 'error', and 'close'.
   *     - When the 'ringserver-connections-status' event is received, the function extracts the connections data from the event,
-  *       filters connections with the role 'sensor', and saves the current_time to the MongoDB for each sensor connection by
-  *       updating the 'updatedAt' property of the corresponding user in the Users collection.
+  *       filters connections with the role 'sensor', and records the current_time for each sensor connection on its
+  *       account (AccountsRepo.recordRingserverConnection).
   *     - The function handles 'open' and 'close' events by logging messages to the console.
   *     - For 'error' events, the function keeps track of the number of errors (sseConnectionsErrorFlag) and logs error messages.
   *       If there are repeated errors (3 or more), it logs a specific message indicating that it will keep retrying the connection.
@@ -120,12 +120,9 @@ const sseConnectionsEventListener = async() => {
       (connection) => connection.role === 'sensor'
     );
   
-    // Save current_time to MongoDB for sensor connections
+    // Save current_time for sensor connections
     ringserverConnections.forEach( async (user) => {
-      const userUpdate = await Users.findOne({ username: user.username })
-
-      userUpdate.updatedAt = connections.current_time;
-      userUpdate.save();
+      await AccountsRepo.recordRingserverConnection(user.username, connections.current_time);
     });
   });
 
@@ -202,7 +199,9 @@ const sseStreamsEventListener = async() => {
       return accumulated;
     }, {});
 
-    const devices = await Devices.find();
+    // Only devices whose stream is in this update can change status. The repository applies the
+    // activityToggleTime default (epoch) to older records without it.
+    const devices = await DevicesRepo.listByStreamIds(Object.keys(latestStreamTimes));
 
     devices.forEach( async (device) => {
         if (!latestStreamTimes[device.streamId]) {
@@ -216,11 +215,10 @@ const sseStreamsEventListener = async() => {
 
         if (current_utc_time - latest_packet_time > MAX_LAG_MS){
           if (device.activity === 'active') {
-            const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
-
-            deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
-            deviceToUpdate.activity = 'inactive';
-            await deviceToUpdate.save();
+            const deviceToUpdate = await DevicesRepo.update(device.id, {
+              activityToggleTime: latestStreamTimes[device.streamId],
+              activity: 'inactive',
+            });
             try {
               await eventCache.newEvent('SC_*', {
                 network: deviceToUpdate.network,
@@ -238,11 +236,10 @@ const sseStreamsEventListener = async() => {
 
         // latest_packet_time is within MAX_LAG; hence update device if necessary
         if (device.activity === 'inactive') {
-          const deviceToUpdate = await Devices.findOne({ streamId: device.streamId })
-
-          deviceToUpdate.activityToggleTime = latestStreamTimes[device.streamId];
-          deviceToUpdate.activity = 'active';
-          await deviceToUpdate.save();
+          const deviceToUpdate = await DevicesRepo.update(device.id, {
+            activityToggleTime: latestStreamTimes[device.streamId],
+            activity: 'active',
+          });
           try {
             await eventCache.newEvent('SC_*', {
               network: deviceToUpdate.network,

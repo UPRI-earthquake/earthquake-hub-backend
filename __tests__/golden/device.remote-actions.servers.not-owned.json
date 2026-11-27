@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/remote-actions/servers?deviceId=AM_R0001"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 196,
+      "message": "Remote action is unavailable for this device (not_owned).",
+      "errorCode": "not_owned"
+    }
+  }
+}

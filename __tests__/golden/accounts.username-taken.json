@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/accounts/username",
+    "body": {
+      "newUsername": "other_citizen",
+      "currentPassword": "Golden-Password-2026!"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 111,
+      "message": "Username already in use."
+    }
+  }
+}

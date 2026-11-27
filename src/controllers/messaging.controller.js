@@ -1,11 +1,10 @@
 const Joi = require('joi');
 const MessagingService = require('../services/messaging.service')
 const EQEventsService = require('../services/EQevents.service')
-const NotificationsService = require('../services/notifications.service')
 const DeviceAlertsService = require('../services/deviceAlerts.service')
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage} = require('./helpers')
-const Device = require('../models/device.model');
+const DevicesRepo = require('../repositories/devices.repo');
 
 const rshakeAlertDeviceSchema = Joi.object({
   network: Joi.string().trim().uppercase().min(2).max(4),
@@ -115,16 +114,13 @@ exports.newEQEvent = async (req, res, next) => {
       value.last_modification
     )
 
-    // Perform Task A: Notify subscribed clients
-    let returnStrA = await NotificationsService.notifySubscribersEQ(value)
-
-    // Perform Task B: Add EQevent to SSE cache
+    // Add EQevent to SSE cache
     let returnStrB = await MessagingService.eventCache.newEvent("SC_*", req.body, "SC_EVENT");
 
     // Respond based on return value
     let message = ""
-    if (returnStrA === 'success' && returnStrB === 'success' && returnStrC === 'success') {
-      message = "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+    if (returnStrB === 'success' && returnStrC === 'success') {
+      message = "New event sent to SSE and added to DB"
       res.status(200).json({
         status: responseCodes.GENERIC_SUCCESS,
         message: message
@@ -132,12 +128,12 @@ exports.newEQEvent = async (req, res, next) => {
       res.message = message
     }
     else{
-      throw Error(`Not all tasks returned successfully: \n A:${returnStrA} B:${returnStrB} C:${returnStrC}`)
+      throw Error(`Not all tasks returned successfully: \n B:${returnStrB} C:${returnStrC}`)
     }
 
     return;
   } catch (error) {
-    console.log(`Routing new EQevent to notifs,SSE,DB unsuccessful: \n ${error}`);
+    console.log(`Routing new EQevent to SSE,DB unsuccessful: \n ${error}`);
     next(error);
   }
 }
@@ -289,11 +285,9 @@ exports.newStationStatus = async (req, res, next) => {
 
     // Best-effort DB sync (optional)
     try {
-      const dev = await Device.findOne({ network, station });
+      const dev = await DevicesRepo.findByNetworkStation(network, station);
       if (dev) {
-        dev.activity = activity;
-        dev.activityToggleTime = since;
-        await dev.save();
+        await DevicesRepo.update(dev.id, { activity, activityToggleTime: since });
       }
     } catch (_) {}
 

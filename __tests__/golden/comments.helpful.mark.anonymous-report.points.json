@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "READ",
+    "path": "contribution points, by dedupeKey"
+  },
+  "response": {
+    "status": null,
+    "headers": {},
+    "body": [
+      {
+        "dedupeKey": "69000000000000000000a302:report_marked_helpful:comment:c0000000-0000-4000-8000-000000000003",
+        "accountId": "69000000000000000000a302",
+        "actionType": "report_marked_helpful",
+        "targetType": "comment",
+        "targetId": "c0000000-0000-4000-8000-000000000003",
+        "eventId": "69000000000000000000e301",
+        "eventPublicID": "upri2026jcom",
+        "points": 1,
+        "reason": null
+      }
+    ]
+  }
+}

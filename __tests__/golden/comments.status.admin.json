@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/comments/c0000000-0000-4000-8000-000000000004/status",
+    "body": {
+      "status": "approved"
+    },
+    "headers": {
+      "Cookie": "<admin session cookie>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Comment status updated successfully",
+      "payload": {
+        "commentId": "c0000000-0000-4000-8000-000000000004",
+        "username": "golden_author",
+        "content": "Cracks on our wall.",
+        "helpfulCount": 0,
+        "viewerHasMarkedHelpful": false,
+        "createdAt": "2026-05-05T01:00:00.000Z",
+        "updatedAt": "<now>",
+        "eventId": "69000000000000000000e301",
+        "eventPublicID": "upri2026jcom",
+        "accountId": "69000000000000000000a302",
+        "status": "approved",
+        "moderatedBy": "golden_admin",
+        "moderatedAt": "<now>"
+      }
+    }
+  }
+}

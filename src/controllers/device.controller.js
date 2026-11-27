@@ -4,7 +4,7 @@ const DeviceService = require('../services/device.service')
 const TunnelEnrollmentService = require('../services/tunnelEnrollment.service');
 const RemoteDeviceActionsService = require('../services/remoteDeviceActions.service');
 const RshakeAlertCredentialsService = require('../services/rshakeAlertCredentials.service');
-const Account = require('../models/account.model');
+const AccountsRepo = require('../repositories/accounts.repo');
 const logger = require('../middlewares/logger.middleware');
 const {responseCodes} = require('./responseCodes')
 const {formatErrorMessage, generateAccessToken, generateRefreshToken, getRefreshTokenSecret} = require('./helpers')
@@ -351,7 +351,7 @@ exports.refreshToken = async (req, res, next) => {
       });
     }
 
-    const accountRecord = await Account.findOne({ username });
+    const accountRecord = await AccountsRepo.findByUsername(username);
     if (!accountRecord || !Array.isArray(accountRecord.roles) || !accountRecord.roles.includes(role)) {
       return res.status(401).json({
         status: responseCodes.GENERIC_ERROR,

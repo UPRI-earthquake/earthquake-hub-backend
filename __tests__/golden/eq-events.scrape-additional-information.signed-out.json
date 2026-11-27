@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/eq-events/restricted/scrape-additional-information"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 403,
+      "message": "Token in cookie missing"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/eq-events/upri2026jabc/summary",
+    "body": {
+      "text": "Felt in Quezon City."
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 132,
+      "message": "Role invalid"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/comments/c0000000-0000-4000-8000-000000000001/issues",
+    "body": {
+      "reason": "downvote"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Report issue reason is invalid."
+    }
+  }
+}

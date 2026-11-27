@@ -77,7 +77,7 @@ router.get('/',
   * @swagger
   * /messaging/restricted/new-event:
   *   post:
-  *     summary: Add new EQevent as message in SSE, entry in DB, and notif to subscribed clients.
+  *     summary: Add new EQevent as message in SSE and entry in DB.
   *     description: >
   *       !! Access to this endpoint is restricted to trusted network only, this is done via
   *       the NGINX reverse-proxy (in deployment environment).
@@ -113,7 +113,7 @@ router.get('/',
   *                   example: responseCodes.GENERIC_SUCCESS
   *                 message:
   *                   type: string
-  *                   example: "New event sent to SSE, added to DB, and published as notif (if >minMag)"
+  *                   example: "New event sent to SSE and added to DB"
   *
   *       '500':
   *         description: Internal server error
@@ -252,7 +252,7 @@ router.post(`${restrictedPath}/rshake-alert`,
   *     description: >
   *       !! Access to this endpoint is restricted to trusted network only (via reverse-proxy).
   *       Emits a `STATION_STATUS` message on the `/messaging` SSE stream and optionally updates
-  *       the matching device's `activity` and `activityToggleTime` in MongoDB.
+  *       the matching device's `activity` and `activityToggleTime` in the database.
   *     tags: [Messaging]
   *     requestBody:
   *       required: true

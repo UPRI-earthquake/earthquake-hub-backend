@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/status?network=AM&station=RE722"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Get device status success",
+      "payload": {
+        "network": "AM",
+        "station": "RE722",
+        "activity": "inactive",
+        "status": "Not Yet Linked",
+        "statusSince": null,
+        "activityToggleTime": "2026-01-01T00:00:00.000Z"
+      }
+    }
+  }
+}

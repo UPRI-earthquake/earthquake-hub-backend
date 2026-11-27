@@ -1,0 +1,52 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/significant-eqs/all"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=300"
+    },
+    "body": {
+      "status": 0,
+      "message": "All Significant Earthquakes found",
+      "payload": [
+        {
+          "_id": "6a0000000000000000000001",
+          "publicID": "sig2026am70",
+          "title": "M7.0 Earthquake, 3 km N of Quezon City, Metro Manila, Philippines",
+          "magnitude": 7,
+          "depth": 10,
+          "location": "3 km N of Quezon City, Metro Manila, Philippines",
+          "eventTime": "2026-05-01T00:00:00.000Z",
+          "eventSummary": "A magnitude 7.0 earthquake struck 3 km N of Quezon City, Metro Manila, Philippines on May 1, 2026 at a depth of 10 km.",
+          "significance": 754
+        },
+        {
+          "_id": "6a0000000000000000000005",
+          "publicID": "sig2026efelt",
+          "title": "M5.5 Earthquake, 5 km N of Davao City, Davao del Sur, Philippines",
+          "magnitude": 5.5,
+          "depth": 10,
+          "location": "5 km N of Davao City, Davao del Sur, Philippines",
+          "eventTime": "2026-03-01T00:00:00.000Z",
+          "eventSummary": "A magnitude 5.5 earthquake struck 5 km N of Davao City, Davao del Sur, Philippines on March 1, 2026 at a depth of 10 km.",
+          "significance": 615
+        },
+        {
+          "_id": "6a0000000000000000000002",
+          "publicID": "sig2026bdeep",
+          "title": "M7.0 Earthquake, Visayas, Philippines",
+          "magnitude": 7,
+          "depth": 100,
+          "location": "Visayas, Philippines",
+          "eventTime": "2026-04-01T00:00:00.000Z",
+          "eventSummary": "A magnitude 7.0 earthquake struck Visayas, Philippines on April 1, 2026 at a depth of 100 km.",
+          "significance": 603
+        }
+      ]
+    }
+  }
+}

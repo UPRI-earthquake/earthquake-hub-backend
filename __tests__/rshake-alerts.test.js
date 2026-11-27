@@ -1,9 +1,12 @@
 const request = require('supertest');
-jest.mock('../src/models/device.model', () => ({
-  findOne: jest.fn(),
+jest.mock('../src/repositories/devices.repo', () => ({
+  findByStreamId: jest.fn(),
+  findByMacAddress: jest.fn(),
+  findByNetworkStation: jest.fn(),
+  findAccountsListing: jest.fn(),
 }));
 
-const Device = require('../src/models/device.model');
+const DevicesRepo = require('../src/repositories/devices.repo');
 const RshakeAlertCredentialsService = require('../src/services/rshakeAlertCredentials.service');
 const app = require('../src/app');
 
@@ -73,8 +76,8 @@ describe('RShake alerts route smoke', () => {
   });
 
   it('returns 403 when a device-scoped alert credential exists and header is missing', async () => {
-    Device.findOne.mockResolvedValue({
-      _id: 'device-1',
+    DevicesRepo.findByStreamId.mockResolvedValue({
+      id: 'device-1',
       rshakeAlertCredentialHash: RshakeAlertCredentialsService.hashCredential('device-secret'),
     });
 
@@ -91,8 +94,8 @@ describe('RShake alerts route smoke', () => {
   });
 
   it('allows request past auth check when device-scoped alert credential header matches', async () => {
-    Device.findOne.mockResolvedValue({
-      _id: 'device-1',
+    DevicesRepo.findByStreamId.mockResolvedValue({
+      id: 'device-1',
       rshakeAlertCredentialHash: RshakeAlertCredentialsService.hashCredential('device-secret'),
     });
 

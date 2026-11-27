@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/device/status?network=am"
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 101,
+      "message": "Invalid network format. Please provide a valid 2-letter uppercase code."
+    }
+  }
+}

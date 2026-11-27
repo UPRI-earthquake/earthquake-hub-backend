@@ -1,8 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const User = require('../models/account.model');
-const Device = require('../models/device.model');
+const AccountsRepo = require('../repositories/accounts.repo');
+const DevicesRepo = require('../repositories/devices.repo');
+const { DuplicateKeyError } = require('../repositories/errors');
+const { withTransaction } = require('../repositories/transactions');
 const {
   passwordSchema,
   usernameSchema,
@@ -16,9 +18,18 @@ const EmailService = require('./email.service');
 const PASSWORD_RESET_TOKEN_EXPIRY = process.env.PASSWORD_RESET_TOKEN_EXPIRY || '30m';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeEmail = (value = '') => String(value || '').trim().toLowerCase();
-const buildEmailQuery = (email) => ({ email: new RegExp(`^${escapeRegex(email)}$`, 'i') });
+
+// Maps a unique-rule violation to the matching "...Exists" result, or null if it isn't one.
+// The pre-save checks below give friendly errors in the common case; this covers two requests racing.
+const duplicateKeyResult = (err) => {
+  if (!(err instanceof DuplicateKeyError)) return null;
+  const { fields } = err;
+  if (fields.includes('email')) return 'emailExists';
+  if (fields.includes('username')) return 'usernameExists';
+  if (fields.includes('ringserverUrl')) return 'ringserverUrlExists';
+  return null;
+};
 
 function hashTokenId(tokenId) {
   return crypto.createHash('sha256').update(String(tokenId || '')).digest('hex');
@@ -81,27 +92,27 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
   const normalizedEmail = normalizeEmail(email);
 
   // Check if username is in use
-  if (await User.findOne({ username: normalizedUsername })) {
+  if (await AccountsRepo.findByUsername(normalizedUsername)) {
     return 'usernameExists';
   }
 
   // Check if email is in use
-  if (await User.findOne(buildEmailQuery(normalizedEmail))) {
+  if (await AccountsRepo.findByEmail(normalizedEmail)) {
     return 'emailExists';
   }
 
   // save inputs to database
   const hashedPassword = bcrypt.hashSync(password, 10); // hash the password before saving to database
-  let newAccount = null;
+  let newAccount = null; // fields of the account to create
 
   switch (role) {
     case 'brgy':
       // Check if ringserverUrl is in use
-      if (await User.findOne({ ringserverUrl: ringserverUrl })) {
+      if (await AccountsRepo.findByRingserverUrl(ringserverUrl)) {
         return 'ringserverUrlExists';
       }
 
-      newAccount = new User({
+      newAccount = {
         username: normalizedUsername,
         email: normalizedEmail,
         password: hashedPassword,
@@ -110,22 +121,28 @@ exports.createUniqueAccount = async (role, username, email, password, ringserver
         ringserverPort: ringserverPort,
         passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
         passwordUpdatedAt: new Date(),
-      });
+      };
       break;
   
     case 'citizen':
-      newAccount = new User({
+      newAccount = {
         username: normalizedUsername,
         email: normalizedEmail,
         password: hashedPassword,
         roles: ["citizen", "sensor"], // TODO: Make this an attribute to POST route too
         passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
         passwordUpdatedAt: new Date(),
-      });
+      };
       break;
   }
 
-  await newAccount.save();
+  try {
+    await AccountsRepo.create(newAccount);
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return duplicate;
+    throw err;
+  }
 
   return "success";
 }
@@ -152,19 +169,18 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   const trimmedIdentifier = (identifier || '').trim();
   const lookupByEmail = EMAIL_REGEX.test(trimmedIdentifier);
 
-  const user = await User.findOne(
-    lookupByEmail ? buildEmailQuery(normalizeEmail(trimmedIdentifier)) : { username: trimmedIdentifier }
-  ).populate('devices');
+  const user = lookupByEmail
+    ? await AccountsRepo.findByEmail(normalizeEmail(trimmedIdentifier))
+    : await AccountsRepo.findByUsername(trimmedIdentifier);
 
   if(!user){
     return maskUserNotFound ? 'invalidCredentials' : 'accountNotExists';
   }
 
   const username = user.username;
-  const accountId = user._id.toString();
+  // MongoDB-style id, on either database: sessions and comments name accounts by it (POSTGRES.md, "Ids the API shows")
+  const accountId = user.legacyId;
 
-
-  // get user with its devices array populated by device object (instead of device id)
   // compare received password with user's password in db
   let passwordIsValid = bcrypt.compareSync(
     password,      // received password
@@ -188,12 +204,12 @@ exports.loginAccountRole = async (identifier, password, role, options = {}) => {
   let updatedPolicyVersion = currentPolicyVersion;
   if (meetsCurrentPolicy && currentPolicyVersion !== CURRENT_PASSWORD_POLICY_VERSION) {
     updatedPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
-    user.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
-    user.passwordUpdatedAt = new Date();
-    await user.save();
+    await AccountsRepo.update(user.id, {
+      passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
+      passwordUpdatedAt: new Date(),
+    });
   } else if (!user.passwordPolicyVersion) {
-    user.passwordPolicyVersion = LEGACY_PASSWORD_POLICY_VERSION;
-    await user.save();
+    await AccountsRepo.update(user.id, { passwordPolicyVersion: LEGACY_PASSWORD_POLICY_VERSION });
   }
 
   const passwordStatus = (updatedPolicyVersion >= CURRENT_PASSWORD_POLICY_VERSION && meetsCurrentPolicy)
@@ -278,42 +294,30 @@ exports.verifySensorToken = async (token, brgyUsername) => {
           return resolve({ str: 'tokenRoleInvalid' });
         }
 
-        // Get streamIds (will be sent as response) and ObjectId (used to update brgy table) of sensor
-        const sensor = await User.findOne({ username: decodedToken.username }).populate('devices');
+        // Get streamIds (will be sent as response) and ids (used to update brgy table) of sensor
+        const sensor = await AccountsRepo.findByUsername(decodedToken.username);
         if (!sensor) {
           return resolve({ str: 'tokenRoleInvalid' });
         }
 
-        const sensorDevices = Array.isArray(sensor.devices) ? sensor.devices : [];
+        const sensorDevices = await DevicesRepo.listAccountDevices(sensor.id);
         const sensorStreamIds = sensorDevices.map((device) => device.streamId);
-        const sensorDeviceIds = sensorDevices.map((device) => device._id);
+        const sensorDeviceIds = sensorDevices.map((device) => device.id);
 
         // Update device list of brgy to include this sensor (so that UP server, which can
         // be seen as also a brgy, will allow this brgy to forward sensor's data)
         // NOTE: That this would look like the new devices are also under/belongs-to the brgy account
-        const brgy = await User.findOne({ username: brgyUsername });  // brgy account, username is on req.username due to verifyTokenRole middleware
+        const brgy = await AccountsRepo.findByUsername(brgyUsername);  // brgy account, username is on req.username due to verifyTokenRole middleware
         if (!brgy) {
           console.log('Brgy account is valid but not found in DB!!');
           return resolve({ str: 'brgyNotFound' });
         }
 
-        if (!Array.isArray(brgy.devices)) {
-          brgy.devices = [];
-        }
-
         // Add sensorDeviceIds to brgy table
-        let brgyAccountUpdated = false;
-        for (let i = 0; i < sensorDeviceIds.length; i++) {
-          const deviceId = sensorDeviceIds[i];
-          if (brgy.devices.some((existingId) => String(existingId) === String(deviceId))) {
-            continue;
-          }
-          brgy.devices.push(deviceId);
-          brgyAccountUpdated = true;
-        }
-
-        if (brgyAccountUpdated === true) {
-          await brgy.save();
+        const brgyDeviceIds = new Set(await DevicesRepo.listAccountDeviceIds(brgy.id));
+        const newDeviceIds = sensorDeviceIds.filter((deviceId) => !brgyDeviceIds.has(deviceId));
+        if (newDeviceIds.length > 0) {
+          await DevicesRepo.addToAccount(brgy.id, newDeviceIds);
         }
 
         return resolve({
@@ -345,23 +349,21 @@ exports.verifySensorToken = async (token, brgyUsername) => {
   *     "success":          on removal
   ***************************************************************************/
 exports.removeDeviceFromBrgyByStreamId = async (brgyUsername, streamId) => {
-  const brgy = await User.findOne({ username: brgyUsername, roles: 'brgy' });
+  const brgy = await AccountsRepo.findByUsername(brgyUsername, { role: 'brgy' });
   if (!brgy) {
     return { str: 'brgyNotFound' };
   }
 
-  const device = await Device.findOne({ streamId });
+  const device = await DevicesRepo.findByStreamId(streamId);
   if (!device) {
     return { str: 'deviceNotFound' };
   }
 
-  const hasDevice = brgy.devices.some((devId) => devId.toString() === device.id);
-  if (!hasDevice) {
+  if (!(await DevicesRepo.accountHasDevice(brgy.id, device.id))) {
     return { str: 'deviceNotLinked' };
   }
 
-  brgy.devices.pull(device._id);
-  await brgy.save();
+  await DevicesRepo.removeFromAccount(brgy.id, device.id);
   return { str: 'success' };
 };
 
@@ -369,13 +371,9 @@ exports.removeDeviceFromBrgyByStreamId = async (brgyUsername, streamId) => {
  * Returns brgy accounts that reference a device by streamId.
  */
 exports.getBrgyAccountsWithDevice = async (streamId) => {
-  const device = await Device.findOne({ streamId });
+  const device = await DevicesRepo.findByStreamId(streamId);
   if (!device) return [];
-  const matches = await User.find({
-    roles: 'brgy',
-    devices: device._id,
-  }, 'username');
-  return matches || [];
+  return DevicesRepo.findAccountsListing(device.id, { role: 'brgy' });
 };
 
 /***************************************************************************
@@ -396,33 +394,31 @@ exports.getBrgyAccountsWithDevice = async (streamId) => {
   *     
  ***************************************************************************/
 exports.removeSensorDeviceFromBrgy = async (sensorUsername, brgyUsername, streamId) => {
-  const sensor = await User.findOne({ username: sensorUsername }).populate('devices');
+  const sensor = await AccountsRepo.findByUsername(sensorUsername);
   if (!sensor) {
     return { str: 'sensorNotFound' };
   }
 
-  const brgy = await User.findOne({ username: brgyUsername, roles: 'brgy' });
+  const brgy = await AccountsRepo.findByUsername(brgyUsername, { role: 'brgy' });
   if (!brgy) {
     return { str: 'brgyNotFound' };
   }
 
-  const device = await Device.findOne({ streamId });
+  const device = await DevicesRepo.findByStreamId(streamId);
   if (!device) {
     return { str: 'deviceNotFound' };
   }
 
-  const sensorOwnsDevice = sensor.devices.some((dev) => dev.id === device.id);
-  if (!sensorOwnsDevice) {
+  const sensorDevices = await DevicesRepo.listAccountDevices(sensor.id);
+  if (!sensorDevices.some((dev) => dev.id === device.id)) {
     return { str: 'deviceNotOwnedBySensor' };
   }
 
-  const alreadyLinkedToBrgy = brgy.devices.some((devId) => devId.toString() === device.id);
-  if (!alreadyLinkedToBrgy) {
+  if (!(await DevicesRepo.accountHasDevice(brgy.id, device.id))) {
     return { str: 'deviceNotLinkedToBrgy' };
   }
 
-  brgy.devices.pull(device._id);
-  await brgy.save();
+  await DevicesRepo.removeFromAccount(brgy.id, device.id);
 
   return { str: 'success' };
 };
@@ -442,7 +438,7 @@ exports.removeSensorDeviceFromBrgy = async (sensorUsername, brgyUsername, stream
   *     
  ***************************************************************************/
 exports.getAccountProfile = async (username) => {
-    const citizen = await User.findOne({ 'username': username });
+    const citizen = await AccountsRepo.findByUsername(username);
 
     if (!citizen) { // User is not found in database
       return {str: 'accountNotExists'};
@@ -472,7 +468,7 @@ exports.getAccountProfile = async (username) => {
  * @returns {Promise<Object>} outcome descriptor
  */
 exports.updateAlertPreferences = async (username, { rshakeEmailEnabled }) => {
-  const account = await User.findOne({ username });
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'accountNotExists' };
   }
@@ -489,18 +485,19 @@ exports.updateAlertPreferences = async (username, { rshakeEmailEnabled }) => {
     };
   }
 
-  account.alertPreferences = {
-    ...(account.alertPreferences || {}),
-    rshakeEmailEnabled: nextValue,
-    updatedAt: new Date(),
-  };
-  await account.save();
+  const updated = await AccountsRepo.update(account.id, {
+    alertPreferences: {
+      ...(account.alertPreferences || {}),
+      rshakeEmailEnabled: nextValue,
+      updatedAt: new Date(),
+    },
+  });
 
   return {
     str: 'success',
     alertPreferences: {
-      rshakeEmailEnabled: Boolean(account.alertPreferences?.rshakeEmailEnabled),
-      updatedAt: account.alertPreferences?.updatedAt || null,
+      rshakeEmailEnabled: Boolean(updated.alertPreferences?.rshakeEmailEnabled),
+      updatedAt: updated.alertPreferences?.updatedAt || null,
     },
   };
 };
@@ -515,7 +512,7 @@ exports.updateAlertPreferences = async (username, { rshakeEmailEnabled }) => {
  * @returns {Promise<Object>} outcome descriptor
  */
 exports.updateAccountProfile = async (username, { email, newPassword, currentPassword }) => {
-  const account = await User.findOne({ username });
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'accountNotExists' };
   }
@@ -532,12 +529,13 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
     return { str: 'wrongPassword' };
   }
 
+  const changes = {};
   if (hasEmailChange) {
-    const existing = await User.findOne(buildEmailQuery(normalizedEmail));
+    const existing = await AccountsRepo.findByEmail(normalizedEmail);
     if (existing && existing.username !== username) {
       return { str: 'emailExists' };
     }
-    account.email = normalizedEmail;
+    changes.email = normalizedEmail;
   }
 
   if (hasPasswordChange) {
@@ -545,12 +543,19 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
     if (validation.error) {
       return { str: 'invalidPassword', message: validation.error.message };
     }
-    account.password = bcrypt.hashSync(newPassword, 10);
-    account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
-    account.passwordUpdatedAt = new Date();
+    changes.password = bcrypt.hashSync(newPassword, 10);
+    changes.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
+    changes.passwordUpdatedAt = new Date();
   }
 
-  await account.save();
+  let updated;
+  try {
+    updated = await AccountsRepo.update(account.id, changes);
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
+    throw err;
+  }
 
   return {
     str: 'success',
@@ -559,10 +564,10 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
       password: hasPasswordChange,
     },
     passwordStatus:
-      (account.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
+      (updated.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
         ? 'current'
         : 'legacy',
-    passwordPolicyVersion: account.passwordPolicyVersion,
+    passwordPolicyVersion: updated.passwordPolicyVersion,
   };
 };
 
@@ -575,7 +580,7 @@ exports.updateAccountProfile = async (username, { email, newPassword, currentPas
  * @returns {Promise<Object>} outcome descriptor
  */
 exports.updateAccountEmail = async (username, { email, currentPassword }) => {
-  const account = await User.findOne({ username });
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'accountNotExists' };
   }
@@ -589,13 +594,18 @@ exports.updateAccountEmail = async (username, { email, currentPassword }) => {
     return { str: 'wrongPassword' };
   }
 
-  const existing = await User.findOne(buildEmailQuery(normalizedEmail));
+  const existing = await AccountsRepo.findByEmail(normalizedEmail);
   if (existing && existing.username !== username) {
     return { str: 'emailExists' };
   }
 
-  account.email = normalizedEmail;
-  await account.save();
+  try {
+    await AccountsRepo.update(account.id, { email: normalizedEmail });
+  } catch (err) {
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
+    throw err;
+  }
 
   return {
     str: 'success',
@@ -612,7 +622,7 @@ exports.updateAccountEmail = async (username, { email, currentPassword }) => {
  * @returns {Promise<Object>} outcome descriptor
  */
 exports.updateAccountPassword = async (username, { currentPassword, newPassword }) => {
-  const account = await User.findOne({ username });
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'accountNotExists' };
   }
@@ -630,20 +640,20 @@ exports.updateAccountPassword = async (username, { currentPassword, newPassword 
     return { str: 'invalidPassword', message: validation.error.message };
   }
 
-  account.password = bcrypt.hashSync(newPassword, 10);
-  account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
-  account.passwordUpdatedAt = new Date();
-
-  await account.save();
+  const updated = await AccountsRepo.update(account.id, {
+    password: bcrypt.hashSync(newPassword, 10),
+    passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
+    passwordUpdatedAt: new Date(),
+  });
 
   return {
     str: 'success',
     updated: { password: true },
     passwordStatus:
-      (account.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
+      (updated.passwordPolicyVersion || LEGACY_PASSWORD_POLICY_VERSION) >= CURRENT_PASSWORD_POLICY_VERSION
         ? 'current'
         : 'legacy',
-    passwordPolicyVersion: account.passwordPolicyVersion,
+    passwordPolicyVersion: updated.passwordPolicyVersion,
   };
 };
 
@@ -656,7 +666,7 @@ exports.updateAccountPassword = async (username, { currentPassword, newPassword 
  * @returns {Promise<Object>} outcome descriptor
  */
 exports.updateAccountUsername = async (currentUsername, { newUsername, currentPassword }) => {
-  const account = await User.findOne({ username: currentUsername });
+  const account = await AccountsRepo.findByUsername(currentUsername);
   if (!account) {
     return { str: 'accountNotExists' };
   }
@@ -675,72 +685,27 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
     return { str: 'wrongPassword' };
   }
 
-  const existing = await User.findOne({ username: nextUsername });
+  const existing = await AccountsRepo.findByUsername(nextUsername);
   if (existing && existing.id !== account.id) {
     return { str: 'usernameExists' };
   }
 
-  const deviceIds = (account.devices || []).filter(Boolean).map((d) => d._id || d);
+  const deviceIds = await DevicesRepo.listAccountDeviceIds(account.id);
   const newDescription = `${nextUsername}'s device`;
 
-  const applyUpdates = async (session = null) => {
-    const accountToUpdate = session
-      ? await User.findById(account._id).session(session)
-      : await User.findById(account._id);
-    if (!accountToUpdate) {
-      throw new Error('accountMissingDuringUpdate');
-    }
-    accountToUpdate.username = nextUsername;
-    if (session) {
-      await accountToUpdate.save({ session });
-    } else {
-      await accountToUpdate.save();
-    }
-
-    if (deviceIds.length > 0) {
-      const filter = { _id: { $in: deviceIds } };
-      const update = { $set: { description: newDescription } };
-      const updateResult = session
-        ? await Device.updateMany(filter, update, { session })
-        : await Device.updateMany(filter, update);
-      return updateResult?.modifiedCount || updateResult?.nModified || 0;
-    }
-    return 0;
-  };
-
   let updatedDevices = 0;
-  let usedTransaction = false;
-  let session = null;
-
   try {
-    session = await User.startSession();
-    await session.withTransaction(async () => {
-      updatedDevices = await applyUpdates(session);
+    updatedDevices = await withTransaction(async (tx) => {
+      const renamed = await AccountsRepo.update(account.id, { username: nextUsername }, { tx });
+      if (!renamed) {
+        throw new Error('accountMissingDuringUpdate');
+      }
+      return DevicesRepo.setDescription(deviceIds, newDescription, { tx });
     });
-    usedTransaction = true;
   } catch (err) {
-    const message = String(err?.message || '').toLowerCase();
-    const transactionUnsupported =
-      message.includes('replica set') || message.includes('transactions are not supported');
-    if (!transactionUnsupported) {
-      throw err;
-    }
-  } finally {
-    if (session) {
-      await session.endSession();
-    }
-  }
-
-  if (!usedTransaction) {
-    try {
-      updatedDevices = await applyUpdates(null);
-    } catch (err) {
-      await User.updateOne(
-        { _id: account._id },
-        { $set: { username: currentUsername } }
-      ).catch(() => {});
-      throw err;
-    }
+    const duplicate = duplicateKeyResult(err);
+    if (duplicate) return { str: duplicate };
+    throw err;
   }
 
   return {
@@ -761,17 +726,17 @@ exports.updateAccountUsername = async (currentUsername, { newUsername, currentPa
   *     "success":          when account is removed
   ***************************************************************************/
 exports.deleteAccount = async (username) => {
-  const account = await User.findOne({ username });
+  const account = await AccountsRepo.findByUsername(username);
   if (!account) {
     return { str: 'accountNotExists' };
   }
 
-  const deviceCount = (account.devices || []).filter(Boolean).length;
+  const deviceCount = (await DevicesRepo.listAccountDeviceIds(account.id)).length;
   if (deviceCount > 0) {
     return { str: 'hasDevices', deviceCount };
   }
 
-  await User.deleteOne({ _id: account._id });
+  await AccountsRepo.remove(account.id);
   return { str: 'success' };
 };
 
@@ -790,12 +755,8 @@ exports.deleteAccount = async (username) => {
   *     
  ***************************************************************************/
 exports.getActiveRingserverHosts = async () => {
-  const ringserverHosts = await User.find({
-    'roles': 'brgy',   // query all accounts with `brgy` role
-    'isApproved': true, // get only accounts that are approved
-  }, 
-    'username ringserverUrl ringserverPort -_id'  // output the `username`, `ringserverUrl`, and `ringserverPort` but w/o id
-  );
+  // approved brgy accounts: `username`, `ringserverUrl` and `ringserverPort`
+  const ringserverHosts = await AccountsRepo.listApprovedRingserverHosts();
 
   if (!ringserverHosts) { // No registered brgy in DB
     return {str: 'accountNotExists'};
@@ -820,7 +781,7 @@ exports.getActiveRingserverHosts = async () => {
  ***************************************************************************/
 exports.createPasswordResetToken = async (email) => {
   const normalizedEmail = normalizeEmail(email);
-  const user = await User.findOne(buildEmailQuery(normalizedEmail));
+  const user = await AccountsRepo.findByEmail(normalizedEmail);
   if (!user) {
     return { str: 'queued', issued: false };
   }
@@ -839,10 +800,11 @@ exports.createPasswordResetToken = async (email) => {
     { expiresIn: PASSWORD_RESET_TOKEN_EXPIRY }
   );
 
-  user.passwordResetTokenId = hashTokenId(tokenId);
-  user.passwordResetIssuedAt = new Date();
-  user.passwordResetUsedAt = null;
-  await user.save();
+  await AccountsRepo.update(user.id, {
+    passwordResetTokenId: hashTokenId(tokenId),
+    passwordResetIssuedAt: new Date(),
+    passwordResetUsedAt: null,
+  });
 
   const resetUrl = buildResetLink(token);
   if (resetUrl) {
@@ -892,10 +854,7 @@ exports.applyPasswordReset = async (token, newPassword) => {
 
   try {
     const decoded = jwt.verify(token, secret);
-    const account = await User.findOne({
-      username: decoded.username,
-      ...buildEmailQuery(decoded.email),
-    });
+    const account = await AccountsRepo.findByUsernameAndEmail(decoded.username, normalizeEmail(decoded.email));
     if (!account) {
       return { str: 'accountNotExists' };
     }
@@ -922,13 +881,14 @@ exports.applyPasswordReset = async (token, newPassword) => {
       return { str: 'invalidPassword', message: validation.error.message };
     }
 
-    account.password = bcrypt.hashSync(newPassword, 10);
-    account.passwordPolicyVersion = CURRENT_PASSWORD_POLICY_VERSION;
-    account.passwordUpdatedAt = new Date();
-    account.passwordResetTokenId = undefined;
-    account.passwordResetIssuedAt = null;
-    account.passwordResetUsedAt = new Date();
-    await account.save();
+    await AccountsRepo.update(account.id, {
+      password: bcrypt.hashSync(newPassword, 10),
+      passwordPolicyVersion: CURRENT_PASSWORD_POLICY_VERSION,
+      passwordUpdatedAt: new Date(),
+      passwordResetTokenId: undefined,
+      passwordResetIssuedAt: null,
+      passwordResetUsedAt: new Date(),
+    });
 
     return { str: 'success', username: account.username };
   } catch (err) {

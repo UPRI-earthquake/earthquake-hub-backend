@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/accounts/profile",
+    "body": {
+      "email": "Golden.New@Example.org",
+      "newPassword": "Another-Golden-Pass-2026!",
+      "currentPassword": "Golden-Password-2026!"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Account updated.",
+      "updated": {
+        "email": true,
+        "password": true
+      },
+      "passwordStatus": "current",
+      "passwordPolicyVersion": 2
+    }
+  }
+}

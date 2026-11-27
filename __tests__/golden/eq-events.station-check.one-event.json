@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "CALL",
+    "path": "EQEventsService.updateOnlineStationsForEvent",
+    "body": [
+      "upri2026jabc"
+    ]
+  },
+  "response": {
+    "status": null,
+    "headers": {},
+    "body": {
+      "matchedCount": 1,
+      "modifiedCount": 1,
+      "usableDevicesCount": 3,
+      "onlineStations": [
+        "R3B2D"
+      ],
+      "recordingStations": [
+        "R3B2D"
+      ],
+      "candidateStations": [
+        "R3B2D",
+        "RE722"
+      ],
+      "recordingAvailabilityStatus": "partial",
+      "recordingAvailabilityAttempts": 1,
+      "retryScheduled": true
+    }
+  }
+}

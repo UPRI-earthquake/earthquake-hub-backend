@@ -1,0 +1,53 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/comments?eventId=69000000000000000000e301&limit=3"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Comments retrieved successfully",
+      "payload": [
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000006",
+          "username": "golden_citizen",
+          "content": "Windows rattled in Marikina.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-04T01:00:00.000Z",
+          "updatedAt": "2026-05-04T01:00:00.000Z"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000003",
+          "username": "Anonymous",
+          "content": "Plates fell off the shelf.",
+          "helpfulCount": 0,
+          "viewerHasMarkedHelpful": false,
+          "createdAt": "2026-05-03T01:00:00.000Z",
+          "updatedAt": "2026-05-03T01:00:00.000Z"
+        },
+        {
+          "commentId": "c0000000-0000-4000-8000-000000000002",
+          "username": "Anonymous",
+          "content": "Felt it on the 5th floor.",
+          "imageURL": "/uploads/seeded-report.jpg",
+          "helpfulCount": 2,
+          "viewerHasMarkedHelpful": true,
+          "createdAt": "2026-05-03T01:00:00.000Z",
+          "updatedAt": "2026-05-03T01:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "total": 4,
+        "limit": 3,
+        "offset": 0,
+        "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTA1LTAzVDAxOjAwOjAwLjAwMFoiLCJjb21tZW50SWQiOiJjMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDIifQ",
+        "hasMore": true
+      }
+    }
+  }
+}

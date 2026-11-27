@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/authenticate",
+    "body": {
+      "username": "golden_citizen",
+      "password": "Golden-Password-2026!",
+      "role": "sensor"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 22,
+      "message": "Authentication successful",
+      "username": "golden_citizen",
+      "accessToken": {
+        "jwt": {
+          "username": "golden_citizen",
+          "role": "sensor",
+          "iat": "<now>",
+          "exp": "<now + 2592000s>"
+        }
+      },
+      "refreshToken": {
+        "jwt": {
+          "username": "golden_citizen",
+          "role": "sensor",
+          "iat": "<now>",
+          "exp": "<now + 7776000s>"
+        }
+      },
+      "passwordStatus": "current",
+      "passwordPolicyVersion": 2,
+      "alertPreferences": {
+        "rshakeEmailEnabled": true
+      }
+    }
+  }
+}

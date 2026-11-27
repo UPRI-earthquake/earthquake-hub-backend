@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/eq-events/restricted/scrape-additional-information",
+    "headers": {
+      "Cookie": "<admin session cookie>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 0,
+      "message": "Added additional information to events: 4 events modified, 1 completed, 1 partial, 1 no-match, 1 skipped, 0 exhausted, 1 source failures, out of 4 total processed.",
+      "payload": {
+        "modifiedCount": 4,
+        "completedCount": 1,
+        "partialCount": 1,
+        "noMatchCount": 1,
+        "skippedCount": 1,
+        "exhaustedCount": 0,
+        "failedSourceCount": 1,
+        "totalProcessed": 4,
+        "batchSize": 25
+      }
+    }
+  }
+}

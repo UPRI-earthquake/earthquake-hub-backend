@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/accounts/authenticate",
+    "body": {
+      "username": "golden_citizen",
+      "password": "Golden-Password-2026!",
+      "role": "citizen"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "set-cookie": [
+        "accessToken=<jwt {\"accountId\":\"69000000000000000000a001\",\"username\":\"golden_citizen\",\"role\":\"citizen\",\"iat\":\"<now>\",\"exp\":\"<now + 43200s>\"}>; Max-Age=43200; Path=/; Expires=<now + Max-Age>; HttpOnly; SameSite=Lax",
+        "refreshToken=<jwt {\"accountId\":\"69000000000000000000a001\",\"username\":\"golden_citizen\",\"role\":\"citizen\",\"iat\":\"<now>\",\"exp\":\"<now + 2592000s>\"}>; Max-Age=2592000; Path=/; Expires=<now + Max-Age>; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": 21,
+      "message": "Authentication successful",
+      "username": "golden_citizen",
+      "passwordStatus": "current",
+      "passwordPolicyVersion": 2,
+      "alertPreferences": {
+        "rshakeEmailEnabled": true
+      }
+    }
+  }
+}

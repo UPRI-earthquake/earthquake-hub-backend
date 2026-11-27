@@ -11,7 +11,13 @@ services:
       # NOTE: includes everything, including all those in .dockerignore, specifically .env
       - ./:/app
     depends_on:
-      - "mongodb"
+      postgres:
+        condition: service_healthy
+    environment:
+      # Inside Docker, PostgreSQL is reached by its service name. These override PG_HOST/PG_PORT
+      # from .env, which point to localhost so migrations and DB clients work from your machine.
+      PG_HOST: postgres
+      PG_PORT: 5432
     expose:
       - "5000"
     ports:
@@ -24,24 +30,40 @@ services:
     # set command to only install node_modules if not present, then startDev
     command: npm run start:dev
 
-  mongodb:
-    container_name: mongodb
-    image: "mongo:5.0"
+  postgres:
+    container_name: earthquake-hub-postgres
+    image: "postgis/postgis:18-3.6"
+    environment:
+      # Read from .env. The user and database are only created on the first start of an empty volume.
+      POSTGRES_DB: ${PG_DATABASE:?set PG_DATABASE in .env}
+      POSTGRES_USER: ${PG_USER:?set PG_USER in .env}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set PG_PASSWORD in .env}
     volumes:
-      - earthquake-hub-mongodb-data:/data/db
+      # PostgreSQL 18+ images keep their data under /var/lib/postgresql/<major>/docker
+      - earthquake-hub-postgres-data:/var/lib/postgresql
     expose:
-      - "27017"
+      - "5432"
     ports:
-      - "27017:27017"
+      # loopback only; set PG_PORT=5433 in .env if a local PostgreSQL already uses 5432
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
     networks:
       app-network:
-        ipv4_address: 172.22.0.4
-    command: --quiet # reduce logs
+        ipv4_address: 172.22.0.5
+    # The image's init script creates postgis plus extras (topology, tiger geocoder) on first start.
+    # It's removed so the Knex migrations alone decide which extensions exist, and rollback can drop them.
+    entrypoint: >
+      sh -c "rm -f /docker-entrypoint-initdb.d/10_postgis.sh && exec docker-entrypoint.sh postgres"
+    healthcheck:
+      # TCP check: the temporary server used during first-start init listens on the socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
-  earthquake-hub-mongodb-data:
-    external: true # same volume used by other containers
-    name: earthquake-hub-mongodb-data
+  earthquake-hub-postgres-data:
+    name: earthquake-hub-postgres-data
 
 networks:
   app-network:

@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/device/link",
+    "body": {
+      "username": "golden_citizen",
+      "password": "Golden-Password-2026!",
+      "role": "sensor",
+      "elevation": "55",
+      "latitude": "14.64",
+      "longitude": "121.06",
+      "macAddress": "B8:27:EB:00:00:01",
+      "streamId": "AM_R0001_.*/MSEED"
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 100,
+      "message": "Device is already linked to another account",
+      "errorCode": "DEVICE_LINKED_TO_OTHER_ACCOUNT"
+    }
+  }
+}

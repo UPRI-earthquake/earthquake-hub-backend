@@ -2,7 +2,8 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
-const Account = require('../models/account.model');
+const AccountsRepo = require('../repositories/accounts.repo');
+const DevicesRepo = require('../repositories/devices.repo');
 const AccountsService = require('./accounts.service');
 const TunnelEnrollmentService = require('./tunnelEnrollment.service');
 
@@ -225,9 +226,7 @@ function buildRelaySshArgs({ cfg, remotePort, action, payloadB64 }) {
 }
 
 async function resolveOwnedDeviceSet(username) {
-  const account = await Account.findOne({ username })
-    .select('devices releasedDevices')
-    .populate('devices', 'network station');
+  const account = await AccountsRepo.findByUsername(username);
 
   if (!account) {
     throw new RemoteDeviceActionError(
@@ -238,11 +237,11 @@ async function resolveOwnedDeviceSet(username) {
   }
 
   const owned = new Set();
-  (account.devices || []).filter(Boolean).forEach((device) => {
+  (await DevicesRepo.listAccountDevices(account.id)).forEach((device) => {
     const id = composeDeviceId(device.network, device.station);
     if (id) owned.add(id);
   });
-  (account.releasedDevices || []).filter(Boolean).forEach((entry) => {
+  (await DevicesRepo.listReleases(account.id)).forEach((entry) => {
     const id = composeDeviceId(entry.network, entry.station);
     if (id) owned.add(id);
   });

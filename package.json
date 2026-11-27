@@ -10,7 +10,15 @@
     "start:dev:help": "echo 'Runs nodemon on index.js, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
     "test": "jest --setupFiles dotenv/config",
     "test:help": "echo 'Runs tests against Jest, and expects process.env to come from an available .env file. NOTE: runtime-exported env-vars may overwrite process.env'",
-    "overlays:fetch": "node scripts/fetch-overlays.js"
+    "test:integration": "jest --config jest.integration.config.js --setupFiles dotenv/config",
+    "test:integration:help": "echo 'Runs *.integration.test.js against throwaway Testcontainers databases. Requires Docker on the machine running it.'",
+    "overlays:fetch": "node scripts/fetch-overlays.js",
+    "db:pg:migrate": "knex --knexfile src/db/knexfile.js migrate:latest",
+    "db:pg:rollback": "knex --knexfile src/db/knexfile.js migrate:rollback",
+    "db:pg:status": "knex --knexfile src/db/knexfile.js migrate:status",
+    "db:pg:make": "knex --knexfile src/db/knexfile.js migrate:make",
+    "db:pg:seed": "node scripts/seed-dev-data.js",
+    "db:pg:dbml": "node scripts/schema-to-dbml.js"
   },
   "repository": {
     "type": "git",
@@ -28,6 +36,7 @@
     "app-root-path": "^3.1.0",
     "axios": "^1.0.0",
     "bcryptjs": "^2.4.3",
+    "bson": "^7.3.4",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -35,28 +44,35 @@
     "express": "^4.17.1",
     "joi": "^17.9.1",
     "jsonwebtoken": "^9.0.0",
-    "mongoose": "^7.0.0",
+    "knex": "^3.3.0",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.3",
+    "pg": "^8.23.1",
     "puppeteer-core": "^24.40.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
-    "web-push": "^3.4.5",
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.1",
     "dotenv": "^16.0.0",
     "jest": "^29.5.0",
     "nodemon": "^3.1.14",
     "redis": "^4.6.14",
     "supertest": "^6.3.3",
-    "testcontainers": "^12.0.4"
+    "testcontainers": "^12.2.1"
   },
   "jest": {
     "testEnvironment": "node",
     "coveragePathIgnorePatterns": [
       "/node_modules/"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/__tests__/fixtures/",
+      "\\.integration\\.test\\.js$",
+      "<rootDir>/e2e/"
     ]
   }
 }

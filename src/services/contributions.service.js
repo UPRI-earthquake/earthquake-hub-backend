@@ -1,4 +1,4 @@
-const ContributionEvent = require('../models/contributionEvent.model');
+const ContributionsRepo = require('../repositories/contributions.repo');
 
 const CONTRIBUTION_ACTION = Object.freeze({
   REPORT_POSTED: 'report_posted',
@@ -41,6 +41,7 @@ function buildContributionDedupeKey({
   ].join(':');
 }
 
+// { tx }: the transaction to write in (repositories/communityTransactions.js)
 async function recordContribution({
   accountId,
   actionType,
@@ -51,7 +52,7 @@ async function recordContribution({
   points,
   reason,
   metadata,
-}) {
+}, { tx } = {}) {
   if (!accountId || !actionType) return null;
 
   const dedupeKey = buildContributionDedupeKey({
@@ -76,18 +77,20 @@ async function recordContribution({
     metadata: metadata || undefined,
   };
 
-  return ContributionEvent.findOneAndUpdate(
-    { dedupeKey },
-    { $setOnInsert: contribution },
-    {
-      new: true,
-      setDefaultsOnInsert: true,
-      upsert: true,
-    },
-  );
+  // Once per dedupeKey: a repeated action returns the entry already stored
+  return ContributionsRepo.recordOnce(contribution, { tx });
 }
 
-async function recordReportPosted({ accountId, comment, hasImage }) {
+// Writes one after the other: a transaction runs one statement at a time
+async function recordAll(entries, options) {
+  const results = [];
+  for (const entry of entries) {
+    results.push(await recordContribution(entry, options));
+  }
+  return results;
+}
+
+async function recordReportPosted({ accountId, comment, hasImage }, options = {}) {
   if (!accountId || !comment?.commentId) return [];
 
   const basePayload = {
@@ -98,24 +101,22 @@ async function recordReportPosted({ accountId, comment, hasImage }) {
     eventPublicID: comment.eventPublicID,
   };
 
-  const writes = [
-    recordContribution({
-      ...basePayload,
-      actionType: CONTRIBUTION_ACTION.REPORT_POSTED,
-    }),
-  ];
+  const entries = [{
+    ...basePayload,
+    actionType: CONTRIBUTION_ACTION.REPORT_POSTED,
+  }];
 
   if (hasImage) {
-    writes.push(recordContribution({
+    entries.push({
       ...basePayload,
       actionType: CONTRIBUTION_ACTION.IMAGE_REPORT_POSTED,
-    }));
+    });
   }
 
-  return Promise.all(writes);
+  return recordAll(entries, options);
 }
 
-async function recordHelpfulMarked({ actorAccountId, comment }) {
+async function recordHelpfulMarked({ actorAccountId, comment }, options = {}) {
   if (!actorAccountId || !comment?.commentId) return [];
 
   const authorAccountId = comment.accountId;
@@ -129,26 +130,24 @@ async function recordHelpfulMarked({ actorAccountId, comment }) {
     eventPublicID: comment.eventPublicID,
   };
 
-  const writes = [
-    recordContribution({
-      ...basePayload,
-      accountId: actorAccountId,
-      actionType: CONTRIBUTION_ACTION.REPORT_MARKED_HELPFUL,
-    }),
-  ];
+  const entries = [{
+    ...basePayload,
+    accountId: actorAccountId,
+    actionType: CONTRIBUTION_ACTION.REPORT_MARKED_HELPFUL,
+  }];
 
   if (authorAccountId) {
-    writes.push(recordContribution({
+    entries.push({
       ...basePayload,
       accountId: authorAccountId,
       actionType: CONTRIBUTION_ACTION.REPORT_RECEIVED_HELPFUL,
-    }));
+    });
   }
 
-  return Promise.all(writes);
+  return recordAll(entries, options);
 }
 
-async function recordIssueSubmitted({ accountId, comment, reason }) {
+async function recordIssueSubmitted({ accountId, comment, reason }, options = {}) {
   if (!accountId || !comment?.commentId) return null;
 
   return recordContribution({
@@ -159,7 +158,7 @@ async function recordIssueSubmitted({ accountId, comment, reason }) {
     eventId: comment.eventId,
     eventPublicID: comment.eventPublicID,
     reason,
-  });
+  }, options);
 }
 
 module.exports = {

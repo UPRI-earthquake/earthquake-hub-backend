@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "PATCH",
+    "path": "/comments/c0000000-0000-4000-8000-000000000001/status",
+    "body": {
+      "status": "rejected"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": 403,
+      "message": "Token in cookie missing"
+    }
+  }
+}
