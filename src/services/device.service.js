@@ -313,9 +313,19 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     return {str:'alreadyLinked', payload: payload};
   }
 
-  // Takes back an existing, unlinked device record for this account, refreshing its details
-  const relinkUnlinked = async (existing) => {
+  // Takes back an existing, unlinked device record for this account, refreshing its details. The
+  // checks made before this ran outside the transaction, so two links can pass them at the same time:
+  // the row is locked and `isClaimable` checked again on it, and only the first link takes it.
+  const relinkUnlinked = async (existing, isClaimable) => {
     const relinked = await writeLinkTogether(async (tx) => {
+      const locked = await DevicesRepo.lockById(existing.id, { tx });
+      if (!locked) return { taken: true };
+      if (!isClaimable(locked)) {
+        // This account's own request, sent twice, may have just taken it back
+        const ownedNow = locked.ownerAccountId === currentAccount.id && locked.macAddress === macAddress;
+        return ownedNow ? { alreadyLinked: true, device: locked } : { taken: true };
+      }
+
       const updated = await DevicesRepo.update(existing.id, {
         description: `${username}'s device`,
         network: (network || existing.network || '').toUpperCase(),
@@ -331,23 +341,24 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
       // Backfill account association if legacy unlinking removed it.
       await DevicesRepo.addToAccount(currentAccount.id, [updated.id], { tx });
       await DevicesRepo.clearReleases({ deviceId: updated.id, streamId, macAddress }, { tx });
-      return updated;
+      return { device: updated };
     });
-    if (!relinked) {
+    if (!relinked || relinked.taken) {
       return { str: 'alreadyLinkedToSomeone' };
     }
 
+    const { device } = relinked;
     const payload = {
       deviceInfo: {
-        network: relinked.network,
-        station: relinked.station,
-        longitude: relinked.longitude,
-        latitude: relinked.latitude,
-        elevation: relinked.elevation,
-        streamId: relinked.streamId
+        network: device.network,
+        station: device.station,
+        longitude: device.longitude,
+        latitude: device.latitude,
+        elevation: device.elevation,
+        streamId: device.streamId
       }
     };
-    return {str:'success', payload};
+    return { str: relinked.alreadyLinked ? 'alreadyLinked' : 'success', payload };
   };
 
   // check if device's mac address already exists in the database
@@ -361,7 +372,10 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
     }
 
     if (device.activity === 'unlinked') {
-      return relinkUnlinked(device);
+      // Still this MAC's record, still unlinked, and owned by no one else
+      return relinkUnlinked(device, (locked) => locked.macAddress === macAddress
+        && locked.activity === 'unlinked'
+        && (locked.ownerAccountId === null || locked.ownerAccountId === currentAccount.id));
     }
 
     return {str:'alreadyLinkedToSomeone'};
@@ -380,7 +394,8 @@ exports.linkDevice = async(username, elevation, longitude, latitude, macAddress,
   // station check above, so the station code really belongs to this MAC.
   const cleared = await DevicesRepo.findByNetworkStation((network || '').toUpperCase(), (station || '').toUpperCase());
   if (cleared && !cleared.macAddress && !cleared.streamId) {
-    return relinkUnlinked(cleared);
+    // Still cleared: no other link has taken it back meanwhile
+    return relinkUnlinked(cleared, (locked) => !locked.macAddress && !locked.streamId);
   }
 
   // Create new device with provided info and add it to the account's device list, together; a

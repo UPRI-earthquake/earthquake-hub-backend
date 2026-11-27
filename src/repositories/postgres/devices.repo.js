@@ -100,6 +100,16 @@ const createDevicesRepo = (db) => {
   const findByMacAddress = (macAddress) => one({ mac_address: macAddress });
   const findByNetworkStation = (network, station) => one({ network, station });
 
+  // Locks the device's row until `tx` ends (SELECT ... FOR UPDATE) and returns the device with its
+  // owner's account id (ownerAccountId), or null. Another transaction locking the same row waits, then
+  // reads it as the first one committed it, so a check made on the result holds for the rest of `tx`.
+  async function lockById(id, { tx } = {}) {
+    if (!tx) throw new Error('lockById needs a transaction: pass { tx }');
+    if (!isUuid(id)) return null;
+    const row = await tx('devices').where({ id }).forUpdate().first();
+    return row ? { ...toDevice(row), ownerAccountId: row.owner_account_id } : null;
+  }
+
   async function findByMacAddressOrStreamId({ macAddress, streamId }) {
     if (!macAddress && !streamId) return [];
     const rows = await db('devices')
@@ -304,6 +314,7 @@ const createDevicesRepo = (db) => {
     findByStreamId,
     findByMacAddress,
     findByNetworkStation,
+    lockById,
     findByMacAddressOrStreamId,
     listByStreamIds,
     listLocations,
